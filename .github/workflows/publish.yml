@@ -25,7 +25,11 @@ jobs:
         id: vars
         run: echo "oci_repo=oci://${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+      - name: Download validated packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: validated-charts
+          path: ${{ runner.temp }}/helm-packages
 
       - name: Install Helm
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2
@@ -35,7 +39,7 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
 
-      - name: Package and push all charts
+      - name: Push validated charts
         run: |
           set -euo pipefail
 
@@ -43,38 +47,23 @@ jobs:
           echo "## Helm Charts Published" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          while IFS= read -r chart_yaml; do
-            chart_dir=$(dirname "$chart_yaml")
-            chart_name=$(basename "$chart_dir")
-
-            if [ ! -f "$chart_dir/Chart.yaml" ]; then
-              echo "Skipping $chart_name (no Chart.yaml)"
-              continue
-            fi
-
-            version=$(helm show chart "$chart_dir" | grep '^version:' | awk '{print $2}')
+          shopt -s failglob
+          for pkg in "$RUNNER_TEMP/helm-packages/"*.tgz; do
+            metadata=$(helm show chart "$pkg")
+            chart_name=$(awk '$1 == "name:" {print $2}' <<< "$metadata")
+            version=$(awk '$1 == "version:" {print $2}' <<< "$metadata")
             if helm show chart "$OCI_REPO/$chart_name" --version "$version" >/dev/null 2>&1; then
               echo "Skipping $chart_name:$version (already published)"
               echo "- \`${chart_name}:${version}\` already exists" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
 
-            echo "Packaging $chart_name..."
-            if grep -q 'kubarr-common' "$chart_dir/Chart.yaml"; then
-              helm dependency build "$chart_dir"
-            fi
-            helm package "$chart_dir" --destination /tmp/helm-packages
-
-            pkg="/tmp/helm-packages/${chart_name}-${version}.tgz"
-            test -f "$pkg"
-
             echo "Pushing $chart_name..."
             helm push "$pkg" "$OCI_REPO"
 
             echo "- \`${chart_name}:${version}\` → \`${OCI_REPO}/${chart_name}\`" >> "$GITHUB_STEP_SUMMARY"
 
-            rm -f "$pkg"
-          done < <(find . -mindepth 2 -name Chart.yaml | sort)
+          done
 
       - name: Logout
         if: always()

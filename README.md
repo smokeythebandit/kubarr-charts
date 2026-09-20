@@ -32,6 +32,15 @@ They cover unknown-route fallback to the frontend without bypassing app
 authorization or masking upstream failures. Live proxy behavior still requires
 integration testing.
 
+CI runs these behavioral checks against packaged charts. To reproduce that mode,
+package every chart into an empty directory and set `CHART_PACKAGES_DIR` to its
+absolute path when running the test command. Missing or extra `.tgz` files fail
+validation; tests never fall back to source when package mode is selected.
+Package checks verify chart metadata and render all application archives against
+Kubernetes 1.35.8. This verifies packaging and YAML structure, not Kubernetes schema
+admission. Without the variable, behavioral tests use source charts and the package
+test creates temporary archives automatically.
+
 ## Dependencies And Releases
 
 `system/kubarr-common` supplies shared Helm helpers. When changing it, bump its
@@ -42,6 +51,8 @@ renders, so changing only the library source will not update consumers.
 
 Pull requests run lint, packaging, and regression tests. Main-branch pushes run the same
 validation before publishing OCI charts to `ghcr.io/<repository-owner>/kubarr-charts`.
+Validation uploads a `validated-charts` artifact. Publishing downloads and pushes
+those exact archives, without checking out or rebuilding chart sources.
 Existing versions are skipped, so every published chart change requires a chart
 version bump. Chart versions are independent of container image tags.
 

@@ -7,6 +7,8 @@ import unittest
 
 import yaml
 
+from chart_artifacts import chart_input
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CHARTS = sorted(
@@ -17,7 +19,7 @@ CHARTS = sorted(
 
 
 def render(chart, release, *values):
-    command = [os.environ.get("HELM", "helm"), "template", release, str(chart)]
+    command = [os.environ.get("HELM", "helm"), "template", release, str(chart_input(chart))]
     for value in values:
         command.extend(["--set", value])
     result = subprocess.run(command, check=True, capture_output=True, text=True)

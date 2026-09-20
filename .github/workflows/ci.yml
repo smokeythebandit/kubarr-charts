@@ -39,6 +39,16 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/chart-tests"
           "$RUNNER_TEMP/chart-tests/bin/python" -m pip install PyYAML==6.0.3
 
-      - name: Chart regression tests
+      - name: Packaged chart regression tests
+        env:
+          CHART_PACKAGES_DIR: ${{ runner.temp }}/helm-packages
         run: |
           "$RUNNER_TEMP/chart-tests/bin/python" -B -m unittest discover -s tests -v
+
+      - name: Upload validated packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: validated-charts
+          path: ${{ runner.temp }}/helm-packages/*.tgz
+          if-no-files-found: error
+          retention-days: 7

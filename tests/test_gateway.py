@@ -9,6 +9,8 @@ import unittest
 
 import yaml
 
+from chart_artifacts import chart_input
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,7 +20,7 @@ class GatewayTests(unittest.TestCase):
     def setUpClass(cls):
         result = subprocess.run(
             [os.environ.get("HELM", "helm"), "template", "gateway",
-             str(ROOT / "system/openresty")],
+             str(chart_input(ROOT / "system/openresty"))],
             check=True, capture_output=True, text=True,
         )
         config, = [
