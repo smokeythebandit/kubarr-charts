@@ -2,7 +2,7 @@ apiVersion: v2
 name: victoriametrics
 description: VictoriaMetrics - fast, cost-effective and scalable monitoring solution
 type: application
-version: 1.97.3
+version: 1.97.4
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar
@@ -17,5 +17,5 @@ annotations:
   kubarr.io/browseable: "false"
 dependencies:
   - name: kubarr-common
-    version: 0.3.1
+    version: 0.3.2
     repository: file://../../system/kubarr-common

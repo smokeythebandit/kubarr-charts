@@ -4,8 +4,8 @@ This Helm chart deploys qBittorrent, a free and open-source BitTorrent client wi
 
 ## Prerequisites
 
-- Kubernetes 1.19+
-- Helm 3.0+
+- Kubernetes 1.34-1.37 when using Helm 4.3
+- Helm 4 (tested with 4.3.0)
 - PV provisioner support in the underlying infrastructure (for persistent storage)
 
 ## Installing the Chart

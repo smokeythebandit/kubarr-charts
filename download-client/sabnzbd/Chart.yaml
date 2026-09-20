@@ -2,7 +2,7 @@ apiVersion: v2
 name: sabnzbd
 description: Free and open-source Usenet binary newsreader with web interface
 type: application
-version: 5.1.4
+version: 5.1.5
 keywords:
   - sabnzbd
   - usenet
@@ -25,5 +25,5 @@ annotations:
   kubarr.io/category: "download-client"
 dependencies:
   - name: kubarr-common
-    version: 0.3.1
+    version: 0.3.2
     repository: file://../../system/kubarr-common

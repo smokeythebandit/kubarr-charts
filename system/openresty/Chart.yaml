@@ -2,7 +2,7 @@ apiVersion: v2
 name: openresty
 description: OpenResty gateway for Kubarr
 type: application
-version: 0.2.4
+version: 0.2.5
 annotations:
   kubarr.io/display-name: "OpenResty Gateway"
   kubarr.io/icon: "openresty"

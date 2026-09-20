@@ -108,12 +108,11 @@ metadata:
   name: {{ $root.Release.Name }}
   namespace: {{ $root.Values.namespace.name }}
   labels:
-    app.kubernetes.io/name: {{ $root.Release.Name }}
-    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    {{- include "kubarr-common.labels" $root | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: {{ $root.Release.Name }}
+      {{- include "kubarr-common.selectorLabels" $root | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress
@@ -125,7 +124,7 @@ spec:
               kubernetes.io/metadata.name: {{ . }}
       ports:
         - protocol: TCP
-          port: {{ $app.service.port }}
+          port: {{ $app.service.targetPort }}
         {{- if $exporterEnabled }}
         - protocol: TCP
           port: {{ $root.Values.exporter.port }}

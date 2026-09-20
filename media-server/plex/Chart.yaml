@@ -2,7 +2,7 @@ apiVersion: v2
 name: plex
 description: Plex Media Server - organize and stream your media collection
 type: application
-version: 1.44.4
+version: 1.44.5
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar
@@ -13,5 +13,5 @@ annotations:
   kubarr.io/category: "media-server"
 dependencies:
   - name: kubarr-common
-    version: 0.3.1
+    version: 0.3.2
     repository: file://../../system/kubarr-common

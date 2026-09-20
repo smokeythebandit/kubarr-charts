@@ -1,10 +1,12 @@
-name: Lint
+name: Validate
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   helm:
@@ -13,9 +15,10 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
       - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2
         with:
-          version: v3.21.0
+          version: v4.3.0
       - run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/helm-packages"
 
           while IFS= read -r chart_yaml; do
             chart=$(dirname "$chart_yaml")
@@ -25,5 +28,17 @@ jobs:
                 helm dependency build "$chart"
               fi
               helm lint "$chart"
+              helm package "$chart" --destination "$RUNNER_TEMP/helm-packages"
             fi
           done < <(find . -mindepth 2 -name Chart.yaml | sort)
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit python3-venv
+          python3 -m venv "$RUNNER_TEMP/chart-tests"
+          "$RUNNER_TEMP/chart-tests/bin/python" -m pip install PyYAML==6.0.3
+
+      - name: Chart regression tests
+        run: |
+          "$RUNNER_TEMP/chart-tests/bin/python" -B -m unittest discover -s tests -v

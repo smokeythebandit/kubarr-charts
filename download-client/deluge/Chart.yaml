@@ -2,7 +2,7 @@ apiVersion: v2
 name: deluge
 description: Lightweight, cross-platform BitTorrent client with web interface
 type: application
-version: 2.3.4
+version: 2.3.5
 keywords:
   - deluge
   - bittorrent
@@ -24,5 +24,5 @@ annotations:
   kubarr.io/category: "download-client"
 dependencies:
   - name: kubarr-common
-    version: 0.3.1
+    version: 0.3.2
     repository: file://../../system/kubarr-common

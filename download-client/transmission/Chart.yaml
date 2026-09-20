@@ -2,7 +2,7 @@ apiVersion: v2
 name: transmission
 description: Fast, easy, and free BitTorrent client with web interface
 type: application
-version: 4.2.4
+version: 4.2.5
 keywords:
   - transmission
   - bittorrent
@@ -24,5 +24,5 @@ annotations:
   kubarr.io/category: "download-client"
 dependencies:
   - name: kubarr-common
-    version: 0.3.1
+    version: 0.3.2
     repository: file://../../system/kubarr-common

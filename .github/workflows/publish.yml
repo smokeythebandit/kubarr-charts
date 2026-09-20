@@ -8,7 +8,13 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   charts:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,7 +30,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2
         with:
-          version: v3.21.0
+          version: v4.3.0
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
@@ -34,8 +40,8 @@ jobs:
           set -euo pipefail
 
           OCI_REPO="${{ steps.vars.outputs.oci_repo }}"
-          echo "## Helm Charts Published" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Helm Charts Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
           while IFS= read -r chart_yaml; do
             chart_dir=$(dirname "$chart_yaml")
@@ -49,7 +55,7 @@ jobs:
             version=$(helm show chart "$chart_dir" | grep '^version:' | awk '{print $2}')
             if helm show chart "$OCI_REPO/$chart_name" --version "$version" >/dev/null 2>&1; then
               echo "Skipping $chart_name:$version (already published)"
-              echo "- \`${chart_name}:${version}\` already exists" >> $GITHUB_STEP_SUMMARY
+              echo "- \`${chart_name}:${version}\` already exists" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
 
@@ -59,16 +65,13 @@ jobs:
             fi
             helm package "$chart_dir" --destination /tmp/helm-packages
 
-            pkg=$(ls /tmp/helm-packages/${chart_name}-*.tgz 2>/dev/null | head -1)
-            if [ -z "$pkg" ]; then
-              echo "::warning::Failed to package $chart_name"
-              continue
-            fi
+            pkg="/tmp/helm-packages/${chart_name}-${version}.tgz"
+            test -f "$pkg"
 
             echo "Pushing $chart_name..."
             helm push "$pkg" "$OCI_REPO"
 
-            echo "- \`${chart_name}:${version}\` → \`${OCI_REPO}/${chart_name}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`${chart_name}:${version}\` → \`${OCI_REPO}/${chart_name}\`" >> "$GITHUB_STEP_SUMMARY"
 
             rm -f "$pkg"
           done < <(find . -mindepth 2 -name Chart.yaml | sort)
