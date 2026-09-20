@@ -2,7 +2,6 @@ enabled: true
 namespace:
   create: true
   name: kubarr-worker
-replicaCount: 1
 image:
   repository: kubarr-worker
   pullPolicy: Never
@@ -10,6 +9,8 @@ image:
 pollIntervalSeconds: 5
 reconcileIntervalSeconds: 30
 domainReconcileIntervalSeconds: 60
+# Allow the worker to drain a 600-second Helm operation plus shutdown headroom.
+terminationGracePeriodSeconds: 660
 database:
   namespace: kubarr-database
   name: kubarr
