@@ -47,6 +47,13 @@ spec:
             httpGet:
               path: /
               port: http
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
           readinessProbe:
             httpGet:
               path: /
@@ -70,8 +77,7 @@ spec:
               mountPath: /var/log/pods
               readOnly: true
             - name: state
-              mountPath: {{ .Values.fluentbit.statePath }}
-              subPath: {{ .Values.storage.media.dataSubPath }}
+              mountPath: {{ .Values.bufferStorage.mountPath }}
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -83,7 +89,8 @@ spec:
             path: {{ .Values.fluentbit.podLogPath }}
             type: Directory
         - name: state
-          persistentVolumeClaim:
-            claimName: {{ .Values.storage.media.existingClaim }}
+          hostPath:
+            path: {{ .Values.bufferStorage.hostPath | quote }}
+            type: DirectoryOrCreate
         - name: tmp
           emptyDir: {}

@@ -22,9 +22,6 @@ fluentbit:
   # Container log paths on host
   podLogPath: /var/log/pods
 
-  # Fluent Bit state and buffers are stored on the shared NFS claim.
-  statePath: /buffers
-
   # Namespaces to collect logs from (comma-separated list for Lua matching)
   allowedNamespaces:
     - sonarr
@@ -58,10 +55,19 @@ tolerations:
 
 podAnnotations: {}
 
-storage:
-  media:
-    existingClaim: media-data
-    dataSubPath: system/fluent-bit
+# The tail positions database must remain node-local. SQLite on shared NFS can
+# block startup, and a DaemonSet must not share one positions database across nodes.
+# DirectoryOrCreate makes this root-owned with mode 0755; Fluent Bit already runs
+# as UID/GID 0 and writes only beneath this dedicated path.
+bufferStorage:
+  hostPath: /var/lib/fluent-bit
+  mountPath: /buffers
+
+# Gate liveness until Fluent Bit has initialized its inputs, filters, and HTTP server.
+startupProbe:
+  periodSeconds: 2
+  timeoutSeconds: 1
+  failureThreshold: 30
 
 # Network policy configuration
 networkPolicy:

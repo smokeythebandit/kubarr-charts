@@ -58,6 +58,12 @@ version bump. Chart versions are independent of container image tags.
 
 ## Deployment Notes
 
+- Fluent Bit chart 5.1.6 stores tail positions in a node-local host directory
+  (`/var/lib/fluent-bit`) instead of shared NFS. The old position database is not
+  migrated, so logs may be replayed once on upgrade. The node-local directory
+  persists across pod restarts and is not deleted on uninstall. Its previous
+  dedicated NFS PV/PVC is no longer rendered; NFS data itself is not erased.
+
 - Helm 4.3 supports Kubernetes 1.34 through 1.37. Kubarr's release E2E uses 1.35.8.
   Chart API versions remain `v2`; Helm 4 does not require a chart-format migration.
 - Core application images default to local repositories with `pullPolicy: Never`.

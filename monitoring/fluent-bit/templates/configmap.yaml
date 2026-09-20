@@ -21,7 +21,7 @@ data:
         Tag               kube.*
         Path              /var/log/pods/*/*/*.log
         Parser            cri
-        DB                {{ .Values.fluentbit.statePath }}/fluent-bit-pos.db
+        DB                {{ .Values.bufferStorage.mountPath }}/fluent-bit-pos.db
         Mem_Buf_Limit     5MB
         Skip_Long_Lines   On
         Refresh_Interval  10
