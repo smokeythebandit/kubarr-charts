@@ -35,6 +35,13 @@ victoriametrics:
     timeoutSeconds: 10
     failureThreshold: 3
 
+  # NFS-backed storage can take time to initialize before the HTTP server starts.
+  startupProbe:
+    enabled: true
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 90
+
   readinessProbe:
     enabled: true
     initialDelaySeconds: 5

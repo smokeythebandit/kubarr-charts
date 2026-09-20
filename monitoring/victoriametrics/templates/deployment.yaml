@@ -81,6 +81,15 @@ spec:
             timeoutSeconds: {{ .Values.victoriametrics.livenessProbe.timeoutSeconds }}
             failureThreshold: {{ .Values.victoriametrics.livenessProbe.failureThreshold }}
           {{- end }}
+          {{- if .Values.victoriametrics.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: {{ .Values.victoriametrics.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.victoriametrics.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.victoriametrics.startupProbe.failureThreshold }}
+          {{- end }}
           {{- if .Values.victoriametrics.readinessProbe.enabled }}
           readinessProbe:
             httpGet:
