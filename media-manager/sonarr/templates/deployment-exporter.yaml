@@ -29,6 +29,64 @@ spec:
         runAsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: wait-for-sonarr-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          image: "{{ .Values.sonarr.image.repository }}:{{ .Values.sonarr.image.tag }}"
+          imagePullPolicy: {{ .Values.sonarr.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              attempts="${SONARR_CONFIG_WAIT_ATTEMPTS:-150}"
+              interval="${SONARR_CONFIG_WAIT_INTERVAL:-2}"
+              config_file="${SONARR_CONFIG_FILE:-/config/config.xml}"
+              attempt=0
+              sleep_pid=""
+              terminated=false
+
+              trap 'terminated=true; if [ -n "$sleep_pid" ]; then kill "$sleep_pid" 2>/dev/null || true; fi' TERM INT
+
+              while [ "$attempt" -lt "$attempts" ]; do
+                if [ -r "$config_file" ]; then
+                  api_key="$(sed -n 's|.*<ApiKey>\([^<]*\)</ApiKey>.*|\1|p' "$config_file")" || {
+                    status=$?
+                    echo "Failed to read Sonarr configuration" >&2
+                    exit "$status"
+                  }
+                  case "$api_key" in
+                    ""|*[!A-Za-z0-9]*) ;;
+                    *) exit 0 ;;
+                  esac
+                fi
+
+                attempt=$((attempt + 1))
+                if [ "$attempt" -ge "$attempts" ]; then
+                  break
+                fi
+                sleep "$interval" &
+                sleep_pid=$!
+                if wait "$sleep_pid"; then
+                  sleep_pid=""
+                else
+                  status=$?
+                  if "$terminated"; then
+                    exit 143
+                  fi
+                  exit "$status"
+                fi
+              done
+
+              echo "Timed out waiting for Sonarr to generate its API key" >&2
+              exit 1
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/config" "readOnly" true) | nindent 12 }}
       containers:
         - name: exportarr
           securityContext:
