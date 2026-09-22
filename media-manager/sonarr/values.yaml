@@ -127,6 +127,8 @@ vpn:
   killSwitch: true
   # Subnets to allow even when VPN is active (for cluster internal communication)
   firewallOutboundSubnets: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+  # Additional environment variables for Gluetun (for example, health or DNS settings)
+  extraEnv: []
   # Port forwarding via NAT-PMP (supported by ProtonVPN, PIA, AirVPN)
   portForwarding:
     enabled: false

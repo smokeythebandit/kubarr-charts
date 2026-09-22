@@ -127,6 +127,9 @@ spec:
               value: {{ .Values.vpn.portForwarding.upCommand | quote }}
             {{- end }}
             {{- end }}
+            {{- with .Values.vpn.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             - name: gluetun-http
               containerPort: 8888
