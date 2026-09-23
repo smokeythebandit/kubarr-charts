@@ -37,18 +37,21 @@ class GatewayTests(unittest.TestCase):
         )
         if match is None:
             raise AssertionError("Catch-all access block not found")
+        cls.config = config
         cls.access_lua = match.group(2)
 
     def check_gateway(self, setup="", outcome="proxy", captures=1, checks=""):
         script = r'''
 local route = {status = 404, header = {}}
 local auth = {status = 404, header = {}}
+local catalog = {status = 404, header = {}}
 local outcome = "proxy"
 local captures = 0
 ngx = {
   HTTP_OK = 200, HTTP_NO_CONTENT = 204, HTTP_MOVED_TEMPORARILY = 302,
   HTTP_UNAUTHORIZED = 401, HTTP_FORBIDDEN = 403, HTTP_NOT_FOUND = 404,
-  HTTP_INTERNAL_SERVER_ERROR = 500, ERR = "error",
+  HTTP_INTERNAL_SERVER_ERROR = 500, HTTP_BAD_GATEWAY = 502,
+  HTTP_SERVICE_UNAVAILABLE = 503, HTTP_GATEWAY_TIMEOUT = 504, ERR = "error",
   var = {
     host = "kubarr.test", uri = "/nonexistent-route",
     app_name = "nonexistent-route", app_path = "",
@@ -58,6 +61,7 @@ ngx = {
   log = function() end,
   exit = function(status) outcome = "exit:" .. status end,
   exec = function(location) outcome = "exec:" .. location end,
+  escape_uri = function(value) return value end,
   redirect = function(uri, status)
     outcome = "redirect:" .. status .. ":" .. uri
   end
@@ -70,10 +74,15 @@ ngx.location.capture = function(uri, options)
     assert(options.args.path == ngx.var.uri)
     return route
   end
-  assert(captures == 2, "Unexpected extra subrequest")
-  assert(uri == "/_kubarr_app_auth/" .. ngx.var.app_name, uri)
+  if captures == 2 then
+    assert(uri == "/_kubarr_app_auth/" .. ngx.var.app_name, uri)
+    assert(options == nil)
+    return auth
+  end
+  assert(captures == 3, "Unexpected extra subrequest")
+  assert(uri == "/_kubarr_catalog_lookup/" .. ngx.var.app_name, uri)
   assert(options == nil)
-  return auth
+  return catalog
 end
 '''
         script += setup + "\nlocal function access()\n" + self.access_lua
@@ -86,8 +95,29 @@ end
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_unknown_path_serves_frontend(self):
-        self.check_gateway(outcome="exec:@frontend_index", captures=2)
+    def test_unknown_frontend_path_serves_spa(self):
+        self.check_gateway(outcome="exec:@frontend_index", captures=3)
+
+    def test_known_unavailable_app_redirects_to_status_ui(self):
+        self.check_gateway(
+            setup="catalog.status = 200",
+            outcome=("redirect:302:/app-error?app=nonexistent-route"
+                     "&reason=not_found"),
+            captures=3,
+        )
+
+    def test_catalog_lookup_proxy_is_internal_and_authenticated(self):
+        self.assertRegex(
+            self.config,
+            r"location ~ \^/_kubarr_catalog_lookup/"
+            r"\(\?<catalog_app_name>\[a-z0-9-\]\+\)\$ \{\n"
+            r"\s+internal;\n"
+            r"\s+proxy_pass http://kubarr_api/api/apps/catalog/"
+            r"\$catalog_app_name;\n"
+            r"\s+proxy_pass_request_body off;\n"
+            r"\s+proxy_set_header Content-Length \"\";\n"
+            r"\s+proxy_set_header Cookie \$http_cookie;",
+        )
 
     def test_denials_are_preserved(self):
         for source in ("route", "auth"):
@@ -99,14 +129,41 @@ end
                         captures=1 if source == "route" else 2,
                     )
 
-    def test_upstream_errors_do_not_serve_frontend(self):
-        for source in ("route", "auth"):
-            for status in (301, 500, 502, 503, 504):
+    def test_unexpected_lookup_errors_do_not_serve_frontend(self):
+        for source, statuses in (("route", (301, 500, 502, 503, 504)),
+                                 ("auth", (301,))):
+            for status in statuses:
                 with self.subTest(source=source, status=status):
                     self.check_gateway(
                         f"{source}.status = {status}", outcome="exit:500",
                         captures=1 if source == "route" else 2,
                     )
+
+    def test_app_connection_errors_redirect_to_status_ui(self):
+        for status in (500, 502, 503, 504):
+            with self.subTest(status=status):
+                self.check_gateway(
+                    f"auth.status = {status}",
+                    outcome=("redirect:302:/app-error?app=nonexistent-route"
+                             "&reason=connection_failed"),
+                    captures=2,
+                )
+
+    def test_catalog_lookup_denials_are_preserved(self):
+        for status in (401, 403):
+            with self.subTest(status=status):
+                self.check_gateway(
+                    f"catalog.status = {status}",
+                    outcome=f"exit:{status}", captures=3,
+                )
+
+    def test_catalog_lookup_errors_do_not_serve_frontend(self):
+        for status in (204, 301, 500, 502, 503, 504):
+            with self.subTest(status=status):
+                self.check_gateway(
+                    f"catalog.status = {status}",
+                    outcome="exit:500", captures=3,
+                )
 
     def test_success_requires_routing_headers(self):
         for source, header in (

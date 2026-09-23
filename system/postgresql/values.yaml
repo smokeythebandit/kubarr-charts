@@ -4,7 +4,7 @@ namespace:
 
 image:
   repository: postgres
-  tag: "16-alpine"
+  tag: "16.15-alpine"
   pullPolicy: IfNotPresent
 
 database:

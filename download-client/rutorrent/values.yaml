@@ -13,7 +13,7 @@ rutorrent:
   image:
     repository: linuxserver/rutorrent
     pullPolicy: IfNotPresent
-    tag: "latest"
+    tag: "v3.10-ls122"
 
   # Base path for URL routing (leave empty for root)
   # ruTorrent does not support serving from a subpath

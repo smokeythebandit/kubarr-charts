@@ -30,7 +30,7 @@ spec:
       {{- if .Values.jackett.basePath }}
       initContainers:
         - name: init-config
-          image: busybox:latest
+          image: busybox:1.38.0
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

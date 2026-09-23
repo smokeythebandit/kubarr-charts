@@ -19,12 +19,36 @@ jobs:
       - run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/helm-packages"
+          helm repo add jetstack https://charts.jetstack.io
 
           while IFS= read -r chart_yaml; do
             chart=$(dirname "$chart_yaml")
             if [ -f "$chart/Chart.yaml" ]; then
               echo "Linting $chart..."
-              if grep -q 'kubarr-common' "$chart/Chart.yaml"; then
+              chart_type=$(helm show chart "$chart" | awk '/^type:/ { print $2 }')
+              if [ "$chart_type" = application ]; then
+                chart_version=$(helm show chart "$chart" | awk '/^version:/ { print $2 }')
+                app_version=$(helm show chart "$chart" | awk '/^appVersion:/ { print $2 }')
+                if [ -z "$app_version" ]; then
+                  echo "::error file=$chart_yaml::application charts must declare appVersion"
+                  exit 1
+                fi
+
+                chart_core=${chart_version%%+*}
+                app_version=${app_version#\"}
+                app_version=${app_version%\"}
+                app_core=${app_version#v}
+                app_core=${app_core%%+*}
+                IFS=. read -r major minor patch _ <<EOF
+          $app_core
+          EOF
+                normalized_app_version="$major.${minor:-0}.${patch:-0}"
+                if [ "$chart_core" != "$normalized_app_version" ]; then
+                  echo "::error file=$chart_yaml::chart version $chart_version does not match appVersion $app_version"
+                  exit 1
+                fi
+              fi
+              if grep -q '^dependencies:' "$chart/Chart.yaml"; then
                 helm dependency build "$chart"
               fi
               helm lint "$chart"

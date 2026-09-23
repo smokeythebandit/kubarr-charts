@@ -2,7 +2,8 @@ apiVersion: v2
 name: sabnzbd
 description: Free and open-source Usenet binary newsreader with web interface
 type: application
-version: 5.1.5
+version: 5.1.1+2
+appVersion: "5.1.1"
 keywords:
   - sabnzbd
   - usenet

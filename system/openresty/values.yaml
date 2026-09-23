@@ -6,7 +6,7 @@ replicaCount: 1
 image:
   repository: openresty/openresty
   pullPolicy: IfNotPresent
-  tag: "1.27.1.2-alpine"
+  tag: "1.29.2.5-alpine"
 service:
   type: NodePort
   port: 8080

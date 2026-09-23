@@ -2,7 +2,8 @@ apiVersion: v2
 name: radarr
 description: Movie collection manager for Usenet and BitTorrent users
 type: application
-version: 6.3.7
+version: 6.3.0+2
+appVersion: "6.3.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar

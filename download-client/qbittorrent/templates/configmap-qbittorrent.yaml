@@ -1,3 +1,4 @@
+{{- $listenPort := ternary (randInt 49152 65535) 6881 .Values.vpn.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,7 +15,7 @@ data:
     [BitTorrent]
     Session\AddTorrentStopped=false
     Session\DefaultSavePath=/downloads/
-    Session\Port=6881
+    Session\Port={{ $listenPort }}
     Session\QueueingSystemEnabled=true
     Session\ShareLimitAction=Stop
     Session\TempPath=/downloads/incomplete/
@@ -28,15 +29,15 @@ data:
     Accepted=true
 
     [Network]
-    PortForwardingEnabled=false
+    PortForwardingEnabled={{ ternary "true" "false" .Values.vpn.enabled }}
     Proxy\HostnameLookupEnabled=false
     Proxy\Profiles\BitTorrent=true
     Proxy\Profiles\Misc=true
     Proxy\Profiles\RSS=true
 
     [Preferences]
-    Connection\PortRangeMin=6881
-    Connection\UPnP=false
+    Connection\PortRangeMin={{ $listenPort }}
+    Connection\UPnP={{ ternary "true" "false" .Values.vpn.enabled }}
     Downloads\SavePath=/downloads/
     Downloads\TempPath=/downloads/incomplete/
     WebUI\Address=0.0.0.0

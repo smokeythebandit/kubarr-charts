@@ -2,7 +2,8 @@ apiVersion: v2
 name: kubarr-frontend
 description: Kubarr static frontend
 type: application
-version: 0.2.2
+version: 0.2.0
+appVersion: "0.2.0"
 annotations:
   kubarr.io/display-name: "Kubarr Frontend"
   kubarr.io/icon: "🖥️"

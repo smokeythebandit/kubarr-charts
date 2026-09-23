@@ -88,6 +88,15 @@ data:
           proxy_set_header X-Original-URI $request_uri;
         }
 
+        location ~ ^/_kubarr_catalog_lookup/(?<catalog_app_name>[a-z0-9-]+)$ {
+          internal;
+          proxy_pass http://kubarr_api/api/apps/catalog/$catalog_app_name;
+          proxy_pass_request_body off;
+          proxy_set_header Content-Length "";
+          proxy_set_header Cookie $http_cookie;
+          proxy_set_header X-Original-URI $request_uri;
+        }
+
         location ~ ^/(?<absolute_app_path>(:|activities|api/v1|css|js|themes|render|json|images|icons|ui_images|media|status|updater|gettext\.js|_next|web|site\.webmanifest|logo_stacked\.svg|apple-[^/]+|favicon-[^/]+)(/.*)?)$ {
           set $app_name "";
           set $app_upstream "";
@@ -127,6 +136,13 @@ data:
             if auth.status == ngx.HTTP_UNAUTHORIZED or auth.status == ngx.HTTP_FORBIDDEN then
               return ngx.exit(auth.status)
             end
+            if auth.status == ngx.HTTP_NOT_FOUND then
+              return ngx.redirect("/app-error?app=" .. ngx.escape_uri(app_name) .. "&reason=not_found", ngx.HTTP_MOVED_TEMPORARILY)
+            end
+            if auth.status == ngx.HTTP_INTERNAL_SERVER_ERROR or auth.status == ngx.HTTP_BAD_GATEWAY
+                or auth.status == ngx.HTTP_SERVICE_UNAVAILABLE or auth.status == ngx.HTTP_GATEWAY_TIMEOUT then
+              return ngx.redirect("/app-error?app=" .. ngx.escape_uri(app_name) .. "&reason=connection_failed", ngx.HTTP_MOVED_TEMPORARILY)
+            end
             if auth.status < 200 or auth.status >= 300 then
               ngx.log(ngx.ERR, "absolute app path auth failed with status ", auth.status)
               return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
@@ -144,6 +160,8 @@ data:
           }
 
           proxy_http_version 1.1;
+          proxy_intercept_errors on;
+          error_page 502 503 504 = @app_connection_failed;
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -195,7 +213,22 @@ data:
               return ngx.exit(auth.status)
             end
             if auth.status == ngx.HTTP_NOT_FOUND then
-              return ngx.exec('@frontend_index')
+              local catalog = ngx.location.capture("/_kubarr_catalog_lookup/" .. ngx.var.app_name)
+              if catalog.status == ngx.HTTP_NOT_FOUND then
+                return ngx.exec('@frontend_index')
+              end
+              if catalog.status == ngx.HTTP_OK then
+                return ngx.redirect("/app-error?app=" .. ngx.escape_uri(ngx.var.app_name) .. "&reason=not_found", ngx.HTTP_MOVED_TEMPORARILY)
+              end
+              if catalog.status == ngx.HTTP_UNAUTHORIZED or catalog.status == ngx.HTTP_FORBIDDEN then
+                return ngx.exit(catalog.status)
+              end
+              ngx.log(ngx.ERR, "app catalog lookup failed with status ", catalog.status)
+              return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
+            end
+            if auth.status == ngx.HTTP_INTERNAL_SERVER_ERROR or auth.status == ngx.HTTP_BAD_GATEWAY
+                or auth.status == ngx.HTTP_SERVICE_UNAVAILABLE or auth.status == ngx.HTTP_GATEWAY_TIMEOUT then
+              return ngx.redirect("/app-error?app=" .. ngx.escape_uri(ngx.var.app_name) .. "&reason=connection_failed", ngx.HTTP_MOVED_TEMPORARILY)
             end
             if auth.status < 200 or auth.status >= 300 then
               ngx.log(ngx.ERR, "app auth failed with status ", auth.status)
@@ -230,6 +263,8 @@ data:
           }
 
           proxy_http_version 1.1;
+          proxy_intercept_errors on;
+          error_page 502 503 504 = @app_connection_failed;
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -323,6 +358,7 @@ data:
           proxy_http_version 1.1;
           proxy_intercept_errors on;
           error_page 404 = @frontend_index;
+          error_page 502 503 504 = @app_connection_failed;
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -344,6 +380,38 @@ data:
             end
           }
           proxy_pass $app_upstream$target_path$is_args$args;
+        }
+
+        # Always serve the app status UI from Kubarr, including on custom app domains.
+        location = /app-error {
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_set_header Accept-Encoding "";
+          rewrite ^ /index.html break;
+          sub_filter '"/assets/' '"/_kubarr_assets/';
+          sub_filter "'/assets/" "'/_kubarr_assets/";
+          sub_filter_once off;
+          proxy_pass http://kubarr_frontend;
+        }
+
+        location ^~ /_kubarr_assets/ {
+          proxy_http_version 1.1;
+          rewrite ^/_kubarr_assets/(.*)$ /assets/$1 break;
+          proxy_set_header Host $host;
+          proxy_pass http://kubarr_frontend;
+        }
+
+        location @app_connection_failed {
+          content_by_lua_block {
+            local app_name = ngx.var.app_name or ""
+            if app_name == "" then
+              return ngx.exit(ngx.HTTP_BAD_GATEWAY)
+            end
+            return ngx.redirect("/app-error?app=" .. ngx.escape_uri(app_name) .. "&reason=connection_failed", ngx.HTTP_MOVED_TEMPORARILY)
+          }
         }
 
         location @frontend_index {

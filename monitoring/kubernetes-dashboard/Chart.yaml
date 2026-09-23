@@ -2,7 +2,8 @@ apiVersion: v2
 name: kubernetes-dashboard
 description: General-purpose web UI for Kubernetes clusters
 type: application
-version: 2.8.0
+version: 2.7.0+1
+appVersion: "2.7.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar

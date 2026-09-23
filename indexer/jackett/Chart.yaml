@@ -2,7 +2,8 @@ apiVersion: v2
 name: jackett
 description: API support for torrent trackers for Sonarr and Radarr
 type: application
-version: 0.25.7
+version: 0.24.2424+1
+appVersion: "0.24.2424"
 keywords:
   - jackett
   - indexer

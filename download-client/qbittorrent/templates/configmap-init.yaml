@@ -8,8 +8,7 @@ metadata:
 data:
   99-apply-config.sh: |
     #!/bin/bash
-    # Apply immutable qBittorrent configuration
-    # This overwrites the config on every startup to ensure settings are immutable
+    # Seed new installations, then update only Kubarr-managed VPN settings.
 
     CONFIG_DIR="/config/qBittorrent"
     CONFIG_FILE="${CONFIG_DIR}/qBittorrent.conf"
@@ -17,8 +16,35 @@ data:
 
     mkdir -p "$CONFIG_DIR"
 
-    echo "Applying immutable qBittorrent configuration..."
-    cp "$IMMUTABLE_CONFIG" "$CONFIG_FILE"
+    if [ ! -s "$CONFIG_FILE" ]; then
+      echo "Seeding qBittorrent configuration..."
+      cp "$IMMUTABLE_CONFIG" "$CONFIG_FILE"
+      exit 0
+    fi
 
-    echo "Configuration applied:"
-    cat "$CONFIG_FILE"
+    update_managed_setting() {
+      key="$1"
+      value=$(MANAGED_KEY="$key" awk -F= 'index($0, ENVIRON["MANAGED_KEY"] "=") == 1 { sub(/^[^=]*=/, ""); print; exit }' "$IMMUTABLE_CONFIG")
+      [ -n "$value" ] || return 0
+
+      MANAGED_KEY="$key" MANAGED_VALUE="$value" awk '
+        index($0, ENVIRON["MANAGED_KEY"] "=") == 1 {
+          print ENVIRON["MANAGED_KEY"] "=" ENVIRON["MANAGED_VALUE"]
+          found=1
+          next
+        }
+        { print }
+        END { if (!found) exit 2 }
+      ' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" || {
+        rm -f "${CONFIG_FILE}.tmp"
+        return 0
+      }
+      mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+    }
+
+    update_managed_setting 'Session\Port'
+    update_managed_setting 'PortForwardingEnabled'
+    update_managed_setting 'Connection\PortRangeMin'
+    update_managed_setting 'Connection\UPnP'
+
+    echo "Kubarr-managed VPN settings applied; WebUI preferences preserved."

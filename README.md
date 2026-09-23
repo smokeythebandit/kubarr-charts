@@ -12,6 +12,7 @@ dependencies in a virtual environment if your operating system requires one.
 
 ```sh
 python3 -m pip install PyYAML==6.0.3
+helm repo add jetstack https://charts.jetstack.io
 for chart in */*/Chart.yaml; do
   chart_dir="${chart%/Chart.yaml}"
   helm dependency build --skip-refresh "$chart_dir"
@@ -28,9 +29,9 @@ enforcement or runtime connectivity; those require a cluster with NetworkPolicy
 support.
 
 Gateway tests execute the rendered Lua routing block with mocked OpenResty APIs.
-They cover unknown-route fallback to the frontend without bypassing app
-authorization or masking upstream failures. Live proxy behavior still requires
-integration testing.
+They cover frontend 404 fallback, app status redirects, and routing without
+bypassing authorization or masking unexpected lookup failures. Live proxy behavior
+still requires integration testing.
 
 CI runs these behavioral checks against packaged charts. To reproduce that mode,
 package every chart into an empty directory and set `CHART_PACKAGES_DIR` to its
@@ -46,19 +47,20 @@ test creates temporary archives automatically.
 `system/kubarr-common` supplies shared Helm helpers. When changing it, bump its
 version and each affected consumer's dependency and chart version, then run
 `helm dependency update --skip-refresh <chart-directory>`. Include the resulting
-`Chart.lock` and dependency archive changes. Bundled archives are used by local
-renders, so changing only the library source will not update consumers.
+`Chart.lock` changes. Dependency archives under `charts/` are generated for local
+validation and publishing, ignored by Git, and must not be committed.
 
 Pull requests run lint, packaging, and regression tests. Main-branch pushes run the same
 validation before publishing OCI charts to `ghcr.io/<repository-owner>/kubarr-charts`.
 Validation uploads a `validated-charts` artifact. Publishing downloads and pushes
 those exact archives, without checking out or rebuilding chart sources.
 Existing versions are skipped, so every published chart change requires a chart
-version bump. Chart versions are independent of container image tags.
+version bump. Application chart versions use the normalized `appVersion` as their
+core and build metadata as the chart revision.
 
 ## Deployment Notes
 
-- Fluent Bit chart 5.1.6 stores tail positions in a node-local host directory
+- Fluent Bit chart 5.1.1+2 stores tail positions in a node-local host directory
   (`/var/lib/fluent-bit`) instead of shared NFS. The old position database is not
   migrated, so logs may be replayed once on upgrade. The node-local directory
   persists across pod restarts and is not deleted on uninstall. Its previous
