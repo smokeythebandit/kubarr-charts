@@ -12,7 +12,6 @@ from chart_artifacts import ROOT, chart_input
 
 
 CHART = ROOT / "media-manager/sonarr"
-DEFAULT_OUTBOUND_SUBNETS = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 
 def render(overrides=None):
@@ -74,7 +73,7 @@ class SonarrVpnTests(unittest.TestCase):
             gluetun["securityContext"],
             {
                 "allowPrivilegeEscalation": False,
-                "capabilities": {"drop": ["ALL"], "add": ["NET_ADMIN"]},
+                "capabilities": {"drop": ["ALL"], "add": ["NET_ADMIN", "CHOWN"]},
             },
         )
         tun_volume = next(
@@ -88,14 +87,24 @@ class SonarrVpnTests(unittest.TestCase):
         )
         self.assertEqual(
             gluetun["volumeMounts"],
-            [{"name": "dev-net-tun", "mountPath": "/dev/net/tun"}],
+            [
+                {"name": "dev-net-tun", "mountPath": "/dev/net/tun"},
+                {"name": "gluetun-tmp", "mountPath": "/tmp/gluetun"},
+            ],
         )
+        pod = deployment["spec"]["template"]["spec"]
+        self.assertIn({"name": "gluetun-tmp", "emptyDir": {}}, pod["volumes"])
+        self.assertEqual(
+            {container["name"] for container in pod["initContainers"]},
+            {"init-config", "gluetun-tmp-permissions"},
+        )
+        permissions = next(c for c in pod["initContainers"] if c["name"] == "gluetun-tmp-permissions")
+        self.assertEqual(permissions["command"], ["/bin/sh", "-c", "chmod 0700 /tmp/gluetun"])
 
         env = environment(gluetun)
         self.assertEqual(env["FIREWALL"], "on")
-        self.assertEqual(env["FIREWALL_OUTBOUND_SUBNETS"], DEFAULT_OUTBOUND_SUBNETS)
-        self.assertIsInstance(env["FIREWALL_OUTBOUND_SUBNETS"], str)
-        self.assertEqual(env["FIREWALL_INPUT_PORTS"], "8989,9999,8001")
+        self.assertNotIn("FIREWALL_OUTBOUND_SUBNETS", env)
+        self.assertEqual(env["FIREWALL_INPUT_PORTS"], "8989,9707,9999,8001")
         self.assertEqual(env["HEALTH_SERVER_ADDRESS"], ":9999")
         self.assertEqual(env["HTTP_CONTROL_SERVER_ADDRESS"], ":8001")
         self.assertEqual(
@@ -114,9 +123,15 @@ class SonarrVpnTests(unittest.TestCase):
 
         self.assertEqual(env["FIREWALL"], "off")
         self.assertNotIn("FIREWALL_INPUT_PORTS", env)
-        self.assertEqual(env["FIREWALL_OUTBOUND_SUBNETS"], DEFAULT_OUTBOUND_SUBNETS)
+        self.assertNotIn("FIREWALL_OUTBOUND_SUBNETS", env)
         self.assertEqual(env["HEALTH_SERVER_ADDRESS"], ":9999")
         self.assertEqual(env["HTTP_CONTROL_SERVER_ADDRESS"], ":8001")
+
+    def test_explicit_outbound_subnet_and_exporter_toggle(self):
+        gluetun = containers(render({"vpn": {"firewallOutboundSubnets": "10.42.0.0/24"}, "exporter": {"enabled": False}}))["gluetun"]
+        env = environment(gluetun)
+        self.assertEqual(env["FIREWALL_OUTBOUND_SUBNETS"], "10.42.0.0/24")
+        self.assertEqual(env["FIREWALL_INPUT_PORTS"], "8989,9999,8001")
 
     def test_extra_env_is_appended_to_gluetun_only(self):
         extra_env = [

@@ -43,25 +43,22 @@ class QBittorrentVpnTests(unittest.TestCase):
     def test_control_policy_only_allows_backend_on_8001_when_vpn_enabled(self):
         resources = render_resources({"vpn": {"enabled": True}})
         policies = [resource for resource in resources if resource["kind"] == "NetworkPolicy"]
-        self.assertEqual(len(policies), 2)
+        self.assertEqual(len(policies), 1)
         base = next(policy for policy in policies if policy["metadata"]["name"] == "qbittorrent-vpn-test")
-        control = next(policy for policy in policies if policy["metadata"]["name"] == "qbittorrent-vpn-test-gluetun-control")
-        self.assertEqual(control["metadata"]["namespace"], "qbittorrent")
+        self.assertEqual(base["metadata"]["namespace"], "qbittorrent")
         deployment = next(resource for resource in resources if resource["kind"] == "Deployment")
-        self.assertEqual(control["spec"]["podSelector"], base["spec"]["podSelector"])
-        self.assertEqual(control["spec"]["podSelector"]["matchLabels"],
+        self.assertEqual(base["spec"]["podSelector"]["matchLabels"],
                          deployment["spec"]["template"]["metadata"]["labels"])
-        self.assertEqual(control["spec"]["policyTypes"], ["Ingress"])
-        self.assertNotIn("egress", control["spec"])
-        self.assertEqual(control["spec"]["ingress"], [{
+        self.assertEqual(base["spec"]["policyTypes"], ["Ingress", "Egress"])
+        self.assertEqual([rule for rule in base["spec"]["ingress"] if any(
+            port["port"] == 8001 for port in rule["ports"])], [{
             "from": [{
                 "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kubarr-backend"}},
                 "podSelector": {"matchLabels": {"app.kubernetes.io/name": "kubarr-backend"}},
             }],
             "ports": [{"protocol": "TCP", "port": 8001}],
         }])
-        self.assertNotIn(8001, [port["port"] for rule in base["spec"]["ingress"]
-                                for port in rule["ports"]])
+        self.assertTrue(base["spec"]["egress"])
 
     def test_control_policy_absent_without_vpn_or_network_policy(self):
         for overrides, expected_count in [({}, 1),
@@ -102,7 +99,8 @@ class QBittorrentVpnTests(unittest.TestCase):
         self.assertEqual(init["command"], ["/bin/sh", "-c", "chmod 0700 /tmp/gluetun"])
         self.assertEqual(init["image"], gluetun["image"])
         self.assertEqual(init["securityContext"], {
-            "runAsUser": 0, "allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]},
+            "runAsUser": 0, "runAsNonRoot": False, "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
         })
         self.assertEqual(init["volumeMounts"], [{"name": "gluetun-tmp", "mountPath": "/tmp/gluetun"}])
         self.assertNotIn("gluetun-tmp", [mount["name"] for mount in containers["qbittorrent"]["volumeMounts"]])
@@ -118,6 +116,11 @@ class QBittorrentVpnTests(unittest.TestCase):
         self.assertEqual(env(gluetun)["FIREWALL_OUTBOUND_SUBNETS"], "10.96.0.10/32")
         self.assertEqual(env(gluetun)["FIREWALL"], "off")
         self.assertNotIn("FIREWALL_INPUT_PORTS", env(gluetun))
+
+    def test_exporter_port_only_opened_when_enabled(self):
+        gluetun = by_name(render({"vpn": {"enabled": True}, "exporter": {"enabled": False}})
+                          ["spec"]["template"]["spec"]["containers"])["gluetun"]
+        self.assertEqual(env(gluetun)["FIREWALL_INPUT_PORTS"], "8080,9999,8001")
 
     def test_port_forwarding_posts_with_retry_to_configured_webui_port(self):
         gluetun = by_name(render({"vpn": {"enabled": True, "portForwarding": {"enabled": True}},

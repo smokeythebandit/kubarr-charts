@@ -2,7 +2,7 @@ apiVersion: v2
 name: kubarr-backend
 description: Kubarr API backend
 type: application
-version: 0.2.0+1
+version: 0.2.0+2
 appVersion: "0.2.0"
 annotations:
   kubarr.io/display-name: "Kubarr Backend"
@@ -13,5 +13,5 @@ annotations:
   kubarr.io/browseable: "false"
 dependencies:
   - name: kubarr-common
-    version: 0.3.2
+    version: 0.3.3
     repository: file://../kubarr-common

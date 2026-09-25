@@ -126,7 +126,7 @@ vpn:
   # Kill switch - block all traffic if VPN disconnects
   killSwitch: true
   # Subnets to allow even when VPN is active (for cluster internal communication)
-  firewallOutboundSubnets: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+  firewallOutboundSubnets: ""
   # Port forwarding via NAT-PMP (supported by ProtonVPN, PIA, AirVPN)
   portForwarding:
     enabled: false
@@ -135,6 +135,8 @@ vpn:
 # Network policy configuration
 networkPolicy:
   enabled: true
+  # Permit only this release's exporter pod to call the app API in this namespace
+  allowExporterIngress: true
   ingressFrom:
     - openresty  # Kubarr gateway proxy
     - victoriametrics  # metrics scraping

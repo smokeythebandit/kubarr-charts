@@ -2,7 +2,7 @@ apiVersion: v2
 name: fluent-bit
 description: Fluent Bit log collector agent for VictoriaLogs
 type: application
-version: 5.1.1+2
+version: 5.1.1+4
 appVersion: "5.1.1"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
@@ -17,5 +17,5 @@ annotations:
   kubarr.io/system: "true"
 dependencies:
   - name: kubarr-common
-    version: 0.3.2
+    version: 0.3.3
     repository: file://../../system/kubarr-common

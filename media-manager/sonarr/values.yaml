@@ -125,8 +125,8 @@ vpn:
       memory: 512Mi
   # Kill switch - block all traffic if VPN disconnects
   killSwitch: true
-  # Subnets to allow even when VPN is active (for cluster internal communication)
-  firewallOutboundSubnets: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+  # Optional narrow subnets reachable outside the VPN tunnel
+  firewallOutboundSubnets: ""
   # Additional environment variables for Gluetun (for example, health or DNS settings)
   extraEnv: []
   # Port forwarding via NAT-PMP (supported by ProtonVPN, PIA, AirVPN)
@@ -137,6 +137,8 @@ vpn:
 # Network policy configuration
 networkPolicy:
   enabled: true
+  # Permit only this release's exporter pod to call the app API in this namespace
+  allowExporterIngress: true
   # Namespaces allowed to send traffic to this app
   ingressFrom:
     - openresty  # Kubarr gateway proxy

@@ -27,78 +27,12 @@ spec:
       serviceAccountName: {{ include "sabnzbd.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with (include "kubarr-common.gluetun.initContainer" (dict "root" .)) }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
-        {{- if .Values.vpn.enabled }}
-        # Gluetun VPN sidecar - routes all pod traffic through VPN
-        - name: gluetun
-          image: "{{ .Values.vpn.image.repository }}:{{ .Values.vpn.image.tag }}"
-          imagePullPolicy: {{ .Values.vpn.image.pullPolicy }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-              add:
-                - NET_ADMIN
-          volumeMounts:
-            - name: dev-net-tun
-              mountPath: /dev/net/tun
-          envFrom:
-            - secretRef:
-                name: {{ .Values.vpn.secretName }}
-          env:
-            - name: FIREWALL_OUTBOUND_SUBNETS
-              value: "{{ .Values.vpn.firewallOutboundSubnets }}"
-            {{- if .Values.vpn.killSwitch }}
-            - name: FIREWALL
-              value: "on"
-            - name: FIREWALL_INPUT_PORTS
-              value: "{{ .Values.sabnzbd.service.targetPort }},9999,8001"
-            {{- else }}
-            - name: FIREWALL
-              value: "off"
-            {{- end }}
-            - name: HEALTH_SERVER_ADDRESS
-              value: ":9999"
-            # Move control server off port 8000 to avoid conflict with exporter
-            - name: HTTP_CONTROL_SERVER_ADDRESS
-              value: ":8001"
-            {{- if .Values.vpn.portForwarding.enabled }}
-            - name: VPN_PORT_FORWARDING
-              value: "on"
-            - name: PORT_FORWARD_ONLY
-              value: "on"
-            {{- if .Values.vpn.portForwarding.upCommand }}
-            - name: VPN_PORT_FORWARDING_UP_COMMAND
-              value: {{ .Values.vpn.portForwarding.upCommand | quote }}
-            {{- end }}
-            {{- end }}
-          ports:
-            - name: gluetun-http
-              containerPort: 8888
-              protocol: TCP
-            - name: gluetun-ctrl
-              containerPort: 8001
-              protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 9999
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 15
-            failureThreshold: 5
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 9999
-            initialDelaySeconds: 30
-            periodSeconds: 15
-            timeoutSeconds: 10
-            failureThreshold: 5
-          resources:
-            {{- toYaml .Values.vpn.resources | nindent 12 }}
-        {{- end }}
+        {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.sabnzbd.service.targetPort) | nindent 8 }}
         - name: sabnzbd
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -141,12 +75,7 @@ spec:
               mountPath: /custom-services.d/setup-apikey
               subPath: setup-apikey.sh
       volumes:
-        {{- if .Values.vpn.enabled }}
-        - name: dev-net-tun
-          hostPath:
-            path: /dev/net/tun
-            type: CharDevice
-        {{- end }}
+        {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "sabnzbd.fullname" .)) | nindent 8 }}
         # Setup script configmap for API key configuration
         - name: setup-script

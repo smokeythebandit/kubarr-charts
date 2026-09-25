@@ -2,7 +2,7 @@ apiVersion: v2
 name: qbittorrent
 description: Free and open-source BitTorrent client with web interface
 type: application
-version: 5.2.3+3
+version: 5.2.3+4
 appVersion: "5.2.3"
 keywords:
   - qbittorrent
@@ -25,5 +25,5 @@ annotations:
   kubarr.io/category: "download-client"
 dependencies:
   - name: kubarr-common
-    version: 0.3.2
+    version: 0.3.3
     repository: file://../../system/kubarr-common

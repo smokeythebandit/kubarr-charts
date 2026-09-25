@@ -30,6 +30,53 @@ def daemonset(resources):
 
 
 class FluentBitTests(unittest.TestCase):
+    def test_loki_output_uses_log_as_victorialogs_message(self):
+        resources = render()
+        config = next(
+            resource["data"]["fluent-bit.conf"]
+            for resource in resources
+            if resource["kind"] == "ConfigMap" and "fluent-bit.conf" in resource.get("data", {})
+        )
+        output = config.split("[OUTPUT]\n", 1)[1].split("\n\n", 1)[0]
+        self.assertEqual(
+            [line.split() for line in output.splitlines()],
+            [
+                ["Name", "loki"],
+                ["Match", "kube.*"],
+                ["Host", "victorialogs.victorialogs.svc.cluster.local"],
+                ["Port", "9428"],
+                ["Uri", "/insert/loki/api/v1/push?_msg_field=log"],
+                ["Labels", "job=fluent-bit"],
+                ["Label_Keys", "$kubernetes['namespace_name'],$kubernetes['pod_name'],$kubernetes['container_name'],$level"],
+                ["Remove_Keys", "kubernetes,stream,logtag,level"],
+                ["Label_Map_Path", "/fluent-bit/etc/labelmap.json"],
+                ["Line_Format", "json"],
+            ],
+        )
+        filters = [
+            [line.split() for line in block.split("\n\n", 1)[0].splitlines()]
+            for block in config.split("[FILTER]\n")[1:]
+        ]
+        self.assertEqual(filters, [
+            [
+                ["Name", "kubernetes"],
+                ["Match", "kube.*"],
+                ["Kube_URL", "https://kubernetes.default.svc:443"],
+                ["Kube_CA_File", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"],
+                ["Kube_Token_File", "/var/run/secrets/kubernetes.io/serviceaccount/token"],
+                ["Kube_Tag_Prefix", "kube.var.log.pods."],
+                ["Regex_Parser", "kube-tag"],
+                ["Merge_Log", "On"],
+                ["Keep_Log", "Off"],
+                ["K8S-Logging.Parser", "On"],
+                ["K8S-Logging.Exclude", "On"],
+            ],
+            [["Name", "lua"], ["Match", "kube.*"],
+             ["script", "/fluent-bit/scripts/filter.lua"], ["call", "filter_by_namespace"]],
+            [["Name", "lua"], ["Match", "kube.*"],
+             ["script", "/fluent-bit/scripts/filter.lua"], ["call", "parse_log_level"]],
+        ])
+
     def test_default_positions_database_is_node_local(self):
         resources = render()
         workload = daemonset(resources)

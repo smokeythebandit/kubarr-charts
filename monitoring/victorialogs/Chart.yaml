@@ -2,7 +2,7 @@ apiVersion: v2
 name: victorialogs
 description: VictoriaLogs - lightweight, high-performance log storage
 type: application
-version: 1.52.0+1
+version: 1.52.0+2
 appVersion: "1.52.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
@@ -18,5 +18,5 @@ annotations:
   kubarr.io/hidden: "true"
 dependencies:
   - name: kubarr-common
-    version: 0.3.2
+    version: 0.3.3
     repository: file://../../system/kubarr-common

@@ -130,6 +130,28 @@ spec:
           port: {{ $root.Values.exporter.port }}
         {{- end }}
     {{- end }}
+    {{- if and ($root.Values.networkPolicy.allowExporterIngress | default false) $exporterEnabled }}
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "kubarr-common.name" $root }}-exporter
+              app.kubernetes.io/instance: {{ $root.Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ $app.service.targetPort }}
+    {{- end }}
+    {{- if and (hasKey $root.Values "vpn") $root.Values.vpn.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubarr-backend
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kubarr-backend
+      ports:
+        - protocol: TCP
+          port: 8001
+    {{- end }}
   egress:
     - to:
         - namespaceSelector: {}

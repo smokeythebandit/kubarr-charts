@@ -37,6 +37,8 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+        - protocol: TCP
+          port: 9153
     # Allow scraping all app namespaces
     {{- range .Values.networkPolicy.scrapeNamespaces }}
     - to:

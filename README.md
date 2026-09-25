@@ -60,6 +60,24 @@ core and build metadata as the chart revision.
 
 ## Deployment Notes
 
+- VPN-enabled charts use the shared `kubarr-common` Gluetun sidecar, private state
+  directory, and backend-only control API policy. `vpn.firewallOutboundSubnets`
+  defaults to empty: broad RFC1918 bypasses can route a VPN provider's private
+  forwarding endpoint outside the tunnel. If an app must call in-cluster services
+  (for example, Sonarr calling qBittorrent), configure only the specific pod or
+  service CIDRs it needs on its Kubarr VPN provider, then redeploy the assigned
+  app. Existing providers retain their saved exceptions; review broad legacy
+  ranges before upgrading. NetworkPolicy egress alone does not create these
+  Gluetun routing exceptions.
+- Fluent Bit sends the `log` field as VictoriaLogs `_msg` for new Loki JSON
+  records. Older rows with the default missing-message placeholder remain until
+  retention expires.
+- Radarr and Sonarr allow their own exporter pod to reach the application HTTP
+  port through NetworkPolicy. VictoriaMetrics selects only each annotated Service
+  metrics port, avoids scraping those exporters twice via pod discovery, and can
+  reach CoreDNS metrics on TCP 9153. These rules do not expose the application
+  or metrics ports to unrelated namespaces.
+
 - Fluent Bit chart 5.1.1+2 stores tail positions in a node-local host directory
   (`/var/lib/fluent-bit`) instead of shared NFS. The old position database is not
   migrated, so logs may be replayed once on upgrade. The node-local directory

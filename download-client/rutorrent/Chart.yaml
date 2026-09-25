@@ -2,7 +2,7 @@ apiVersion: v2
 name: rutorrent
 description: Feature-rich BitTorrent client with powerful web interface
 type: application
-version: 3.10.0+2
+version: 3.10.0+3
 appVersion: "3.10"
 keywords:
   - rutorrent
@@ -25,5 +25,5 @@ annotations:
   kubarr.io/category: "download-client"
 dependencies:
   - name: kubarr-common
-    version: 0.3.2
+    version: 0.3.3
     repository: file://../../system/kubarr-common
