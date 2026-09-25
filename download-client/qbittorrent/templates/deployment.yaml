@@ -31,6 +31,22 @@ spec:
       serviceAccountName: {{ include "qbittorrent.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.vpn.enabled }}
+      initContainers:
+        - name: gluetun-tmp-permissions
+          image: "{{ .Values.vpn.image.repository }}:{{ .Values.vpn.image.tag }}"
+          imagePullPolicy: {{ .Values.vpn.image.pullPolicy }}
+          command: ["/bin/sh", "-c", "chmod 0700 /tmp/gluetun"]
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: gluetun-tmp
+              mountPath: /tmp/gluetun
+      {{- end }}
       containers:
         {{- if .Values.vpn.enabled }}
         # Gluetun VPN sidecar - routes all pod traffic through VPN
@@ -44,15 +60,20 @@ spec:
                 - ALL
               add:
                 - NET_ADMIN
+                - CHOWN
           volumeMounts:
             - name: dev-net-tun
               mountPath: /dev/net/tun
+            - name: gluetun-tmp
+              mountPath: /tmp/gluetun
           envFrom:
             - secretRef:
                 name: {{ .Values.vpn.secretName }}
           env:
+            {{- with .Values.vpn.firewallOutboundSubnets }}
             - name: FIREWALL_OUTBOUND_SUBNETS
-              value: "{{ .Values.vpn.firewallOutboundSubnets }}"
+              value: {{ . | quote }}
+            {{- end }}
             {{- if .Values.vpn.killSwitch }}
             - name: FIREWALL
               value: "on"
@@ -73,9 +94,12 @@ spec:
               value: "on"
             - name: PORT_FORWARD_ONLY
               value: "on"
-            {{- if .Values.vpn.portForwarding.upCommand }}
             - name: VPN_PORT_FORWARDING_UP_COMMAND
+            {{- if .Values.vpn.portForwarding.upCommand }}
               value: {{ .Values.vpn.portForwarding.upCommand | quote }}
+            {{- else }}
+              # Gluetun substitutes {{ "{{PORT}}" }}; retry while qBittorrent's WebUI starts.
+              value: {{ printf "/bin/sh -c 'i=0; until wget -q -T 5 -O /dev/null --post-data=\"json={\\\"listen_port\\\":{{PORT}}}\" http://127.0.0.1:%v/api/v2/app/setPreferences; do i=$((i+1)); [ \"$i\" -lt 30 ] || exit 1; sleep 2; done'" .Values.qbittorrent.service.targetPort | quote }}
             {{- end }}
             {{- end }}
           ports:
@@ -177,6 +201,8 @@ spec:
           hostPath:
             path: /dev/net/tun
             type: CharDevice
+        - name: gluetun-tmp
+          emptyDir: {}
         {{- end }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "qbittorrent.fullname" .)) | nindent 8 }}
         - name: init-scripts

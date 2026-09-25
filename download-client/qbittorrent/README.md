@@ -28,6 +28,30 @@ helm uninstall qbittorrent -n media
 
 The following table lists the configurable parameters of the qBittorrent chart and their default values.
 
+### VPN sidecar
+
+Set `vpn.enabled=true` and `vpn.secretName` to the name of the VPN credentials
+Secret to start Gluetun v3.41.3 alongside qBittorrent. Gluetun's `/tmp/gluetun`
+is a pod-local `emptyDir` initialized as root-only mode `0700`; it is recreated
+on every pod replacement. Gluetun retains `NET_ADMIN` and `CHOWN` after dropping all
+other Linux capabilities. The VPN requires a node with `/dev/net/tun` and a
+security policy permitting this device and these capabilities.
+
+`vpn.firewallOutboundSubnets` defaults to empty: no private network ranges
+bypass the VPN. If the workload must reach a cluster-local DNS resolver or
+another internal endpoint outside the tunnel, set this to the narrowest
+cluster-specific CIDR(s), such as the DNS service IP `/32`. Such exceptions
+route traffic outside the VPN; the cluster NetworkPolicy must also permit the
+destination. Avoid allowing entire RFC1918 ranges.
+
+With `vpn.portForwarding.enabled=true`, Gluetun POSTs the assigned `{{PORT}}`
+to the local qBittorrent Web API, retrying for up to 30 attempts while the
+WebUI starts. The callback uses `qbittorrent.service.targetPort` and can be
+overridden with `vpn.portForwarding.upCommand`. Ensure the local WebUI allows
+unauthenticated requests from `127.0.0.1` for this callback. No down callback
+changes qBittorrent's listening port: the kill switch blocks traffic when the
+VPN is down, and a future up callback replaces the stale port.
+
 ### Application Configuration
 
 | Parameter | Description | Default |
