@@ -1,0 +1,73 @@
+namespace:
+  name: scm-manager
+
+scm-manager:
+  replicaCount: 1
+  image:
+    repository: scmmanager/scm-manager
+    tag: "3.12.1"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    annotations: {}
+  # Kubarr forwards /scm-manager without stripping the prefix.
+  basePath: /scm-manager
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  # Optional automated first boot: Secret key initialPassword is only used
+  # when there is no admin account yet. Default uses a token in pod logs.
+  bootstrap:
+    existingSecret: ""
+    passwordKey: initialPassword
+    initialUser: scmadmin
+
+storage:
+  migrationConfirmed: false
+  home:
+    existingClaim: ""
+    storageClassName: "" # nonempty selects a dedicated PVC instead of managed NFS
+    size: 20Gi
+    subPath: "" # empty: development/scm-manager/<release>/home
+  media:
+    create: true
+    existingClaim: media-data
+    nfs: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: false
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+imagePullSecrets: []
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  ingressFrom: [openresty]
+  egressTo: []
+
+vpa:
+  enabled: false
+  updateMode: Auto

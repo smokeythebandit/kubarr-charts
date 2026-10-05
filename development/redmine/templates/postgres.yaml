@@ -1,0 +1,115 @@
+{{- if .Values.database.bundled.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "redmine.fullname" . }}-postgres
+  namespace: {{ .Values.namespace.name }}
+spec:
+  serviceName: {{ include "redmine.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "redmine.postgresSelector" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "redmine.postgresSelector" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext: {fsGroup: 999, seccompProfile: {type: RuntimeDefault}}
+      {{- if and (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      initContainers:
+        - name: prepare-database
+          image: busybox:1.37.0
+          command: [sh, -ec, 'mkdir -p -- "$1" && chown 999:999 -- "$1"', --, {{ printf "/nfs/%s" (include "redmine.dbSubPath" .) | quote }}]
+          securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
+          volumeMounts:
+            - {name: data, mountPath: /nfs}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: postgres
+          image: "{{ .Values.database.bundled.image.repository }}:{{ .Values.database.bundled.image.tag }}"
+          imagePullPolicy: {{ .Values.database.bundled.image.pullPolicy }}
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.database.username | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.database.name | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "redmine.credentialsSecret" . | quote }}
+                  key: {{ .Values.secrets.databasePasswordKey | quote }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          startupProbe:
+            exec:
+              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+          resources:
+            {{- toYaml .Values.database.bundled.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              {{- if and (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) }}
+              subPath: {{ include "redmine.dbSubPath" . | quote }}
+              {{- end }}
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir: {medium: Memory, sizeLimit: 128Mi}
+        {{- if or .Values.database.bundled.persistence.existingClaim (not .Values.database.bundled.persistence.storageClassName) }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default .Values.storage.media.existingClaim .Values.database.bundled.persistence.existingClaim | quote }}
+        {{- end }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}
+  {{- if and (not .Values.database.bundled.persistence.existingClaim) .Values.database.bundled.persistence.storageClassName }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.database.bundled.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.database.bundled.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redmine.fullname" . }}-postgres
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "redmine.postgresSelector" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+{{- end }}

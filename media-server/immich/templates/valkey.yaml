@@ -1,0 +1,52 @@
+{{- if .Values.cache.bundled.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "immich.fullname" . }}-valkey
+  namespace: {{ .Values.namespace.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "immich.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: valkey
+  template:
+    metadata:
+      labels:
+        {{- include "immich.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: valkey
+    spec:
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      containers:
+        - name: valkey
+          image: "{{ .Values.cache.bundled.image.repository }}:{{ .Values.cache.bundled.image.tag }}@{{ .Values.cache.bundled.image.digest }}"
+          imagePullPolicy: {{ .Values.cache.bundled.image.pullPolicy }}
+          command: [valkey-server]
+          args: ["--save", "", "--appendonly", "no"]
+          securityContext:
+            {{- include "immich.security" . | nindent 12 }}
+            runAsUser: 1000
+            runAsGroup: 1000
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec: {command: [valkey-cli, ping]}
+          resources:
+            {{- toYaml .Values.cache.bundled.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "immich.fullname" . }}-valkey
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    {{- include "immich.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+{{- end }}

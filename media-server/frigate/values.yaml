@@ -1,0 +1,93 @@
+namespace:
+  name: frigate
+
+frigate:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/blakeblackshear/frigate
+    tag: "0.18.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8971
+    targetPort: 8971
+    annotations: {}
+  basePath: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "4"
+      memory: 4Gi
+  timezone: Etc/UTC
+  # Secret keys must be named FRIGATE_*; Frigate substitutes these only in
+  # supported configuration fields. Never put camera/MQTT credentials in values.
+  existingSecret: ""
+
+# Seeded once when /config/config.yml does not exist. Subsequently edit through
+# Frigate's UI or on the local config PVC; Helm upgrades never overwrite it.
+# For initial custom configuration, set this BEFORE first installation.
+config: |
+  mqtt:
+    enabled: false
+  tls:
+    enabled: false
+  cameras:
+    dummy_camera:
+      enabled: false
+      ffmpeg:
+        inputs:
+          - path: rtsp://127.0.0.1:554/rtsp
+            roles:
+              - detect
+
+storage:
+  config:
+    existingClaim: ""
+    storageClassName: "" # cluster default must be local/block, never NFS (SQLite WAL)
+    size: 10Gi
+  media:
+    create: true
+    existingClaim: media-data
+    subPath: frigate
+    nfs: {}
+  shmSize: 128Mi
+  cacheSize: 1Gi # /tmp/cache recording segment staging, ephemeral RAM
+
+# Optional Kubernetes device plugin allocation. Configure ffmpeg.hwaccel_args
+# and/or detectors in Frigate config separately for the allocated hardware.
+gpu:
+  enabled: false
+  provider: intel
+  resourceName: ""
+  runtimeClassName: ""
+  supplementalGroups: []
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+imagePullSecrets: []
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  ingressFrom: [openresty]
+  egressTo: []
+  # Explicit private camera and MQTT broker network ranges (CIDRs).
+  privateEgressCIDRs: []
+
+vpa:
+  enabled: false
+  updateMode: Auto

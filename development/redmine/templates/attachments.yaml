@@ -1,0 +1,17 @@
+{{- if and (not .Values.storage.attachments.existingClaim) .Values.storage.attachments.storageClassName }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "redmine.fullname" . }}-files
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "redmine.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.storage.attachments.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.attachments.size }}
+{{- end }}

@@ -1,0 +1,43 @@
+{{- if and .Values.database.bundled.enabled (eq .Values.storage.media.existingClaim (printf "%s-postgres" (include "immich.fullname" .))) -}}
+{{- fail "PostgreSQL must not share the media claim" -}}
+{{- end -}}
+{{- if .Values.database.bundled.enabled -}}
+{{- $p := .Values.database.bundled.persistence -}}
+{{- if and $p.existingClaim (eq $p.existingClaim .Values.storage.media.existingClaim) -}}
+{{- fail "PostgreSQL existingClaim cannot be the Kubarr shared media claim" -}}
+{{- end -}}
+{{- if and (not $p.existingClaim) (contains "nfs" (lower $p.storageClassName)) -}}
+{{- fail "PostgreSQL storageClassName must not be NFS" -}}
+{{- end -}}
+{{- end -}}
+{{- if and (not .Values.database.bundled.enabled) (not .Values.database.existingSecret) -}}
+{{- fail "database.existingSecret is required for external PostgreSQL" -}}
+{{- end -}}
+{{- if not .Values.database.passwordKey -}}{{- fail "database.passwordKey is required" -}}{{- end -}}
+{{- if and .Values.machineLearning.enabled (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) -}}
+{{- $cachePath := include "immich.mlSubPath" . -}}
+{{- if or (eq $cachePath .Values.storage.media.subPath) (hasPrefix (printf "%s/" $cachePath) .Values.storage.media.subPath) (hasPrefix (printf "%s/" .Values.storage.media.subPath) $cachePath) }}{{ fail "machineLearning.cache.subPath must not overlap the media upload subPath" }}{{ end -}}
+{{- if not (regexMatch "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$" $cachePath) }}{{ fail "machineLearning.cache.subPath must be a safe relative directory" }}{{ end -}}
+{{- if and .Release.IsUpgrade (not .Values.storage.migrationConfirmed) (lookup "v1" "PersistentVolumeClaim" .Values.namespace.name (printf "%s-ml" (include "immich.fullname" .))) }}{{ fail "Old Immich model-cache PVC exists: migrate or discard cache before setting storage.migrationConfirmed=true" }}{{ end -}}
+{{- end -}}
+{{- if and .Values.cache.bundled.enabled .Values.cache.existingSecret -}}
+{{- fail "Bundled Valkey has no authentication; use an external cache for password authentication" -}}
+{{- end -}}
+{{- if and .Values.database.bundled.enabled (ne (int .Values.database.port) 5432) -}}
+{{- fail "Bundled PostgreSQL listens on port 5432; set database.port=5432" -}}
+{{- end -}}
+{{- if and .Values.cache.bundled.enabled (ne (int .Values.cache.port) 6379) -}}
+{{- fail "Bundled Valkey listens on port 6379; set cache.port=6379" -}}
+{{- end -}}
+{{- if ne (int .Values.immich.service.targetPort) 2283 -}}
+{{- fail "Immich listens on port 2283; set immich.service.targetPort=2283" -}}
+{{- end -}}
+{{- if ne (int .Values.immich.replicaCount) 1 -}}
+{{- fail "immich.replicaCount must be 1 (single server with shared upload storage)" -}}
+{{- end -}}
+{{- if ne .Values.immich.service.type "ClusterIP" -}}
+{{- fail "immich.service.type must be ClusterIP; use Kubarr's gateway" -}}
+{{- end -}}
+{{- if not .Values.storage.media.existingClaim -}}
+{{- fail "storage.media.existingClaim is required" -}}
+{{- end -}}

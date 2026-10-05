@@ -14,7 +14,7 @@
 app.kubernetes.io/name: {{ include "managed-nfs.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{- define "managed-nfs.selectorLabels" -}}

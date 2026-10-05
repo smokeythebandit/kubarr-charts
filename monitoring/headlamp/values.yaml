@@ -1,0 +1,50 @@
+namespace:
+  name: headlamp
+
+headlamp:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/headlamp-k8s/headlamp
+    tag: v0.45.0
+    pullPolicy: IfNotPresent
+  # Must match the gateway app name. The gateway preserves this path.
+  basePath: /headlamp
+  service:
+    type: ClusterIP
+    port: 4466
+    targetPort: 4466
+    annotations: {}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Upstream -in-cluster uses the pod token to discover the cluster. This
+# dedicated SA is unbound by default; each user logs in with their own token.
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+imagePullSecrets: []
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  ingressFrom: [openresty]
+  # Kubernetes API server addresses vary by cluster; restrict CIDRs for your
+  # cluster if known. Required for in-cluster discovery and user API requests.
+  apiServerCIDRs: [0.0.0.0/0]
+  apiServerPorts: [443, 6443]

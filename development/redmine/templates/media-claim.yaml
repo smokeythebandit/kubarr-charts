@@ -1,0 +1,3 @@
+{{- if or (and .Values.database.bundled.enabled (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName)) (and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName)) -}}
+{{ include "kubarr-common.storage.mediaClaim" (dict "root" .) | replace "metadata:\n" "metadata:\n  annotations:\n    helm.sh/resource-policy: keep\n" }}
+{{- end -}}

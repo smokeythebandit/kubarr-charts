@@ -1,0 +1,42 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kubarr-common.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- range .Values.networkPolicy.ingressFrom }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+      ports:
+        - protocol: TCP
+          port: 4466
+    {{- end }}
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    {{- range .Values.networkPolicy.apiServerCIDRs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . | quote }}
+      ports:
+        {{- range $.Values.networkPolicy.apiServerPorts }}
+        - {protocol: TCP, port: {{ . }}}
+        {{- end }}
+    {{- end }}
+{{- end }}

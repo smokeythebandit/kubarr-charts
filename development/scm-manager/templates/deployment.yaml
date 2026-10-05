@@ -1,0 +1,98 @@
+{{- $app := index .Values "scm-manager" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scm-manager.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "scm-manager.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "scm-manager.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "scm-manager.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      initContainers:
+        - name: prepare-home
+          image: busybox:1.37.0
+          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (include "scm-manager.homeSubPath" .) | quote }}]
+          securityContext: {runAsUser: 0, runAsNonRoot: false, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
+          volumeMounts:
+            - {name: home, mountPath: /nfs}
+      {{- end }}
+      containers:
+        - name: scm-manager
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: SCM_CONTEXT_PATH
+              value: /scm-manager
+            - name: SCM_FORWARD_HEADERS_ENABLED
+              value: "true"
+            - name: SCM_IDLE_TIMEOUT
+              value: "300000"
+            {{- if $app.bootstrap.existingSecret }}
+            - name: SCM_WEBAPP_INITIALPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $app.bootstrap.existingSecret | quote }}
+                  key: {{ $app.bootstrap.passwordKey | quote }}
+            - name: SCM_WEBAPP_INITIALUSER
+              value: {{ $app.bootstrap.initialUser | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /scm-manager/
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /scm-manager/
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /scm-manager/
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}
+          volumeMounts:
+            - name: home
+              mountPath: /var/lib/scm
+              {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}
+              subPath: {{ include "scm-manager.homeSubPath" . | quote }}
+              {{- end }}
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: {{ if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}{{ .Values.storage.media.existingClaim }}{{ else }}{{ default (include "scm-manager.claimName" .) .Values.storage.home.existingClaim }}{{ end }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

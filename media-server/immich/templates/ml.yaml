@@ -1,0 +1,95 @@
+{{- if .Values.machineLearning.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "immich.fullname" . }}-ml
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "immich.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      {{- include "immich.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ml
+  template:
+    metadata:
+      labels:
+        {{- include "immich.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ml
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext: {fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      {{- if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      initContainers:
+        - name: prepare-model-cache
+          image: busybox:1.37.0
+          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (include "immich.mlSubPath" .) | quote }}]
+          securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
+          volumeMounts:
+            - {name: models, mountPath: /nfs}
+      {{- end }}
+      containers:
+        - name: machine-learning
+          image: "{{ .Values.machineLearning.image.repository }}:{{ .Values.machineLearning.image.tag }}"
+          imagePullPolicy: {{ .Values.machineLearning.image.pullPolicy }}
+          securityContext:
+            {{- include "immich.security" . | nindent 12 }}
+            runAsUser: 1000
+            runAsGroup: 1000
+          ports:
+            - name: http
+              containerPort: 3003
+          startupProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: {port: http}
+          resources:
+            {{- toYaml .Values.machineLearning.resources | nindent 12 }}
+          volumeMounts:
+            - name: models
+              mountPath: /cache
+              {{- if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) }}
+              subPath: {{ include "immich.mlSubPath" . | quote }}
+              {{- end }}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) }}{{ .Values.storage.media.existingClaim }}{{ else }}{{ default (printf "%s-ml" (include "immich.fullname" .)) .Values.machineLearning.cache.existingClaim }}{{ end }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "immich.fullname" . }}-ml
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: http
+      port: 3003
+      targetPort: http
+  selector:
+    {{- include "immich.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ml
+{{- if and (not .Values.machineLearning.cache.existingClaim) .Values.machineLearning.cache.storageClassName }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "immich.fullname" . }}-ml
+  namespace: {{ .Values.namespace.name }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.machineLearning.cache.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.machineLearning.cache.size }}
+{{- end }}
+{{- end }}

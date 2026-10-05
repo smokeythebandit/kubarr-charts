@@ -1,0 +1,66 @@
+{{- if and .Values.database.bundled.enabled (not .Values.secrets.existingSecret) (not .Release.IsUpgrade) (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) -}}
+{{- $secret := lookup "v1" "Secret" .Values.namespace.name (include "redmine.credentialsSecret" .) -}}
+{{- $claim := lookup "v1" "PersistentVolumeClaim" .Values.namespace.name .Values.storage.media.existingClaim -}}
+{{- if and (not $secret) $claim -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "redmine.fullname" . }}-check-database
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: check-database
+          image: busybox:1.37.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          command:
+            - sh
+            - -ec
+            - |
+              path="$1"
+              candidate="$path"
+              while [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; do
+                candidate=$(dirname "$candidate")
+              done
+              if [ -L "$candidate" ] || [ ! -d "$candidate" ] || [ ! -r "$candidate" ] || [ ! -x "$candidate" ]; then
+                echo 'Cannot inspect Redmine database path; refusing to generate new credentials' >&2
+                exit 1
+              fi
+              if [ "$candidate" = "$path" ]; then
+                entries=$(ls -A "$path" && printf '.') || {
+                  echo 'Cannot inspect Redmine database path; refusing to generate new credentials' >&2
+                  exit 1
+                }
+                if [ "$entries" != '.' ]; then
+                  echo 'Redmine database path is not empty; restore the matching credentials before reinstalling' >&2
+                  exit 1
+                fi
+              fi
+            - --
+            - {{ printf "/nfs/%s" (include "redmine.dbSubPath" .) | quote }}
+          volumeMounts:
+            - name: media
+              mountPath: /nfs
+              readOnly: true
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.media.existingClaim | quote }}
+            readOnly: true
+{{- end -}}
+{{- end -}}

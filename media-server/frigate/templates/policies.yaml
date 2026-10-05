@@ -1,0 +1,20 @@
+{{ include "kubarr-common.networkPolicy" (dict "root" . "app" .Values.frigate) }}
+{{- if and .Values.networkPolicy.enabled .Values.networkPolicy.privateEgressCIDRs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "frigate.fullname" . }}-camera-egress
+  namespace: {{ .Values.namespace.name }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "frigate.selectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.networkPolicy.privateEgressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+{{- end }}

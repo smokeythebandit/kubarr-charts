@@ -1,0 +1,15 @@
+apiVersion: v2
+name: jenkins
+description: Jenkins LTS continuous integration controller
+type: application
+version: 2.568.3+4
+appVersion: "2.568.3"
+annotations:
+  kubarr.io/display-name: "Jenkins"
+  kubarr.io/icon: "🔧"
+  kubarr.io/category: "development"
+  kubarr.io/optional: "true"
+dependencies:
+  - name: kubarr-common
+    version: 0.3.4
+    repository: file://../../system/kubarr-common

@@ -1,0 +1,48 @@
+namespace:
+  name: jenkins
+
+jenkins:
+  image:
+    repository: jenkins/jenkins
+    tag: 2.568.3-jdk21
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    annotations: {}
+  # Kubarr forwards /jenkins unchanged when the service declares this base path.
+  basePath: /jenkins
+  env:
+    TZ: Etc/UTC
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "2", memory: 4Gi}
+
+storage:
+  migrationConfirmed: false
+  home:
+    size: 50Gi
+    storageClassName: "" # nonempty selects a dedicated PVC instead of managed NFS
+    existingClaim: "" # pre-created, writable by UID/GID 1000 if set
+    subPath: "" # empty: development/jenkins/<release>/home
+  media:
+    create: true
+    existingClaim: media-data
+    nfs: {}
+
+serviceAccount:
+  create: false
+  name: ""
+imagePullSecrets: []
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  ingressFrom: [openresty]
+  # Public update center, plugin mirrors and public Git hosts use shared public egress.
+  # Add only the namespaces needed for private in-cluster Git/proxy endpoints.
+  egressTo: []

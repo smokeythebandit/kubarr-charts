@@ -1,0 +1,19 @@
+{{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}
+{{ include "kubarr-common.storage.mediaClaim" (dict "root" .) | replace "metadata:\n" "metadata:\n  annotations:\n    helm.sh/resource-policy: keep\n" }}
+{{- else if not .Values.storage.home.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "jenkins.fullname" . }}-home
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "jenkins.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.storage.home.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.home.size }}
+{{- end }}

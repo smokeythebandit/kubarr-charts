@@ -1,0 +1,72 @@
+namespace:
+  name: redmine
+
+redmine:
+  image:
+    repository: docker.io/library/redmine
+    tag: 7.0.1-bookworm
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+    annotations: {}
+  # The gateway forwards /redmine unchanged; config.ru mounts Rails at this prefix.
+  basePath: /redmine
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+
+# Empty generates a retained Secret for bundled PostgreSQL and Rails sessions.
+# External PostgreSQL requires an explicit existingSecret.
+secrets:
+  existingSecret: ""
+  databasePasswordKey: database-password
+  sessionKey: secret-key-base
+
+database:
+  host: "" # required if bundled.enabled=false
+  port: 5432
+  username: redmine
+  name: redmine
+  bundled:
+    enabled: true
+    image:
+      repository: docker.io/library/postgres
+      tag: 16.15-bookworm
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    persistence:
+      existingClaim: ""
+      size: 10Gi
+      storageClassName: "" # empty uses the managed NFS share; nonempty uses dedicated PVC
+      subPath: "" # empty: development/redmine/<release>/postgres
+
+storage:
+  migrationConfirmed: false # set only after moving old local PVC data to NFS
+  attachments:
+    existingClaim: ""
+    size: 10Gi
+    storageClassName: "" # empty uses managed NFS; nonempty uses dedicated PVC
+    subPath: "" # empty: development/redmine/<release>/files
+  media:
+    create: true
+    existingClaim: media-data
+    nfs: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+imagePullSecrets: []
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  ingressFrom: [openresty]
+  egressTo: [] # namespaces for external private PostgreSQL or SMTP

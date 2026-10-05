@@ -1,0 +1,89 @@
+{{- $app := .Values.headlamp -}}
+{{- if ne (int $app.service.targetPort) 4466 -}}
+{{- fail "headlamp.service.targetPort must be 4466 (Headlamp's HTTP listener)" -}}
+{{- end -}}
+{{- if ne $app.basePath "/headlamp" -}}
+{{- fail "headlamp.basePath must be /headlamp for the Kubarr gateway" -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kubarr-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubarr-common.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: headlamp
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          args:
+            - -in-cluster
+            - -base-url={{ $app.basePath }}
+            - -plugins-dir=/headlamp/plugins
+          ports:
+            - name: http
+              containerPort: 4466
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          livenessProbe:
+            httpGet:
+              path: {{ $app.basePath }}/
+              port: http
+              scheme: HTTP
+            {{- toYaml $app.livenessProbe | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: {{ $app.basePath }}/
+              port: http
+              scheme: HTTP
+            {{- toYaml $app.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

@@ -7,6 +7,10 @@ metadata:
     {{- include "plex.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.plex.replicaCount }}
+  {{- if (default (dict) .Values.gpu).enabled }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "plex.selectorLabels" . | nindent 6 }}
@@ -20,13 +24,14 @@ spec:
       labels:
         {{- include "plex.selectorLabels" . | nindent 8 }}
     spec:
+      {{- include "kubarr-common.gpu.podSettings" . | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "plex.serviceAccountName" . }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
       {{- if .Values.vpn.enabled }}
       initContainers:
         {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
@@ -45,6 +50,7 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "plex.fullname" . }}-config
+          {{- include "kubarr-common.gpu.env" . | nindent 10 }}
           {{- if .Values.plex.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
@@ -66,7 +72,7 @@ spec:
             failureThreshold: {{ .Values.plex.readinessProbe.failureThreshold }}
           {{- end }}
           resources:
-            {{- toYaml .Values.plex.resources | nindent 12 }}
+            {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" .Values.plex.resources) | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
             {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" .Values.storage.media.transcodeMountPath "subPath" .Values.storage.media.transcodeSubPath) | nindent 12 }}

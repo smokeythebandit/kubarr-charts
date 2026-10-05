@@ -1,0 +1,17 @@
+{{- if not .Values.storage.config.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "frigate.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "frigate.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.storage.config.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.config.size }}
+{{- end }}

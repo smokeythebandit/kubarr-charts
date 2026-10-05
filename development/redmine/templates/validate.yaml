@@ -1,0 +1,31 @@
+{{- if and (not .Values.database.bundled.enabled) (not .Values.secrets.existingSecret) }}{{ fail "secrets.existingSecret is required for external PostgreSQL (including the session key)" }}{{ end }}
+{{- if not .Values.secrets.databasePasswordKey }}{{ fail "secrets.databasePasswordKey is required" }}{{ end }}
+{{- if not .Values.secrets.sessionKey }}{{ fail "secrets.sessionKey is required" }}{{ end }}
+{{- if eq .Values.secrets.sessionKey .Values.secrets.databasePasswordKey }}{{ fail "secrets.sessionKey and databasePasswordKey must differ" }}{{ end }}
+{{- if ne .Values.redmine.service.type "ClusterIP" }}{{ fail "redmine.service.type must be ClusterIP for gateway access" }}{{ end }}
+{{- if ne (int .Values.redmine.service.targetPort) 3000 }}{{ fail "Official Redmine image listens on port 3000" }}{{ end }}
+{{- if ne .Values.redmine.basePath "/redmine" }}{{ fail "redmine.basePath must be /redmine for the gateway and Rack mount to agree" }}{{ end }}
+{{- if and .Values.database.bundled.enabled (ne (int .Values.database.port) 5432) }}{{ fail "Bundled PostgreSQL listens on port 5432" }}{{ end }}
+{{- if and .Values.database.bundled.enabled (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) -}}
+{{- if not .Values.storage.media.existingClaim }}{{ fail "storage.media.existingClaim is required for managed NFS" }}{{ end -}}
+{{- $dbPath := include "redmine.dbSubPath" . -}}{{- $filesPath := include "redmine.filesSubPath" . -}}
+{{- if or (eq $dbPath $filesPath) (hasPrefix (printf "%s/" $dbPath) $filesPath) (hasPrefix (printf "%s/" $filesPath) $dbPath) }}{{ fail "Redmine database and attachments must use different NFS subPaths" }}{{ end -}}
+{{- if not .Values.storage.media.nfs.server -}}
+{{- $server := lookup "apps/v1" "Deployment" "kubarr-storage" "kubarr-managed-nfs" -}}
+{{- if $server -}}
+{{- $synced := false -}}
+{{- range $server.spec.template.spec.containers -}}{{- range .env -}}{{- if and (eq .name "SYNC") (eq .value "true") -}}{{- $synced = true -}}{{- end -}}{{- end -}}{{- end -}}
+{{- if not $synced }}{{ fail "Redmine PostgreSQL on managed NFS requires kubarr-managed-nfs SYNC=true; upgrade managed-nfs first" }}{{ end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Release.IsUpgrade (not .Values.storage.migrationConfirmed) -}}
+{{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) (lookup "v1" "PersistentVolumeClaim" .Values.namespace.name (printf "%s-files" (include "redmine.fullname" .))) }}{{ fail "Old Redmine attachments PVC exists: migrate data before switching to NFS, then set storage.migrationConfirmed=true" }}{{ end -}}
+{{- $legacyDB := lookup "v1" "PersistentVolumeClaim" .Values.namespace.name (printf "data-%s-postgres-0" (include "redmine.fullname" .)) -}}
+{{- if and .Values.database.bundled.enabled (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) $legacyDB (or (ne $legacyDB.status.phase "Pending") $legacyDB.spec.volumeName) }}{{ fail "Old Redmine database PVC exists: migrate data and preserve credentials before switching to NFS, then set storage.migrationConfirmed=true" }}{{ end -}}
+{{- end -}}
+{{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) (not (regexMatch "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$" (include "redmine.filesSubPath" .))) }}{{ fail "storage.attachments.subPath must be a safe relative directory" }}{{ end -}}
+{{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) (not .Values.storage.media.existingClaim) }}{{ fail "storage.media.existingClaim is required for managed NFS" }}{{ end -}}
+{{- if and .Values.database.bundled.enabled (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) (not (regexMatch "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$" (include "redmine.dbSubPath" .))) }}{{ fail "database.bundled.persistence.subPath must be a safe relative directory" }}{{ end -}}
+{{- if and .Values.database.bundled.enabled .Values.database.bundled.persistence.existingClaim (eq .Values.database.bundled.persistence.existingClaim (default (printf "%s-files" (include "redmine.fullname" .)) .Values.storage.attachments.existingClaim)) }}{{ fail "PostgreSQL must not share the attachments claim" }}{{ end }}
+{{- if and (not .Values.database.bundled.enabled) (not .Values.database.host) }}{{ fail "database.host is required for external PostgreSQL" }}{{ end }}

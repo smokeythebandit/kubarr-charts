@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "immich.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "immich.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.immich.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "immich.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "immich.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: immich
+          image: "{{ .Values.immich.image.repository }}:{{ .Values.immich.image.tag }}"
+          imagePullPolicy: {{ .Values.immich.image.pullPolicy }}
+          securityContext:
+            {{- include "immich.security" . | nindent 12 }}
+            runAsUser: 1000
+            runAsGroup: 1000
+          ports:
+            - name: http
+              containerPort: {{ .Values.immich.service.targetPort }}
+          env:
+            {{- include "immich.dbEnv" . | nindent 12 }}
+            {{- if .Values.machineLearning.enabled }}
+            - name: IMMICH_MACHINE_LEARNING_URL
+              value: {{ printf "http://%s-ml:3003" (include "immich.fullname" .) | quote }}
+            {{- end }}
+            {{- range $key, $value := .Values.immich.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet: {path: /api/server/ping, port: http}
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /api/server/ping, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/server/ping, port: http}
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.immich.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" "/data" "subPath" .Values.storage.media.subPath) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

@@ -1,0 +1,42 @@
+{{- include "kubarr-common.networkPolicy" (dict "root" . "app" .Values.redmine) }}
+{{- if and .Values.networkPolicy.enabled .Values.database.bundled.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "redmine.fullname" . }}-postgres
+  namespace: {{ .Values.namespace.name }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "redmine.postgresSelector" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "redmine.selector" . | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 5432}
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "redmine.fullname" . }}-database-egress
+  namespace: {{ .Values.namespace.name }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "redmine.selector" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "redmine.postgresSelector" . | nindent 14 }}
+              app.kubernetes.io/component: postgres
+      ports:
+        - {protocol: TCP, port: 5432}
+{{- end }}

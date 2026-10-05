@@ -16,13 +16,20 @@ CHARTS = sorted(
     for template in ROOT.glob("*/*/templates/networkpolicy.yaml")
     if '"kubarr-common.networkPolicy"' in template.read_text()
 )
+# These images listen on port 8080; their charts reject a different targetPort.
+FIXED_HTTP_PORTS = {"jenkins": 8080, "scm-manager": 8080}
 
 
-def render(chart, release, *values):
+def template(chart, release, *values):
     command = [os.environ.get("HELM", "helm"), "template", release, str(chart_input(chart))]
     for value in values:
         command.extend(["--set", value])
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    return subprocess.run(command, capture_output=True, text=True)
+
+
+def render(chart, release, *values):
+    result = template(chart, release, *values)
+    result.check_returncode()
     return [resource for resource in yaml.safe_load_all(result.stdout) if resource]
 
 
@@ -40,7 +47,7 @@ class NetworkPolicyTests(unittest.TestCase):
                     "custom-release",
                     (
                         f"{chart.name}.service.port=18080",
-                        f"{chart.name}.service.targetPort=18081",
+                        f"{chart.name}.service.targetPort={FIXED_HTTP_PORTS.get(chart.name, 18081)}",
                     ),
                 ),
             ]
@@ -60,6 +67,13 @@ class NetworkPolicyTests(unittest.TestCase):
                     self.assertEqual(len(deployments), 1)
                     policy, deployment = policies[0], deployments[0]
                     pod = deployment["spec"]["template"]
+                    services = [
+                        r for r in resources
+                        if r["kind"] == "Service"
+                        and r["spec"].get("selector") == deployment["spec"]["selector"]["matchLabels"]
+                        and any(p.get("name") == "http" for p in r["spec"].get("ports", []))
+                    ]
+                    self.assertEqual(len(services), 1)
                     selector = policy["spec"]["podSelector"]["matchLabels"]
                     self.assertEqual(selector, deployment["spec"]["selector"]["matchLabels"])
                     self.assertEqual(selector["app.kubernetes.io/instance"], release)
@@ -74,6 +88,12 @@ class NetworkPolicyTests(unittest.TestCase):
                         for container in pod["spec"]["containers"]
                         for port in container.get("ports", [])
                     }
+                    http_service_port = next(p for p in services[0]["spec"]["ports"] if p["name"] == "http")
+                    self.assertEqual(ports.get(http_service_port["targetPort"], http_service_port["targetPort"]), ports["http"])
+                    if chart.name in FIXED_HTTP_PORTS:
+                        self.assertEqual(ports["http"], FIXED_HTTP_PORTS[chart.name])
+                        if values and values[0] == f"{chart.name}.service.port=18080":
+                            self.assertEqual(http_service_port["port"], 18080)
                     self.assertEqual(set(policy["spec"]["policyTypes"]), {"Ingress", "Egress"})
                     self.assertTrue(policy["spec"]["ingress"])
                     for rule in policy["spec"]["ingress"]:
@@ -82,6 +102,15 @@ class NetworkPolicyTests(unittest.TestCase):
                             for port in rule["ports"]
                         }
                         self.assertIn(ports["http"], allowed_ports)
+
+    def test_fixed_http_ports_reject_unsupported_override(self):
+        for chart in CHARTS:
+            if chart.name not in FIXED_HTTP_PORTS:
+                continue
+            with self.subTest(chart=chart.name):
+                result = template(chart, "custom-release", f"{chart.name}.service.targetPort=18081")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"{chart.name}.service.targetPort", result.stderr)
 
     def test_disabled(self):
         for chart in CHARTS:

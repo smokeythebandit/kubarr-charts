@@ -1,0 +1,103 @@
+{{- if .Values.database.bundled.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "immich.fullname" . }}-postgres
+  namespace: {{ .Values.namespace.name }}
+spec:
+  serviceName: {{ include "immich.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "immich.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "immich.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext: {fsGroup: 999, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: postgres
+          image: "{{ .Values.database.bundled.image.repository }}:{{ .Values.database.bundled.image.tag }}@{{ .Values.database.bundled.image.digest }}"
+          imagePullPolicy: {{ .Values.database.bundled.image.pullPolicy }}
+          securityContext:
+            {{- include "immich.security" . | nindent 12 }}
+            runAsUser: 999
+            runAsGroup: 999
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.database.username | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.database.name | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "immich.dbSecret" . | quote }}
+                  key: {{ .Values.database.passwordKey | quote }}
+            - name: POSTGRES_INITDB_ARGS
+              value: "--data-checksums"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: DB_STORAGE_TYPE
+              value: {{ .Values.database.bundled.storageType | quote }}
+          startupProbe:
+            exec:
+              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+          resources:
+            {{- toYaml .Values.database.bundled.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+        {{- with .Values.database.bundled.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ . | quote }}
+        {{- end }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}
+  {{- if not .Values.database.bundled.persistence.existingClaim }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.database.bundled.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.database.bundled.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "immich.fullname" . }}-postgres
+  namespace: {{ .Values.namespace.name }}
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "immich.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+{{- end }}

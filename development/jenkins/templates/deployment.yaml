@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jenkins.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "jenkins.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "jenkins.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "jenkins.selectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      initContainers:
+        - name: prepare-home
+          image: busybox:1.37.0
+          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (include "jenkins.homeSubPath" .) | quote }}]
+          securityContext: {runAsUser: 0, runAsNonRoot: false, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
+          volumeMounts:
+            - {name: home, mountPath: /nfs}
+      {{- end }}
+      containers:
+        - name: jenkins
+          image: "{{ .Values.jenkins.image.repository }}:{{ .Values.jenkins.image.tag }}"
+          imagePullPolicy: {{ .Values.jenkins.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            runAsNonRoot: true
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: JENKINS_OPTS
+              value: "--prefix=/jenkins"
+            {{- range $name, $value := .Values.jenkins.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /jenkins/login
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 90
+          readinessProbe:
+            httpGet:
+              path: /jenkins/login
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /jenkins/login
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.jenkins.resources | nindent 12 }}
+          volumeMounts:
+            - name: home
+              mountPath: /var/jenkins_home
+              {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}
+              subPath: {{ include "jenkins.homeSubPath" . | quote }}
+              {{- end }}
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+              claimName: {{ if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}{{ .Values.storage.media.existingClaim }}{{ else }}{{ default (printf "%s-home" (include "jenkins.fullname" .)) .Values.storage.home.existingClaim }}{{ end }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

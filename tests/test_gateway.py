@@ -39,6 +39,58 @@ class GatewayTests(unittest.TestCase):
             raise AssertionError("Catch-all access block not found")
         cls.config = config
         cls.access_lua = match.group(2)
+        api_block = config.split("location /api/ {", 1)[1]
+        api_match = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", api_block, re.M | re.S)
+        if api_match is None:
+            raise AssertionError("API route access block not found")
+        cls.api_access_lua = api_match.group(2)
+
+    def test_api_host_routing_preserves_kubarr_login_and_denies_unauthorized_apps(self):
+        script = r'''
+local route = {status = 404, header = {}}
+local captured = 0
+local exit_status = nil
+ngx = {
+  HTTP_OK = 200, HTTP_NO_CONTENT = 204, HTTP_NOT_FOUND = 404,
+  HTTP_UNAUTHORIZED = 401, HTTP_FORBIDDEN = 403, HTTP_INTERNAL_SERVER_ERROR = 500,
+  var = {host = "photos.localhost", uri = "/api/server/config", api_upstream = "http://kubarr_api"},
+  exit = function(status) exit_status = status end,
+  location = {capture = function(uri, options)
+    captured = captured + 1
+    assert(uri == "/_kubarr_route_lookup")
+    assert(options.args.host == ngx.var.host and options.args.path == ngx.var.uri)
+    return route
+  end}
+}
+'''
+        script += "\nlocal function access()\n" + self.api_access_lua + "\nend\n"
+        script += r'''
+ngx.var.uri = "/api/system/health"
+access()
+assert(captured == 0 and ngx.var.api_upstream == "http://kubarr_api")
+ngx.var.host = "localhost"
+ngx.var.uri = "/api/users/me"
+access()
+assert(captured == 1 and ngx.var.api_upstream == "http://kubarr_api")
+ngx.var.host = "photos.localhost"
+ngx.var.uri = "/api/server/config"
+access()
+assert(captured == 2 and ngx.var.api_upstream == "http://kubarr_api")
+route = {status = 204, header = {["x-kubarr-route-mode"] = "exact_host", ["x-kubarr-upstream"] = "http://immich:2283"}}
+ngx.var.uri = "/api/users/me"
+access()
+assert(captured == 3 and ngx.var.api_upstream == "http://immich:2283")
+route = {status = 403, header = {}}
+access()
+assert(exit_status == 403)
+'''
+        result = subprocess.run(["luajit", "-"], input=script, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_app_404_does_not_fall_back_to_kubarr_login(self):
+        self.assertIn('error_page 404 = @app_or_frontend_index;', self.config)
+        self.assertIn('if ngx.var.app_name ~= "" then\n', self.config)
+        self.assertIn('return ngx.exec("@frontend_index")', self.config)
 
     def check_gateway(self, setup="", outcome="proxy", captures=1, checks=""):
         script = r'''

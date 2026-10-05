@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "frigate.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "frigate.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "frigate.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "frigate.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- include "kubarr-common.gpu.podSettings" . | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
+      initContainers:
+        - name: seed-config
+          image: busybox:1.37.0
+          command: [sh, -ec, 'if [ ! -e /config/config.yml ] && [ ! -e /config/config.yaml ]; then cp /seed/config.yml /config/config.yml; fi']
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: seed
+              mountPath: /seed
+              readOnly: true
+      containers:
+        - name: frigate
+          image: "{{ .Values.frigate.image.repository }}:{{ .Values.frigate.image.tag }}"
+          imagePullPolicy: {{ .Values.frigate.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8971
+              protocol: TCP
+          env:
+            - name: TZ
+              value: {{ .Values.frigate.timezone | quote }}
+            {{- if and .Values.gpu.enabled (eq .Values.gpu.provider "nvidia") }}
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: video,utility
+            {{- end }}
+          {{- with .Values.frigate.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . | quote }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" .Values.frigate.resources) | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: media
+              mountPath: /media/frigate
+              subPath: {{ .Values.storage.media.subPath | quote }}
+            - name: shm
+              mountPath: /dev/shm
+            - name: cache
+              mountPath: /tmp/cache
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-config" (include "frigate.fullname" .)) .Values.storage.config.existingClaim }}
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.media.existingClaim }}
+        - name: seed
+          configMap:
+            name: {{ include "frigate.fullname" . }}-seed
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.storage.shmSize }}
+        - name: cache
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.storage.cacheSize }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

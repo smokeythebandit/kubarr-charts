@@ -35,12 +35,11 @@
       "groupName": "monitoring stack"
     },
     {
-      "description": "Group Kubernetes Dashboard updates",
+      "description": "Group Headlamp updates",
       "matchPackageNames": [
-        "kubernetesui/dashboard",
-        "kubernetesui/metrics-scraper"
+        "headlamp-k8s/headlamp"
       ],
-      "groupName": "kubernetes-dashboard"
+      "groupName": "headlamp"
     }
   ]
 }

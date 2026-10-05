@@ -1,0 +1,1 @@
+{{ include "kubarr-common.networkPolicy" (dict "root" . "app" (index .Values "scm-manager")) }}

@@ -14,7 +14,7 @@ nfs:
   exportPath: /exports
   permitted: "*"
   readOnly: false
-  sync: false
+  sync: true # acknowledge writes only after stable storage; required for PostgreSQL
   hostNetwork: true
 
 persistence:

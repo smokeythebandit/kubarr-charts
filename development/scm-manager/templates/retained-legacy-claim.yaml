@@ -1,0 +1,15 @@
+{{- if .Release.IsUpgrade -}}
+{{- $name := include "scm-manager.claimName" . -}}
+{{- $old := lookup "v1" "PersistentVolumeClaim" .Values.namespace.name $name -}}
+{{- if and $old (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.namespace.name }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  {{- toYaml $old.spec | nindent 2 }}
+{{- end -}}
+{{- end -}}

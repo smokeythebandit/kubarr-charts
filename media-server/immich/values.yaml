@@ -1,0 +1,103 @@
+namespace:
+  name: immich
+
+immich:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/immich-app/immich-server
+    tag: v3.2.2
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 2283
+    targetPort: 2283
+    annotations: {}
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 4Gi}
+  env:
+    TZ: Etc/UTC
+  basePath: ""
+
+machineLearning:
+  enabled: true
+  image:
+    repository: ghcr.io/immich-app/immich-machine-learning
+    tag: v3.2.2
+    pullPolicy: IfNotPresent
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 4Gi}
+  cache:
+    size: 10Gi
+    # Empty uses the cluster default; choose a suitable persistent StorageClass.
+    storageClassName: ""
+    existingClaim: ""
+    subPath: "" # empty: media-server/immich/<release>/models
+
+# Empty uses a generated, retained Secret for bundled PostgreSQL.
+# External databases require an explicitly supplied Secret.
+database:
+  existingSecret: ""
+  passwordKey: DB_PASSWORD
+  host: "" # external PostgreSQL hostname when bundled.enabled=false
+  port: 5432
+  username: immich
+  name: immich
+  bundled:
+    enabled: true
+    image:
+      repository: ghcr.io/immich-app/postgres
+      tag: 14-vectorchord0.4.3-pgvectors0.2.0
+      digest: sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+      pullPolicy: IfNotPresent
+    storageType: SSD # HDD if using local spinning disk
+    resources:
+      requests: {cpu: 250m, memory: 2Gi}
+      limits: {cpu: "2", memory: 3Gi}
+    persistence:
+      existingClaim: ""
+      size: 10Gi
+      # Cluster default must be local/block, never Kubarr media-data/NFS.
+      storageClassName: ""
+
+cache:
+  bundled:
+    enabled: true
+    image:
+      repository: docker.io/valkey/valkey
+      tag: "9"
+      digest: sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf
+      pullPolicy: IfNotPresent
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  host: "" # external Redis/Valkey hostname when bundled.enabled=false
+  port: 6379
+  # Optional external authentication. Secret must contain REDIS_PASSWORD.
+  existingSecret: ""
+
+storage:
+  migrationConfirmed: false # model cache only; PostgreSQL remains local
+  media:
+    create: true
+    existingClaim: media-data
+    nfs: {}
+    # The entire upload root must be writable and persistent, including
+    # library, upload, profile, thumbs, encoded-video and backups.
+    subPath: immich
+
+serviceAccount:
+  create: true
+  name: immich
+  annotations: {}
+imagePullSecrets: []
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  ingressFrom: [openresty]
+  egressTo: [] # extra namespaces for external database/cache endpoints

@@ -80,6 +80,18 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
+# Opt-in hardware transcoding; requires a device plugin advertising the selected
+# resource on the node. No host device mounts or privileged access are added.
+gpu:
+  enabled: false
+  provider: intel  # intel, nvidia, or amd
+  # Empty uses gpu.intel.com/i915 (intel) or nvidia.com/gpu (nvidia).
+  # Set gpu.intel.com/xe for Xe, nvidia.com/gpu.shared for NVIDIA time-slicing,
+  # or the resource advertised by your prepared shared DRM plugin for AMD.
+  resourceName: ""
+  runtimeClassName: ""  # Optional, e.g. nvidia; omit if the device plugin needs none
+  supplementalGroups: []  # Optional numeric render/video device group IDs
+
 # Service Account
 serviceAccount:
   create: true

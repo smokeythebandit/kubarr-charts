@@ -1,0 +1,14 @@
+apiVersion: v2
+name: redmine
+description: Redmine project and issue tracking
+type: application
+version: 7.0.1+5
+appVersion: "7.0.1"
+annotations:
+  kubarr.io/display-name: "Redmine"
+  kubarr.io/icon: "📋"
+  kubarr.io/category: "development"
+dependencies:
+  - name: kubarr-common
+    version: 0.3.4
+    repository: file://../../system/kubarr-common

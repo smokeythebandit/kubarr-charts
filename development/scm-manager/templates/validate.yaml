@@ -1,0 +1,11 @@
+{{- $app := index .Values "scm-manager" -}}
+{{- if ne (int $app.replicaCount) 1 }}{{ fail "scm-manager.replicaCount must be 1 (single writer for SCM_HOME)" }}{{ end -}}
+{{- if ne (int $app.service.targetPort) 8080 }}{{ fail "scm-manager.service.targetPort must be 8080" }}{{ end -}}
+{{- if ne $app.service.type "ClusterIP" }}{{ fail "scm-manager.service.type must be ClusterIP" }}{{ end -}}
+{{- if ne $app.basePath "/scm-manager" }}{{ fail "scm-manager.basePath must be /scm-manager for Kubarr gateway routing" }}{{ end -}}
+{{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) -}}
+{{- if not .Values.storage.media.existingClaim }}{{ fail "storage.media.existingClaim is required for managed NFS" }}{{ end -}}
+{{- if not (regexMatch "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$" (include "scm-manager.homeSubPath" .)) }}{{ fail "storage.home.subPath must be a safe relative directory" }}{{ end -}}
+{{- if and .Release.IsUpgrade (not .Values.storage.migrationConfirmed) (lookup "v1" "PersistentVolumeClaim" .Values.namespace.name (include "scm-manager.claimName" .)) }}{{ fail "Old SCM-Manager home PVC exists: migrate data to NFS before setting storage.migrationConfirmed=true" }}{{ end -}}
+{{- end -}}
+{{- if and $app.bootstrap.existingSecret (not $app.bootstrap.passwordKey) }}{{ fail "scm-manager.bootstrap.passwordKey is required with existingSecret" }}{{ end -}}

@@ -182,7 +182,13 @@ spec:
 {{- end }}
 
 {{- define "kubarr-common.scheduling" -}}
-{{- with .Values.nodeSelector }}
+{{- $nodeSelector := dict -}}
+{{- range $key, $value := .Values.nodeSelector -}}
+{{- if ne $value nil -}}
+{{- $_ := set $nodeSelector $key $value -}}
+{{- end -}}
+{{- end -}}
+{{- with $nodeSelector }}
 nodeSelector:
   {{- toYaml . | nindent 2 }}
 {{- end }}
