@@ -113,17 +113,18 @@ podAnnotations: {}
 # Image pull secrets
 imagePullSecrets: []
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts:
+    - {name: transcode, source: transcode/plex, target: /transcode, mode: read-write}
+    - {name: library, source: media, target: /data, mode: read}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mountPath: /data
-    configMountPath: /config
-    configSubPath: config/plex
-    transcodeMountPath: /transcode
-    transcodeSubPath: transcode/plex
-    dataSubPath: media
-  readOnly: true  # Plex only reads media
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN

@@ -7,6 +7,8 @@ metadata:
     {{- include "deluge.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.deluge.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "deluge.selectorLabels" . | nindent 6 }}
@@ -68,7 +70,7 @@ spec:
             {{- toYaml .Values.deluge.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" "/downloads" "subPath" .Values.storage.media.downloadsSubPath) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/config" "/custom-cont-init.d/enable-label-plugin.sh")) | nindent 12 }}
             - name: setup-scripts
               mountPath: /custom-cont-init.d/enable-label-plugin.sh
               subPath: enable-label-plugin.sh

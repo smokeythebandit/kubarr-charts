@@ -17,6 +17,7 @@ nfs:
   sync: true # acknowledge writes only after stable storage; required for PostgreSQL
   hostNetwork: true
 
+# Bootstrap backing PVC: the NFS server cannot mount its own export.
 persistence:
   claimName: managed-nfs-data
   size: 1Ti

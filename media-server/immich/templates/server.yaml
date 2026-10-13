@@ -65,8 +65,12 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.immich.resources | nindent 12 }}
+          {{- if .Values.storage.mounts }}
           volumeMounts:
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" "/data" "subPath" .Values.storage.media.subPath) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+          {{- end }}
+      {{- if .Values.storage.mounts }}
       volumes:
         {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+      {{- end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

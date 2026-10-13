@@ -13,7 +13,8 @@ This Helm chart deploys qBittorrent, a free and open-source BitTorrent client wi
 To install the chart with the release name `qbittorrent`:
 
 ```bash
-helm install qbittorrent charts/qbittorrent -n media --create-namespace
+helm dependency build --skip-refresh download-client/qbittorrent
+helm install qbittorrent download-client/qbittorrent -n qbittorrent --create-namespace --set namespace.create=false
 ```
 
 ## Uninstalling the Chart
@@ -58,7 +59,7 @@ VPN is down, and a future up callback replaces the stale port.
 |-----------|-------------|---------|
 | `qbittorrent.replicaCount` | Number of replicas | `1` |
 | `qbittorrent.image.repository` | Image repository | `linuxserver/qbittorrent` |
-| `qbittorrent.image.tag` | Image tag | `latest` |
+| `qbittorrent.image.tag` | Image tag | `5.2.3` |
 | `qbittorrent.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `qbittorrent.service.type` | Service type | `ClusterIP` |
 | `qbittorrent.service.port` | Service port | `8080` |
@@ -76,36 +77,39 @@ VPN is down, and a future up callback replaces the stale port.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `qbittorrent.resources.requests.cpu` | CPU request | `200m` |
+| `qbittorrent.resources.requests.cpu` | CPU request | `250m` |
 | `qbittorrent.resources.requests.memory` | Memory request | `512Mi` |
-| `qbittorrent.resources.limits.cpu` | CPU limit | `2000m` |
+| `qbittorrent.resources.limits.cpu` | CPU limit | unset |
 | `qbittorrent.resources.limits.memory` | Memory limit | `2Gi` |
 
 ### Persistence
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `persistence.config.enabled` | Enable config persistence | `true` |
-| `persistence.config.size` | Config volume size | `1Gi` |
-| `persistence.config.storageClass` | Storage class | `""` (default) |
-| `persistence.downloads.enabled` | Enable downloads persistence | `true` |
-| `persistence.downloads.size` | Downloads volume size | `200Gi` |
-| `persistence.downloads.storageClass` | Storage class | `""` (default) |
+| `storage.config.create` | Create private config PVC | `true` |
+| `storage.config.size` | Private config claim size | `5Gi` |
+| `storage.config.storageClassName` | Config StorageClass (empty uses cluster default) | `""` |
+| `storage.media.existingClaim` | Shared NFS claim | `media-data` |
+| `storage.mounts` | Explicit NFS directories (default own downloads at `/downloads`) | See `values.yaml` |
+
+For an installed release, first migrate old `config/qbittorrent` into the
+private config claim and verify it; then follow
+[the breaking storage migration](../../STORAGE-MIGRATION.md) before upgrading.
 
 ## Accessing qBittorrent
 
 ### Default Credentials
 
-The default username and password for qBittorrent are:
-- **Username**: `admin`
-- **Password**: `adminadmin`
+The default username is `admin`. qBittorrent generates a temporary Web UI
+password on first boot; retrieve it from the container logs. No static
+password is provided by this chart.
 
 **IMPORTANT**: Change the default password immediately after first login!
 
 ### Port Forward (Local Access)
 
 ```bash
-kubectl port-forward -n media svc/qbittorrent 8080:8080
+kubectl port-forward -n qbittorrent svc/qbittorrent 8080:8080
 ```
 
 Then access qBittorrent at: http://localhost:8080
@@ -115,9 +119,8 @@ Then access qBittorrent at: http://localhost:8080
 To upgrade the chart:
 
 ```bash
-helm upgrade qbittorrent charts/qbittorrent -n media
+helm upgrade qbittorrent download-client/qbittorrent -n qbittorrent
 ```
-
 ## Integration with Kubarr Dashboard
 
 This chart is designed to work seamlessly with the Kubarr dashboard. The Kubarr dashboard can:
@@ -151,22 +154,22 @@ Both volumes use PersistentVolumeClaims and will persist data across pod restart
 
 ### Check pod status
 ```bash
-kubectl get pods -n media -l app=qbittorrent
+kubectl get pods -n qbittorrent -l app=qbittorrent
 ```
 
 ### View logs
 ```bash
-kubectl logs -n media -l app=qbittorrent
+kubectl logs -n qbittorrent -l app=qbittorrent
 ```
 
 ### Describe pod
 ```bash
-kubectl describe pod -n media -l app=qbittorrent
+kubectl describe pod -n qbittorrent -l app=qbittorrent
 ```
 
 ### Check PVC status
 ```bash
-kubectl get pvc -n media
+kubectl get pvc -n qbittorrent
 ```
 
 ## License

@@ -1,1 +1,4 @@
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.mounts) -}}
+{{- if ne (len .Values.storage.mounts) 1 }}{{ fail "system PostgreSQL requires one explicit persistent NFS data mount" }}{{ end -}}
+{{- if or (ne (index .Values.storage.mounts 0).target "/var/lib/postgresql/data") (ne (index .Values.storage.mounts 0).mode "read-write") }}{{ fail "system PostgreSQL requires a writable /var/lib/postgresql/data mount" }}{{ end -}}
 {{- include "kubarr-common.storage.mediaClaim" (dict "root" .) }}

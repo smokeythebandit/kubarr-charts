@@ -43,6 +43,8 @@ config: |
               - detect
 
 storage:
+  mounts:
+    - {name: recordings, source: frigate, target: /media/frigate, mode: read-write}
   config:
     existingClaim: ""
     storageClassName: "" # cluster default must be local/block, never NFS (SQLite WAL)
@@ -50,7 +52,6 @@ storage:
   media:
     create: true
     existingClaim: media-data
-    subPath: frigate
     nfs: {}
   shmSize: 128Mi
   cacheSize: 1Gi # /tmp/cache recording segment staging, ephemeral RAM

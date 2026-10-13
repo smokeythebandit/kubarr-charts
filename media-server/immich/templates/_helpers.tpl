@@ -2,7 +2,6 @@
 {{- define "immich.labels" -}}{{ include "kubarr-common.labels" . }}{{- end }}
 {{- define "immich.selectorLabels" -}}{{ include "kubarr-common.selectorLabels" . }}{{- end }}
 {{- define "immich.dbSecret" -}}{{ default (printf "%s-db" (include "immich.fullname" .)) .Values.database.existingSecret }}{{- end }}
-{{- define "immich.mlSubPath" -}}{{ default (printf "media-server/immich/%s/models" (include "immich.fullname" .)) .Values.machineLearning.cache.subPath }}{{- end }}
 {{- define "immich.dbHost" -}}
 {{- if .Values.database.bundled.enabled -}}{{ include "immich.fullname" . }}-postgres{{- else -}}{{ required "database.host is required when bundled PostgreSQL is disabled" .Values.database.host }}{{- end -}}
 {{- end }}

@@ -7,6 +7,8 @@ metadata:
     {{- include "radarr.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.radarr.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "radarr.selectorLabels" . | nindent 6 }}
@@ -118,8 +120,7 @@ spec:
             {{- toYaml .Values.radarr.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" .Values.storage.media.mediaMountPath "subPath" .Values.storage.media.mediaSubPath) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" .Values.storage.media.downloadsMountPath "subPath" .Values.storage.media.downloadsSubPath) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/config" "/custom-services.d/setup-downloadclients" "/custom-services.d/setup-indexers")) | nindent 12 }}
             - name: setup-scripts
               mountPath: /custom-services.d/setup-downloadclients
               subPath: setup-downloadclients.sh

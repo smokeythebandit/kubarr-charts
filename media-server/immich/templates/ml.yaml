@@ -1,4 +1,9 @@
 {{- if .Values.machineLearning.enabled }}
+{{- if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) -}}
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.workloads.machineLearning.mounts "label" "storage.workloads.machineLearning.mounts" "reservedPaths" (list "/nfs")) -}}
+{{- if ne (len .Values.storage.workloads.machineLearning.mounts) 1 }}{{ fail "Immich NFS model cache requires one mount at /cache" }}{{ end -}}
+{{- if or (ne (index .Values.storage.workloads.machineLearning.mounts 0).target "/cache") (ne (index .Values.storage.workloads.machineLearning.mounts 0).mode "read-write") }}{{ fail "Immich model cache requires writable /cache" }}{{ end -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,10 +32,10 @@ spec:
       initContainers:
         - name: prepare-model-cache
           image: busybox:1.37.0
-          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (include "immich.mlSubPath" .) | quote }}]
+          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (index .Values.storage.workloads.machineLearning.mounts 0).source | quote }}]
           securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
           volumeMounts:
-            - {name: models, mountPath: /nfs}
+            - {name: media, mountPath: /nfs} # explicit bootstrap root access to create the model subdirectory
       {{- end }}
       containers:
         - name: machine-learning
@@ -52,13 +57,13 @@ spec:
           resources:
             {{- toYaml .Values.machineLearning.resources | nindent 12 }}
           volumeMounts:
-            - name: models
-              mountPath: /cache
-              {{- if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) }}
-              subPath: {{ include "immich.mlSubPath" . | quote }}
-              {{- end }}
+            {{- if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "mounts" .Values.storage.workloads.machineLearning.mounts) | nindent 12 }}
+            {{- else }}
+            - {name: models, mountPath: /cache}
+            {{- end }}
       volumes:
-        - name: models
+        - name: {{ if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) }}media{{ else }}models{{ end }}
           persistentVolumeClaim:
             claimName: {{ if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) }}{{ .Values.storage.media.existingClaim }}{{ else }}{{ default (printf "%s-ml" (include "immich.fullname" .)) .Values.machineLearning.cache.existingClaim }}{{ end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

@@ -92,14 +92,12 @@ spec:
           resources:
             {{- toYaml .Values.victorialogs.resources | nindent 12 }}
           volumeMounts:
-            - name: data
-              mountPath: {{ .Values.victorialogs.storagePath }}
-              subPath: {{ .Values.storage.media.dataSubPath }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/tmp")) | nindent 12 }}
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: {{ include "kubarr-common.storage.mediaClaimName" (dict "root" .) | default (printf "%s-data" (include "victorialogs.fullname" .)) }}
+        {{- if .Values.storage.mounts }}
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+        {{- end }}
         - name: tmp
           emptyDir: {}

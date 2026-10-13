@@ -33,7 +33,6 @@ machineLearning:
     # Empty uses the cluster default; choose a suitable persistent StorageClass.
     storageClassName: ""
     existingClaim: ""
-    subPath: "" # empty: media-server/immich/<release>/models
 
 # Empty uses a generated, retained Secret for bundled PostgreSQL.
 # External databases require an explicitly supplied Secret.
@@ -79,13 +78,18 @@ cache:
 
 storage:
   migrationConfirmed: false # model cache only; PostgreSQL remains local
+  mounts:
+    - {name: uploads, source: immich, target: /data, mode: read-write}
+  workloads:
+    machineLearning:
+      mounts:
+        - {name: models, source: media-server/immich/immich/models, target: /cache, mode: read-write}
   media:
     create: true
     existingClaim: media-data
     nfs: {}
     # The entire upload root must be writable and persistent, including
     # library, upload, profile, thumbs, encoded-video and backups.
-    subPath: immich
 
 serviceAccount:
   create: true

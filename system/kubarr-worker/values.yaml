@@ -19,9 +19,9 @@ database:
   serviceName: kubarr-db-rw
   secretName: kubarr-db-app
 storage:
+  mounts: [] # worker lifecycle needs no NFS; storage-browser workflows can explicitly mount the root
   media:
     existingClaim: media-data
-  mountPath: /data
 serviceAccountName: kubarr
 serviceAccount:
   create: true

@@ -31,13 +31,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
-        {{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+        {{- if and .Values.storage.mounts (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
         - name: prepare-files
           image: busybox:1.37.0
           command: [sh, -ec, 'mkdir -p -- "$1" && chown 999:999 -- "$1"', --, {{ printf "/nfs/%s" (include "redmine.filesSubPath" .) | quote }}]
           securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
           volumeMounts:
-            - {name: files, mountPath: /nfs}
+             - {name: media, mountPath: /nfs} # bootstrap creates the attachments directory
         {{- end }}
         - name: wait-for-postgres
           image: "{{ .Values.database.bundled.image.repository }}:{{ .Values.database.bundled.image.tag }}"
@@ -112,16 +112,16 @@ spec:
               mountPath: /usr/src/redmine/config.ru
               subPath: config.ru
               readOnly: true
-            - name: files
-              mountPath: /usr/src/redmine/files
-              {{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) }}
-              subPath: {{ include "redmine.filesSubPath" . | quote }}
-              {{- end }}
+            {{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+            {{- else }}
+            - {name: files, mountPath: /usr/src/redmine/files}
+            {{- end }}
       volumes:
         - name: rack-config
           configMap:
             name: {{ include "redmine.fullname" . }}-rack
-        - name: files
+        - name: {{ if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) }}media{{ else }}files{{ end }}
           persistentVolumeClaim:
             claimName: {{ if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) }}{{ .Values.storage.media.existingClaim | quote }}{{ else }}{{ default (printf "%s-files" (include "redmine.fullname" .)) .Values.storage.attachments.existingClaim | quote }}{{ end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

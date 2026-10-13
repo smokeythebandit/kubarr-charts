@@ -59,7 +59,7 @@ class ScmManagerTests(unittest.TestCase):
         self.assertEqual(claim["spec"]["storageClassName"], "")
         self.assertEqual(resource(resources, "PersistentVolume")["spec"]["nfs"]["path"], "/")
         self.assertEqual(pod["volumes"][0]["persistentVolumeClaim"]["claimName"], claim["metadata"]["name"])
-        self.assertEqual(app["volumeMounts"], [{"name": "home", "mountPath": "/var/lib/scm", "subPath": "development/scm-manager/scm-manager/home"}])
+        self.assertEqual(app["volumeMounts"], [{"name": "media", "mountPath": "/var/lib/scm", "subPath": "development/scm-manager/scm-manager/home"}])
         self.assertEqual(pod["initContainers"][0]["securityContext"]["capabilities"]["add"], ["CHOWN"])
         self.assertEqual(pod["securityContext"]["runAsUser"], 1000)
         self.assertEqual(pod["securityContext"]["fsGroup"], 1000)
@@ -121,7 +121,7 @@ class ScmManagerTests(unittest.TestCase):
             ({"scm-manager": {"service": {"targetPort": 2222}}}, "targetPort"),
             ({"scm-manager": {"service": {"type": "NodePort"}}}, "ClusterIP"),
             ({"scm-manager": {"basePath": "/wrong"}}, "basePath"),
-            ({"storage": {"home": {"subPath": "../other"}}}, "safe relative"),
+            ({"storage": {"home": {"subPath": "../other"}}}, "subPath was removed"),
             ({"scm-manager": {"bootstrap": {"existingSecret": "bootstrap", "passwordKey": ""}}}, "passwordKey"),
         ]:
             with self.subTest(values=values):

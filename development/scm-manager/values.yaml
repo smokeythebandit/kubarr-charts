@@ -29,12 +29,13 @@ scm-manager:
     initialUser: scmadmin
 
 storage:
+  mounts:
+    - {name: home, source: development/scm-manager/scm-manager/home, target: /var/lib/scm, mode: read-write}
   migrationConfirmed: false
   home:
     existingClaim: ""
     storageClassName: "" # nonempty selects a dedicated PVC instead of managed NFS
     size: 20Gi
-    subPath: "" # empty: development/scm-manager/<release>/home
   media:
     create: true
     existingClaim: media-data

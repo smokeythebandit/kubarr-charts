@@ -1,1 +1,2 @@
+{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" .Values.victorialogs.storagePath "reservedPaths" (list "/tmp")) -}}
 {{- include "kubarr-common.storage.mediaClaim" (dict "root" .) }}

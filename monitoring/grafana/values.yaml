@@ -66,6 +66,7 @@ grafana:
     timeoutSeconds: 5
     failureThreshold: 3
 
+# Grafana SQLite remains on its dedicated PVC; it is not a shared-NFS data mount.
 persistence:
   enabled: true
   size: 5Gi

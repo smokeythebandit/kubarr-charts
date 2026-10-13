@@ -49,8 +49,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.secretName }}
                   key: uri
+            {{- if .Values.storage.mounts }}
             - name: KUBARR_STORAGE_PATH
-              value: "{{ .Values.storage.mountPath }}"
+              value: {{ (index .Values.storage.mounts 0).target | quote }}
+            {{- end }}
             - name: KUBARR_WORKER_POLL_INTERVAL_SECONDS
               value: {{ .Values.pollIntervalSeconds | default 5 | quote }}
             - name: KUBARR_WORKER_RECONCILE_INTERVAL_SECONDS
@@ -58,8 +60,9 @@ spec:
             - name: KUBARR_DOMAIN_RECONCILE_INTERVAL_SECONDS
               value: {{ .Values.domainReconcileIntervalSeconds | default 60 | quote }}
           volumeMounts:
-            - name: storage
-              mountPath: {{ .Values.storage.mountPath }}
+            {{- if .Values.storage.mounts }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "allowRoot" true "reservedPaths" (list "/tmp")) | nindent 12 }}
+            {{- end }}
             - name: tmp
               mountPath: /tmp
           {{- with .Values.resources }}
@@ -67,9 +70,9 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
-        - name: storage
-          persistentVolumeClaim:
-            claimName: {{ .Values.storage.media.existingClaim }}
+        {{- if .Values.storage.mounts }}
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+        {{- end }}
         - name: tmp
           emptyDir: {}
       {{- with .Values.nodeSelector }}

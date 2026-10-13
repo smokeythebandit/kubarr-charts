@@ -7,6 +7,8 @@ metadata:
     {{- include "rutorrent.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.rutorrent.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "rutorrent.selectorLabels" . | nindent 6 }}
@@ -85,7 +87,7 @@ spec:
             {{- toYaml .Values.rutorrent.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" "/downloads" "subPath" .Values.storage.media.downloadsSubPath) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/config" "/var/lib/nginx")) | nindent 12 }}
             - name: nginx-state
               mountPath: /var/lib/nginx
       volumes:

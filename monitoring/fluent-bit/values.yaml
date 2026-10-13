@@ -63,6 +63,14 @@ bufferStorage:
   hostPath: /var/lib/fluent-bit
   mountPath: /buffers
 
+# Retain the media PV/PVC owned by earlier releases while moving positions to
+# node-local storage. Helm must first render the old claim with a keep annotation
+# before a later upgrade can safely stop rendering it.
+storage:
+  mounts: []
+  media:
+    existingClaim: media-data
+
 # Gate liveness until Fluent Bit has initialized its inputs, filters, and HTTP server.
 startupProbe:
   periodSeconds: 2

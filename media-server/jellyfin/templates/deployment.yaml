@@ -7,7 +7,7 @@ metadata:
     {{- include "jellyfin.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.jellyfin.replicaCount }}
-  {{- if (default (dict) .Values.gpu).enabled }}
+  {{- if or (default (dict) .Values.gpu).enabled .Values.storage.config.create }}
   strategy:
     type: Recreate
   {{- end }}
@@ -75,8 +75,7 @@ spec:
             {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" .Values.jellyfin.resources) | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" .Values.storage.media.cacheMountPath "subPath" .Values.storage.media.cacheSubPath) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" .Values.storage.media.mountPath "subPath" .Values.storage.media.dataSubPath "readOnly" .Values.storage.readOnly) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "jellyfin.fullname" .)) | nindent 8 }}

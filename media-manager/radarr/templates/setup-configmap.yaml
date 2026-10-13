@@ -146,14 +146,26 @@ data:
     SABNZBD_API_KEY="kubarr-sabnzbd-api-key-12345"
 
     # Download client configurations
+    # Only clients with their writable directory mounted appear here. Previously saved
+    # unselected clients are left untouched; reconcile them before switching.
     # Format: NAME|IMPLEMENTATION|HOST|PORT|CHECK_PATH|CATEGORY_FIELD|CATEGORY_VALUE
     # For SABnzbd, CHECK_PATH includes the API key query param
     CLIENTS="
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "qbittorrent") }}
     qBittorrent|QBittorrent|qbittorrent.qbittorrent.svc.cluster.local|8080|/api/v2/app/version|movieCategory|Movies
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "transmission") }}
     Transmission|Transmission|transmission.transmission.svc.cluster.local|9091|/transmission/web/|movieCategory|Movies
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "deluge") }}
     Deluge|Deluge|deluge.deluge.svc.cluster.local|8112|/|movieCategory|movies
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "rutorrent") }}
     ruTorrent|RTorrent|rutorrent.rutorrent.svc.cluster.local|8000|/RPC2|movieCategory|Movies
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "sabnzbd") }}
     SABnzbd|Sabnzbd|sabnzbd.sabnzbd.svc.cluster.local|8080|/sabnzbd/api?mode=version&apikey=${SABNZBD_API_KEY}|movieCategory|movies
+    {{ end }}
     "
 
     get_api_key() {

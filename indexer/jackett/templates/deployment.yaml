@@ -7,6 +7,8 @@ metadata:
     {{- include "jackett.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.jackett.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "jackett.selectorLabels" . | nindent 6 }}
@@ -95,6 +97,7 @@ spec:
             {{- toYaml .Values.jackett.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "jackett.fullname" .)) | nindent 8 }}

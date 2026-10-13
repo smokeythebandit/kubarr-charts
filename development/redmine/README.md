@@ -35,6 +35,10 @@ when reusing a PostgreSQL volume; changing `SECRET_KEY_BASE` invalidates session
 By default one managed NFS `media-data` claim holds **separate**
 `development/redmine/redmine/postgres` and `development/redmine/redmine/files` directories;
 these mount at `/var/lib/postgresql/data` and `/usr/src/redmine/files`.
+Both directories are explicit entries: attachments in `storage.mounts`, the
+bundled database in `storage.workloads.postgres.mounts`. Writable mounts at
+their exact persistent paths are required when using the NFS backend. See
+[the breaking storage migration](../../STORAGE-MIGRATION.md).
 Upgrade managed-nfs to `12.0.0+2` (`nfs.sync=true`) **before** deploying:
 the chart rejects an existing async managed export. PostgreSQL requires hard
 NFS mounts, reliable locks/fsync and a synchronous server; an external NFS

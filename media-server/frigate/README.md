@@ -62,7 +62,8 @@ exports) mounts the writable `frigate` subdirectory of the shared
 `media-data` claim. By default the shared storage helper creates a per-namespace
 NFS PV/PVC; configure `storage.media.nfs.server` and `.path` for external NFS.
 For a pre-existing claim, set `storage.media.create=false` and specify
-`storage.media.existingClaim` and `.subPath` as needed.
+`storage.media.existingClaim`; select the recordings directory with a writable
+`storage.mounts` entry (`source: frigate`, `target: /media/frigate` by default).
 Ensure that directory is writable by the container on your NFS server. Frigate
 manages the recordings directory layout; do not rearrange it manually. Shared
 media availability and capacity affect recordings.

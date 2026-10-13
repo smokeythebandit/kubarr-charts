@@ -97,7 +97,8 @@ class ImmichTests(unittest.TestCase):
 
     def test_custom_release_external_services_and_claims(self):
         overrides = {
-            "storage": {"media": {"create": False, "existingClaim": "photos", "subPath": "photos"}},
+            "storage": {"media": {"create": False, "existingClaim": "photos"},
+                        "mounts": [{"name": "uploads", "source": "photos", "target": "/data", "mode": "read-write"}]},
             "database": {"bundled": {"enabled": False}, "host": "pg.example", "port": 6432,
                          "existingSecret": "database-key", "passwordKey": "password"},
             "cache": {"bundled": {"enabled": False}, "host": "redis.example", "existingSecret": "redis-key"},
@@ -147,7 +148,7 @@ class ImmichTests(unittest.TestCase):
             ({"database": {"bundled": {"persistence": {"existingClaim": "media-data"}}}}, "shared media claim"),
             ({"database": {"bundled": {"persistence": {"storageClassName": "nfs-client"}}}}, "must not be NFS"),
             ({"database": {"passwordKey": ""}}, "database.passwordKey"),
-            ({"machineLearning": {"cache": {"subPath": "../other"}}}, "safe relative"),
+            ({"machineLearning": {"cache": {"subPath": "../other"}}}, "subPath was removed"),
             ({"cache": {"existingSecret": "redis-key"}}, "Bundled Valkey has no authentication"),
             ({"database": {"port": 6432}}, "Bundled PostgreSQL listens on port 5432"),
             ({"cache": {"port": 6380}}, "Bundled Valkey listens on port 6379"),

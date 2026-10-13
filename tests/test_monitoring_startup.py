@@ -42,7 +42,7 @@ class MonitoringStartupTests(unittest.TestCase):
                 volume = next(
                     volume
                     for volume in workload["spec"]["template"]["spec"]["volumes"]
-                    if volume["name"] == "data"
+                    if volume["name"] == "media"
                 )
 
                 self.assertIn("persistentVolumeClaim", volume)

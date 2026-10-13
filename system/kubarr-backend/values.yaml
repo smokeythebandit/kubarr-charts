@@ -19,9 +19,10 @@ database:
   serviceName: kubarr-db-rw
   secretName: kubarr-db-app
 storage:
+  mounts:
+    - {name: storage-browser, source: ., target: /data, mode: read-write} # explicit export root for storage API
   media:
     existingClaim: media-data
-  mountPath: /data
 serviceAccountName: kubarr
 serviceAccount:
   create: true

@@ -7,6 +7,8 @@ metadata:
     {{- include "sabnzbd.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.sabnzbd.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "sabnzbd.selectorLabels" . | nindent 6 }}
@@ -69,7 +71,7 @@ spec:
             {{- toYaml .Values.sabnzbd.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" "/downloads" "subPath" .Values.storage.media.downloadsSubPath) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/config" "/custom-services.d/setup-apikey")) | nindent 12 }}
             # Setup script for API key configuration
             - name: setup-script
               mountPath: /custom-services.d/setup-apikey

@@ -69,13 +69,16 @@ jackett:
     timeoutSeconds: 5
     failureThreshold: 3
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts: []
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mountPath: /data
-    configMountPath: /config
-    configSubPath: config/jackett
 
 # Security context
 securityContext:

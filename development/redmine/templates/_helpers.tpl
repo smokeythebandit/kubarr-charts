@@ -10,5 +10,5 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 app: redmine-postgres
 {{- end }}
 {{- define "redmine.credentialsSecret" -}}{{ default (printf "%s-credentials" (include "redmine.fullname" .)) .Values.secrets.existingSecret }}{{- end }}
-{{- define "redmine.dbSubPath" -}}{{ default (printf "development/redmine/%s/postgres" (include "redmine.fullname" .)) .Values.database.bundled.persistence.subPath }}{{- end }}
-{{- define "redmine.filesSubPath" -}}{{ default (printf "development/redmine/%s/files" (include "redmine.fullname" .)) .Values.storage.attachments.subPath }}{{- end }}
+{{- define "redmine.dbSubPath" -}}{{- include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.workloads.postgres.mounts "target" "/var/lib/postgresql/data" "label" "storage.workloads.postgres.mounts" "reservedPaths" (list "/dev/shm")) -}}{{- end }}
+{{- define "redmine.filesSubPath" -}}{{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) -}}{{- include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" "/usr/src/redmine/files" "reservedPaths" (list "/usr/src/redmine/config.ru")) -}}{{- end -}}{{- end }}

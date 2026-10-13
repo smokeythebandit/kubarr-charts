@@ -42,15 +42,19 @@ database:
       existingClaim: ""
       size: 10Gi
       storageClassName: "" # empty uses the managed NFS share; nonempty uses dedicated PVC
-      subPath: "" # empty: development/redmine/<release>/postgres
 
 storage:
   migrationConfirmed: false # set only after moving old local PVC data to NFS
+  mounts:
+    - {name: attachments, source: development/redmine/redmine/files, target: /usr/src/redmine/files, mode: read-write}
+  workloads:
+    postgres:
+      mounts:
+        - {name: database, source: development/redmine/redmine/postgres, target: /var/lib/postgresql/data, mode: read-write}
   attachments:
     existingClaim: ""
     size: 10Gi
     storageClassName: "" # empty uses managed NFS; nonempty uses dedicated PVC
-    subPath: "" # empty: development/redmine/<release>/files
   media:
     create: true
     existingClaim: media-data

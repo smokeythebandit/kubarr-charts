@@ -83,7 +83,8 @@ class FrigateTests(unittest.TestCase):
     def test_custom_claim_secrets_private_egress_and_gpu(self):
         override = {
             "storage": {"config": {"existingClaim": "local-db"},
-                        "media": {"create": False, "existingClaim": "surveillance", "subPath": "nvr"},
+                        "media": {"create": False, "existingClaim": "surveillance"},
+                        "mounts": [{"name": "recordings", "source": "nvr", "target": "/media/frigate", "mode": "read-write"}],
                         "shmSize": "256Mi"},
             "frigate": {"existingSecret": "frigate-credentials"},
             "gpu": {"enabled": True, "provider": "nvidia", "runtimeClassName": "nvidia"},

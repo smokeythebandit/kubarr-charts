@@ -127,15 +127,17 @@ vpn:
     enabled: false
     upCommand: ""
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts:
+    - {name: downloads, source: downloads/sabnzbd, target: /downloads, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mountPath: /data
-    configMountPath: /config
-    configSubPath: config/sabnzbd
-    downloadsMountPath: /downloads
-    downloadsSubPath: downloads/sabnzbd
 
 # Network policy configuration
 networkPolicy:

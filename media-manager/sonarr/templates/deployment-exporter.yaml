@@ -23,6 +23,18 @@ spec:
         prometheus.io/port: "{{ .Values.exporter.port }}"
         prometheus.io/path: "/metrics"
     spec:
+      # A ReadWriteOnce config claim can be mounted by both pods only on the same node.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "sonarr.selectorLabels" . | nindent 18 }}
+              topologyKey: kubernetes.io/hostname
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -126,5 +138,5 @@ spec:
           resources:
             {{- toYaml .Values.exporter.resources | nindent 12 }}
       volumes:
-        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "sonarr.fullname" .)) | nindent 8 }}
+        {{- include "kubarr-common.storage.configVolume" (dict "root" . "fullname" (include "sonarr.fullname" .)) | nindent 8 }}
 {{- end }}

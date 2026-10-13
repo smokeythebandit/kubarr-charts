@@ -1,1 +1,3 @@
+{{- include "kubarr-common.storage.deprecated" . -}}
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.mounts "reservedPaths" (list "/tmp") "allowRoot" true) -}}
 {{- include "kubarr-common.storage.mediaClaim" (dict "root" .) }}

@@ -89,9 +89,7 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: media
-              mountPath: /media/frigate
-              subPath: {{ .Values.storage.media.subPath | quote }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
             - name: shm
               mountPath: /dev/shm
             - name: cache
@@ -100,9 +98,9 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: {{ default (printf "%s-config" (include "frigate.fullname" .)) .Values.storage.config.existingClaim }}
-        - name: media
-          persistentVolumeClaim:
-            claimName: {{ .Values.storage.media.existingClaim }}
+        {{- if .Values.storage.mounts }}
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+        {{- end }}
         - name: seed
           configMap:
             name: {{ include "frigate.fullname" . }}-seed

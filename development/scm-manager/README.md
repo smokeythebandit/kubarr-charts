@@ -9,6 +9,9 @@ A root init container creates/chowns it for UID/GID 1000 on Kubarr's export;
 root-squashed external exports need server-side directory permissions. The pod
 uses UID/GID and fsGroup 1000. A dedicated claim can be selected with
 `storage.home.storageClassName` or `storage.home.existingClaim`.
+For NFS home, declare a writable `storage.mounts` entry targeting `/var/lib/scm`;
+empty or read-only mounts are rejected. See
+[the breaking storage migration](../../STORAGE-MIGRATION.md).
 
 ```sh
 helm dependency build --skip-refresh development/scm-manager

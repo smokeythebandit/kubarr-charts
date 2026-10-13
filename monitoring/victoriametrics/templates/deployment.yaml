@@ -106,17 +106,15 @@ spec:
             - name: config
               mountPath: /etc/prometheus
               readOnly: true
-            - name: data
-              mountPath: /victoria-metrics-data
-              subPath: {{ .Values.storage.media.dataSubPath }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/etc/prometheus" "/tmp")) | nindent 12 }}
             - name: tmp
               mountPath: /tmp
       volumes:
         - name: config
           configMap:
             name: {{ include "victoriametrics.fullname" . }}-config
-        - name: data
-          persistentVolumeClaim:
-            claimName: {{ include "kubarr-common.storage.mediaClaimName" (dict "root" .) | default (printf "%s-data" (include "victoriametrics.fullname" .)) }}
+        {{- if .Values.storage.mounts }}
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+        {{- end }}
         - name: tmp
           emptyDir: {}

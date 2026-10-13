@@ -92,16 +92,22 @@ podAnnotations: {}
 # Image pull secrets
 imagePullSecrets: []
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts:
+    - {name: library, source: media, target: /media, mode: read-write}
+    - {name: qbittorrent, source: downloads/qbittorrent, target: /downloads/qbittorrent, mode: read-write}
+    - {name: transmission, source: downloads/transmission, target: /downloads/transmission, mode: read-write}
+    - {name: deluge, source: downloads/deluge, target: /downloads/deluge, mode: read-write}
+    - {name: rutorrent, source: downloads/rutorrent, target: /downloads/rutorrent, mode: read-write}
+    - {name: sabnzbd, source: downloads/sabnzbd, target: /downloads/sabnzbd, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mediaMountPath: /media
-    downloadsMountPath: /downloads
-    configMountPath: /config
-    configSubPath: config/sonarr
-    mediaSubPath: media
-    downloadsSubPath: downloads
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN

@@ -7,6 +7,8 @@ metadata:
     {{- include "jellyseerr.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.jellyseerr.replicaCount }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "jellyseerr.selectorLabels" . | nindent 6 }}
@@ -81,7 +83,7 @@ spec:
             {{- toYaml .Values.jellyseerr.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" .Values.storage.media.mountPath "subPath" .Values.storage.media.dataSubPath) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/app/config")) | nindent 12 }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "jellyseerr.fullname" .)) | nindent 8 }}

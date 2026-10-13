@@ -1,4 +1,6 @@
 {{- if ne (int .Values.frigate.replicaCount) 1 }}{{ fail "frigate.replicaCount must be 1 (SQLite and a single writer)" }}{{ end -}}
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.mounts "reservedPaths" (list "/config" "/dev/shm" "/tmp/cache")) -}}
+{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" "/media/frigate" "reservedPaths" (list "/config" "/dev/shm" "/tmp/cache")) -}}
 {{- if or (and .Values.storage.config.existingClaim (eq .Values.storage.config.existingClaim .Values.storage.media.existingClaim)) (and (not .Values.storage.config.existingClaim) (contains "nfs" (lower .Values.storage.config.storageClassName))) }}{{ fail "Frigate /config needs a separate local block PVC, not the shared media claim or NFS" }}{{ end -}}
 {{- if not .Values.storage.media.existingClaim }}{{ fail "storage.media.existingClaim is required" }}{{ end -}}
 {{- if ne (int .Values.frigate.service.targetPort) 8971 }}{{ fail "Frigate proxy must target authenticated port 8971, never unauthenticated port 5000" }}{{ end -}}

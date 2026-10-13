@@ -47,11 +47,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.secretName }}
                   key: uri
+            {{- if .Values.storage.mounts }}
             - name: KUBARR_STORAGE_PATH
-              value: "{{ .Values.storage.mountPath }}"
+              value: {{ (index .Values.storage.mounts 0).target | quote }}
+            {{- end }}
           volumeMounts:
-            - name: storage
-              mountPath: {{ .Values.storage.mountPath }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "allowRoot" true "reservedPaths" (list "/tmp")) | nindent 12 }}
             - name: tmp
               mountPath: /tmp
           livenessProbe:
@@ -63,9 +64,9 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
-        - name: storage
-          persistentVolumeClaim:
-            claimName: {{ .Values.storage.media.existingClaim }}
+        {{- if .Values.storage.mounts }}
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+        {{- end }}
         - name: tmp
           emptyDir: {}
       {{- with .Values.nodeSelector }}

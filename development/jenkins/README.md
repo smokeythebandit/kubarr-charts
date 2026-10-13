@@ -2,7 +2,7 @@
 
 This chart runs one official Jenkins LTS 2.568.3 controller (JDK 21) at
 `/jenkins/` through the Kubarr gateway. Its managed NFS `media-data` claim uses
-the private `development/jenkins/jenkins/home` subdirectory for **all** of
+ the explicitly declared `development/jenkins/jenkins/home` subdirectory for **all** of
 `/var/jenkins_home`, including jobs, plugins, credentials and encryption keys.
 The init container creates/chowns the path for UID/GID 1000 on Kubarr's
 no-root-squash export. External root-squashed NFS requires server-side directory
@@ -10,6 +10,9 @@ ownership and permissions. Configure `storage.home.storageClassName` for a
 dedicated PVC or select a pre-created PVC with `storage.home.existingClaim`;
 ensure it is writable by UID/GID 1000.
 Recreate upgrades stop the old controller before starting a replacement.
+Configure the NFS home with `storage.mounts` at `/var/jenkins_home` (writable);
+an empty or read-only list is rejected to protect persistent state. See
+[the breaking storage migration](../../STORAGE-MIGRATION.md) before upgrading.
 
 ## First login
 

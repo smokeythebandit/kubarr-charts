@@ -102,11 +102,11 @@ class RedmineTests(unittest.TestCase):
         self.assertEqual(env(app)["REDMINE_DB_DATABASE"]["value"], "redmine")
         self.assertEqual(container(app)["ports"][0]["containerPort"], 3000)
         mounts = {m["name"]: m for m in container(app)["volumeMounts"]}
-        self.assertEqual(mounts["files"]["mountPath"], "/usr/src/redmine/files")
+        self.assertEqual(mounts["media"]["mountPath"], "/usr/src/redmine/files")
         self.assertEqual(mounts["rack-config"]["mountPath"], "/usr/src/redmine/config.ru")
         volumes = {v["name"]: v for v in app["spec"]["template"]["spec"]["volumes"]}
-        self.assertEqual(volumes["files"]["persistentVolumeClaim"]["claimName"], "media-data")
-        self.assertEqual(mounts["files"]["subPath"], "development/redmine/redmine/files")
+        self.assertEqual(volumes["media"]["persistentVolumeClaim"]["claimName"], "media-data")
+        self.assertEqual(mounts["media"]["subPath"], "development/redmine/redmine/files")
         self.assertEqual(volumes["rack-config"]["configMap"]["name"], "redmine-rack")
         self.assertIn("map '/redmine' do", objects(resources, "ConfigMap")["redmine-rack"]["data"]["config.ru"])
         self.assertEqual(env(app)["RAILS_RELATIVE_URL_ROOT"]["value"], "/redmine")
@@ -189,8 +189,8 @@ class RedmineTests(unittest.TestCase):
             ({"database": {"bundled": {"enabled": False}, "host": "pg.example"}}, "secrets.existingSecret"),
             ({"secrets": {"sessionKey": ""}}, "secrets.sessionKey"),
             ({"database": {"bundled": {"enabled": False}}, "secrets": {"existingSecret": "external"}}, "database.host"),
-            ({"database": {"bundled": {"persistence": {"subPath": "development/redmine/redmine/files"}}}}, "different NFS subPaths"),
-            ({"database": {"bundled": {"persistence": {"subPath": "../secret"}}}}, "safe relative"),
+            ({"storage": {"workloads": {"postgres": {"mounts": [{"name": "database", "source": "development/redmine/redmine/files", "target": "/var/lib/postgresql/data", "mode": "read-write"}]}}}}, "different NFS subPaths"),
+            ({"database": {"bundled": {"persistence": {"subPath": "../secret"}}}}, "subPath was removed"),
             ({"secrets": {"sessionKey": "database-password"}}, "must differ"),
             ({"database": {"bundled": {"persistence": {"existingClaim": "redmine-files"}}}}, "must not share"),
             ({"redmine": {"service": {"type": "NodePort"}}}, "ClusterIP"),
@@ -237,13 +237,32 @@ class RedmineTests(unittest.TestCase):
         self.assertFalse(objects(resources, "StatefulSet")["redmine-postgres"]["spec"]["template"]["spec"].get("initContainers"))
         self.assertEqual(len(objects(resources, "Deployment")["redmine"]["spec"]["template"]["spec"]["initContainers"]), 1)
 
-    def test_release_scoped_subpaths_are_distinct(self):
+    def test_custom_release_preserves_declared_subpaths(self):
         result, resources = render(release="issues")
         self.assertEqual(result.returncode, 0, result.stderr)
         app = objects(resources, "Deployment")["issues-redmine"]
         db = objects(resources, "StatefulSet")["issues-redmine-postgres"]
-        self.assertEqual(container(app)["volumeMounts"][-1]["subPath"], "development/redmine/issues-redmine/files")
-        self.assertEqual(container(db)["volumeMounts"][0]["subPath"], "development/redmine/issues-redmine/postgres")
+        self.assertEqual(container(app)["volumeMounts"][-1]["subPath"], "development/redmine/redmine/files")
+        self.assertEqual(container(db)["volumeMounts"][0]["subPath"], "development/redmine/redmine/postgres")
+
+    def test_bundled_db_prepare_selects_required_target_after_extra_mount(self):
+        mounts = [dict(name="scratch", source="development/redmine/scratch", target="/scratch", mode="read-write"),
+                  dict(name="database", source="development/redmine/real-postgres", target="/var/lib/postgresql/data", mode="read-write")]
+        result, resources = render({"storage": {"workloads": {"postgres": {"mounts": mounts}}}})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        db = objects(resources, "StatefulSet")["redmine-postgres"]
+        init = next(c for c in db["spec"]["template"]["spec"]["initContainers"] if c["name"] == "prepare-database")
+        self.assertEqual(init["command"][-1], "/nfs/development/redmine/real-postgres")
+        self.assertNotIn("scratch", init["command"][-1])
+        mounted = {m["mountPath"]: m["subPath"] for m in container(db)["volumeMounts"] if m["name"] == "media"}
+        self.assertEqual(mounted, {"/scratch": "development/redmine/scratch",
+                                   "/var/lib/postgresql/data": "development/redmine/real-postgres"})
+
+        for bad in (dict(name="database", source="development/redmine/real-postgres", target="/var/lib/postgresql/data", mode="read"),
+                    dict(name="database", source="development/redmine/real-postgres", target="/var/lib/postgresql/data/child", mode="read-write")):
+            failed, _ = render({"storage": {"workloads": {"postgres": {"mounts": [mounts[0], bad]}}}})
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn("/var/lib/postgresql/data", failed.stderr)
 
 
 if __name__ == "__main__":

@@ -70,8 +70,8 @@ class JenkinsTests(unittest.TestCase):
         self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
         self.assertFalse(any("hostPath" in v or "emptyDir" in v for v in pod["volumes"]))
-        self.assertEqual(container["volumeMounts"], [{"name": "home", "mountPath": "/var/jenkins_home", "subPath": "development/jenkins/jenkins/home"}])
-        self.assertEqual(pod["volumes"], [{"name": "home", "persistentVolumeClaim": {"claimName": claim["metadata"]["name"]}}])
+        self.assertEqual(container["volumeMounts"], [{"name": "media", "mountPath": "/var/jenkins_home", "subPath": "development/jenkins/jenkins/home"}])
+        self.assertEqual(pod["volumes"], [{"name": "media", "persistentVolumeClaim": {"claimName": claim["metadata"]["name"]}}])
         self.assertEqual(pod["initContainers"][0]["securityContext"]["capabilities"]["add"], ["CHOWN"])
         self.assertEqual(claim["spec"]["accessModes"], ["ReadWriteMany"])
         self.assertEqual(claim["spec"]["storageClassName"], "")
@@ -109,7 +109,7 @@ class JenkinsTests(unittest.TestCase):
             ({"jenkins": {"basePath": "/other"}}, "jenkins.basePath"),
             ({"jenkins": {"service": {"targetPort": 50000}}}, "jenkins.service.targetPort"),
             ({"jenkins": {"service": {"type": "NodePort"}}}, "jenkins.service.type"),
-            ({"storage": {"home": {"subPath": "../other"}}}, "safe relative"),
+            ({"storage": {"home": {"subPath": "../other"}}}, "subPath was removed"),
             ({"storage": {"home": {"existingClaim": "media-data"}}}, "shared media"),
             ({"jenkins": {"env": {"JENKINS_OPTS": "--prefix=/other"}}}, "jenkins.env"),
         ]:

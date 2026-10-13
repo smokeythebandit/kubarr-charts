@@ -60,9 +60,10 @@ persistence:
   accessMode: ReadWriteOnce
 
 storage:
+  mounts:
+    - {name: logs-data, source: system/victorialogs, target: /data, mode: read-write}
   media:
     existingClaim: media-data
-    dataSubPath: system/victorialogs
 
 serviceAccount:
   create: true

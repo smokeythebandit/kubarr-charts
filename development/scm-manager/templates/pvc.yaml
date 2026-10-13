@@ -1,5 +1,5 @@
 {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}
-{{ include "kubarr-common.storage.mediaClaim" (dict "root" .) | replace "metadata:\n" "metadata:\n  annotations:\n    helm.sh/resource-policy: keep\n" }}
+{{ include "kubarr-common.storage.mediaClaim" (dict "root" .) }}
 {{- else if not .Values.storage.home.existingClaim }}
 apiVersion: v1
 kind: PersistentVolumeClaim

@@ -97,8 +97,19 @@ class FluentBitTests(unittest.TestCase):
         self.assertEqual(state_mount, {"name": "state", "mountPath": "/buffers"})
         self.assertIn("DB                /buffers/fluent-bit-pos.db", config)
         self.assertNotIn("persistentVolumeClaim", state_volume)
-        self.assertFalse(any(resource["kind"] in {"PersistentVolume", "PersistentVolumeClaim"}
-                             for resource in resources))
+        retained = [resource for resource in resources
+                    if resource["kind"] in {"PersistentVolume", "PersistentVolumeClaim"}]
+        self.assertEqual(len(retained), 2)
+        self.assertTrue(all(resource["metadata"]["annotations"]["helm.sh/resource-policy"] == "keep"
+                            for resource in retained))
+
+    def test_host_log_admission_is_scoped_to_collector_namespace(self):
+        resources = render()
+        namespaces = [resource for resource in resources if resource["kind"] == "Namespace"]
+        self.assertEqual(len(namespaces), 1)
+        self.assertEqual(namespaces[0]["metadata"]["name"], "fluent-bit")
+        self.assertEqual(namespaces[0]["metadata"]["labels"]["pod-security.kubernetes.io/enforce"],
+                         "privileged")
 
     def test_buffer_paths_are_configurable(self):
         resources = render(

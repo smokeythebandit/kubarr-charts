@@ -73,7 +73,7 @@ spec:
             {{- toYaml .Values.qbittorrent.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.mediaMount" (dict "root" . "mountPath" "/downloads" "subPath" .Values.storage.media.downloadsSubPath) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/config" "/custom-cont-init.d" "/config-immutable")) | nindent 12 }}
             - name: init-scripts
               mountPath: /custom-cont-init.d
             - name: qbittorrent-conf

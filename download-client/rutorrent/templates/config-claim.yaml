@@ -1,0 +1,3 @@
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "rutorrent.fullname" .) "replicas" .Values.rutorrent.replicaCount) -}}
+{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" "/downloads") -}}
+{{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "rutorrent.fullname" .)) }}

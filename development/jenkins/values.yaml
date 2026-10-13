@@ -20,12 +20,13 @@ jenkins:
     limits: {cpu: "2", memory: 4Gi}
 
 storage:
+  mounts:
+    - {name: home, source: development/jenkins/jenkins/home, target: /var/jenkins_home, mode: read-write}
   migrationConfirmed: false
   home:
     size: 50Gi
     storageClassName: "" # nonempty selects a dedicated PVC instead of managed NFS
     existingClaim: "" # pre-created, writable by UID/GID 1000 if set
-    subPath: "" # empty: development/jenkins/<release>/home
   media:
     create: true
     existingClaim: media-data

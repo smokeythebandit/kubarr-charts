@@ -60,15 +60,17 @@ rutorrent:
     timeoutSeconds: 5
     failureThreshold: 3
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts:
+    - {name: downloads, source: downloads/rutorrent, target: /downloads, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mountPath: /data
-    configMountPath: /config
-    configSubPath: config/rutorrent
-    downloadsMountPath: /downloads
-    downloadsSubPath: downloads/rutorrent
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN

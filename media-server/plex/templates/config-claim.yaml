@@ -1,0 +1,2 @@
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "plex.fullname" .) "replicas" .Values.plex.replicaCount) -}}
+{{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "plex.fullname" .)) }}

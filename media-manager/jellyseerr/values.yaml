@@ -109,14 +109,17 @@ podAnnotations: {}
 # Image pull secrets
 imagePullSecrets: []
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts:
+    - {name: library, source: media, target: /data, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mountPath: /data
-    configMountPath: /app/config
-    configSubPath: config/jellyseerr
-    dataSubPath: media
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN

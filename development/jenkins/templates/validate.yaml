@@ -2,9 +2,11 @@
 {{- if ne (int .Values.jenkins.service.targetPort) 8080 }}{{ fail "jenkins.service.targetPort must be 8080" }}{{ end -}}
 {{- if ne .Values.jenkins.service.type "ClusterIP" }}{{ fail "jenkins.service.type must be ClusterIP; use the Kubarr gateway" }}{{ end -}}
 {{- if eq .Values.storage.home.existingClaim "media-data" }}{{ fail "storage.home.existingClaim must not be the shared media claim" }}{{ end -}}
+{{- if or .Values.storage.home.existingClaim .Values.storage.home.storageClassName -}}{{- include "kubarr-common.storage.assertRetainedMedia" . -}}{{- end -}}
 {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) -}}
+{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" "/var/jenkins_home") -}}
 {{- if not .Values.storage.media.existingClaim }}{{ fail "storage.media.existingClaim is required for managed NFS" }}{{ end -}}
-{{- if not (regexMatch "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$" (include "jenkins.homeSubPath" .)) }}{{ fail "storage.home.subPath must be a safe relative directory" }}{{ end -}}
+{{- if hasKey .Values.storage.home "subPath" }}{{ fail "storage.home.subPath was removed; use storage.mounts" }}{{ end -}}
 {{- if and .Release.IsUpgrade (not .Values.storage.migrationConfirmed) (lookup "v1" "PersistentVolumeClaim" .Values.namespace.name (printf "%s-home" (include "jenkins.fullname" .))) }}{{ fail "Old Jenkins home PVC exists: migrate data to NFS before setting storage.migrationConfirmed=true" }}{{ end -}}
 {{- end -}}
 {{- if or (hasKey .Values.jenkins.env "JENKINS_OPTS") (hasKey .Values.jenkins.env "JENKINS_HOME") }}{{ fail "jenkins.env must not override JENKINS_OPTS or JENKINS_HOME" }}{{ end -}}

@@ -20,9 +20,10 @@ persistence:
   storageClassName: ""
 
 storage:
+  mounts:
+    - {name: postgres-data, source: system/postgresql, target: /var/lib/postgresql/data, mode: read-write}
   media:
     existingClaim: media-data
-    dataSubPath: system/postgresql
 
 resources:
   limits:

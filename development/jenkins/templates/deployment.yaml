@@ -34,14 +34,14 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      {{- if and .Values.storage.mounts (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
       initContainers:
         - name: prepare-home
           image: busybox:1.37.0
-          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (include "jenkins.homeSubPath" .) | quote }}]
+          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" "/var/jenkins_home")) | quote }}]
           securityContext: {runAsUser: 0, runAsNonRoot: false, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
           volumeMounts:
-            - {name: home, mountPath: /nfs}
+            - {name: media, mountPath: /nfs} # bootstrap creates the declared home directory
       {{- end }}
       containers:
         - name: jenkins
@@ -87,13 +87,13 @@ spec:
           resources:
             {{- toYaml .Values.jenkins.resources | nindent 12 }}
           volumeMounts:
-            - name: home
-              mountPath: /var/jenkins_home
-              {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}
-              subPath: {{ include "jenkins.homeSubPath" . | quote }}
-              {{- end }}
+            {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+            {{- else }}
+            - {name: home, mountPath: /var/jenkins_home}
+            {{- end }}
       volumes:
-        - name: home
+        - name: {{ if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}media{{ else }}home{{ end }}
           persistentVolumeClaim:
               claimName: {{ if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}{{ .Values.storage.media.existingClaim }}{{ else }}{{ default (printf "%s-home" (include "jenkins.fullname" .)) .Values.storage.home.existingClaim }}{{ end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

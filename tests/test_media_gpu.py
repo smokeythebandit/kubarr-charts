@@ -45,7 +45,7 @@ class MediaGpuTests(unittest.TestCase):
                 with self.subTest(app=app, flags=flags):
                     result, deployment = render(app, legacy, flags)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertNotIn("strategy", deployment["spec"])
+                    self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
                     pod = deployment["spec"]["template"]["spec"]
                     self.assertNotIn("runtimeClassName", pod)
                     self.assertEqual(pod["securityContext"]["fsGroup"], 1000)
@@ -114,7 +114,7 @@ class MediaGpuTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 pod = deployment["spec"]["template"]["spec"]
                 container = next(c for c in pod["containers"] if c["name"] == app)
-                self.assertNotIn("strategy", deployment["spec"])
+                self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
                 self.assertNotIn("runtimeClassName", pod)
                 self.assertNotIn("supplementalGroups", pod["securityContext"])
                 self.assertNotIn("env", container)

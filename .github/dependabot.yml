@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # Chart.yaml and values.yaml in each application chart (not rendered templates).
+  - package-ecosystem: helm
+    directories:
+      - /development/*
+      - /download-client/*
+      - /indexer/*
+      - /media-manager/*
+      - /media-server/*
+      - /monitoring/*
+      - /system/*
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    ignore:
+      # The file:// dependency is released together with its consumers.
+      - dependency-name: kubarr-common
+      # These images are built in-repo, not pulled from a public registry.
+      - dependency-name: kubarr-api
+      - dependency-name: kubarr-frontend
+      - dependency-name: kubarr-worker
+      - dependency-name: kubarr-dns-webhook
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns:
+          - "*"

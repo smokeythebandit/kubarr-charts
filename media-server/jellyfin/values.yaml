@@ -107,17 +107,18 @@ podAnnotations: {}
 # Image pull secrets
 imagePullSecrets: []
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts:
+    - {name: cache, source: cache/jellyfin, target: /cache, mode: read-write}
+    - {name: library, source: media, target: /data, mode: read}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mountPath: /data
-    configMountPath: /config
-    configSubPath: config/jellyfin
-    cacheMountPath: /cache
-    cacheSubPath: cache/jellyfin
-    dataSubPath: media
-  readOnly: true  # Jellyfin only reads media
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN

@@ -94,15 +94,17 @@ podAnnotations: {}
 # Image pull secrets
 imagePullSecrets: []
 
-# Storage configuration. All app storage is routed through the shared NFS claim.
 storage:
+  mounts:
+    - {name: downloads, source: downloads/deluge, target: /downloads, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass
   media:
     existingClaim: media-data
-    mountPath: /data
-    configMountPath: /config
-    configSubPath: config/deluge
-    downloadsMountPath: /downloads
-    downloadsSubPath: downloads/deluge
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN
