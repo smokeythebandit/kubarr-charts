@@ -3,9 +3,9 @@ namespace:
   name: kubarr-backend
 replicaCount: 1
 image:
-  repository: kubarr-api
-  pullPolicy: Never
-  tag: "latest"
+  repository: ghcr.io/smokeythebandit/kubarr-backend
+  pullPolicy: IfNotPresent
+  tag: "0.3.0"
 service:
   type: ClusterIP
   port: 8000

@@ -3,9 +3,9 @@ namespace:
   create: true
   name: kubarr-worker
 image:
-  repository: kubarr-worker
-  pullPolicy: Never
-  tag: "latest"
+  repository: ghcr.io/smokeythebandit/kubarr-worker
+  pullPolicy: IfNotPresent
+  tag: "0.3.0"
 pollIntervalSeconds: 5
 reconcileIntervalSeconds: 30
 domainReconcileIntervalSeconds: 60

@@ -49,6 +49,18 @@ class PackageTests(unittest.TestCase):
                         self.assertIn("apiVersion", resource)
                         self.assertIn("kind", resource)
                         self.assertIn("name", resource["metadata"])
+                        metadata_blocks = [resource["metadata"]]
+                        template = resource.get("spec", {}).get("template", {})
+                        metadata_blocks.append(template.get("metadata", {}))
+                        for block in metadata_blocks:
+                            for key, value in block.get("labels", {}).items():
+                                with self.subTest(resource=resource["metadata"]["name"], label=key):
+                                    self.assertIsInstance(value, str)
+                                    self.assertLessEqual(len(value), 63)
+                                    self.assertRegex(
+                                        value,
+                                        r"\A(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?)?\Z",
+                                    )
             if "CHART_PACKAGES_DIR" in os.environ:
                 actual = {p.name for p in Path(os.environ["CHART_PACKAGES_DIR"]).glob("*.tgz")}
                 self.assertEqual(actual, expected, "Release package inventory mismatch")
