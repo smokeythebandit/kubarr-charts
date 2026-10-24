@@ -11,11 +11,19 @@ service:
   port: 2049
 
 nfs:
+  # kernel retains existing installs; ganesha works without a host nfsd module.
+  implementation: kernel
   exportPath: /exports
   permitted: "*"
   readOnly: false
   sync: true # acknowledge writes only after stable storage; required for PostgreSQL
   hostNetwork: true
+
+ganesha:
+  image:
+    repository: registry.k8s.io/sig-storage/nfs-provisioner
+    tag: v4.0.8
+    pullPolicy: IfNotPresent
 
 # Bootstrap backing PVC: the NFS server cannot mount its own export.
 persistence:

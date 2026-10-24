@@ -227,7 +227,9 @@ class RedmineTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         deployment = objects([r for r in yaml.safe_load_all(result.stdout) if r], "Deployment")["kubarr-managed-nfs"]
         self.assertIn({"name": "SYNC", "value": "true"}, deployment["spec"]["template"]["spec"]["containers"][0]["env"])
-        self.assertEqual(deployment["metadata"]["labels"]["helm.sh/chart"], "managed-nfs-12.0.0_2")
+        metadata = yaml.safe_load((ROOT / "system/managed-nfs/Chart.yaml").read_text())
+        self.assertEqual(deployment["metadata"]["labels"]["helm.sh/chart"],
+                         f'managed-nfs-{metadata["version"].replace("+", "_")}')
 
     def test_external_root_squashed_export_uses_preprovisioned_paths(self):
         result, resources = render({"storage": {"media": {"nfs": {"server": "nas.example", "path": "/exports"}}}})

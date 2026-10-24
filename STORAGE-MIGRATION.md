@@ -1,5 +1,16 @@
 # Declarative storage and breaking upgrade
 
+## Jellyseerr private-config correction
+
+Chart `2.7.3+9` mounts the private configuration claim at `/app/config`, which
+Jellyseerr actually uses. Revision `2.7.3+8` mounted it at `/config`, leaving the
+application's configuration in the container filesystem. If that revision is
+already running, back up its live `/app/config` data and migrate it into the
+private claim before upgrading/restarting; the chart cannot recover ephemeral
+configuration after the old container is removed.
+
+## Shared mounts
+
 All NFS-consuming charts now declare their data mounts in `values.yaml`. The
 only supported shared-export mount entry is `{name, source, target, mode}`:
 

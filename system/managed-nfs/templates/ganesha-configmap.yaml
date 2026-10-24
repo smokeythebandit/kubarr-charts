@@ -1,0 +1,44 @@
+{{- if eq .Values.nfs.implementation "ganesha" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubarr-managed-nfs-ganesha
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "managed-nfs.labels" . | nindent 4 }}
+data:
+  ganesha.conf: |
+    NFS_CORE_PARAM {
+      Protocols = 4;
+      Enable_NLM = false;
+      Enable_RQUOTA = false;
+      Enable_UDP = false;
+    }
+    NFS_KRB5 {
+      Active_krb5 = false;
+      CCacheDir = /var/run/ganesha;
+    }
+    NFSv4 {
+      RecoveryBackend = fs;
+      RecoveryRoot = /var/lib/nfs/ganesha;
+      # Container images have different passwd/group databases. Preserve the
+      # numeric identity used by the workloads (not the server image's names).
+      Only_Numeric_Owners = true;
+    }
+    EXPORT {
+      Export_Id = 1;
+      Path = {{ .Values.nfs.exportPath | quote }};
+      Pseudo = /;
+      Access_Type = {{ ternary "RO" "RW" .Values.nfs.readOnly }};
+      Squash = No_Root_Squash;
+      SecType = sys;
+      Protocols = 4;
+      Transports = TCP;
+      FSAL { Name = VFS; }
+      CLIENT {
+        Clients = {{ .Values.nfs.permitted }};
+        Access_Type = {{ ternary "RO" "RW" .Values.nfs.readOnly }};
+      }
+    }
+    LOG { Default_Log_Level = WARN; }
+{{- end }}

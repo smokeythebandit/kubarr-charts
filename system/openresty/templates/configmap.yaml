@@ -86,12 +86,40 @@ data:
         }
 
         location /auth/ {
+          set $auth_upstream "http://kubarr_api";
+          access_by_lua_block {
+            -- Host-routed SPAs such as Immich have HTML pages at /auth/login.
+            -- Keep Kubarr's JSON/session endpoints and all auth mutations here;
+            -- only authenticated HTML navigation can resolve to the app host.
+            local method = ngx.req.get_method()
+            local accept = ngx.var.http_accept or ""
+            if ngx.var.uri:sub(1, #"/auth/host-transfer/") == "/auth/host-transfer/" then
+              return
+            end
+            if (method ~= "GET" and method ~= "HEAD") or not accept:find("text/html", 1, true) then
+              return
+            end
+            local route = ngx.location.capture("/_kubarr_route_lookup", {
+              args = { host = ngx.var.host, path = ngx.var.request_uri }
+            })
+            if route.status == ngx.HTTP_OK or route.status == ngx.HTTP_NO_CONTENT then
+              local mode = route.header["x-kubarr-route-mode"]
+              local upstream = route.header["x-kubarr-upstream"]
+              if (mode == "exact_host" or mode == "subdomain") and upstream and upstream ~= "" then
+                ngx.var.auth_upstream = upstream
+              end
+            elseif route.status == ngx.HTTP_UNAUTHORIZED or route.status == ngx.HTTP_FORBIDDEN then
+              return ngx.exit(route.status)
+            elseif route.status ~= ngx.HTTP_NOT_FOUND then
+              return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
+            end
+          }
           proxy_http_version 1.1;
           proxy_set_header Host $http_host;
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
-          proxy_pass http://kubarr_api;
+          proxy_pass $auth_upstream$request_uri;
         }
 
         location ~ ^/_kubarr_app_auth/(?<auth_app_name>[a-z0-9-]+)$ {
@@ -200,6 +228,7 @@ data:
         location ~ ^/(?!(api|auth|assets|login|account|settings|users|storage|resources|apps|monitoring|logs|networking|security|app-error|favicon\.svg)(/|$))(?<app_name>[a-z0-9-]+)(?<app_path>/.*)?$ {
           set $app_upstream "";
           set $app_base_path "";
+          set $app_ingress_path "";
           set $target_path "";
 
           access_by_lua_block {
@@ -268,6 +297,7 @@ data:
 
             local base_path = auth.header["x-kubarr-base-path"] or ""
             ngx.var.app_base_path = base_path
+            ngx.var.app_ingress_path = "/" .. ngx.var.app_name
             local landing_path = auth.header["x-kubarr-landing-path"] or ""
 
             local app_path = ngx.var.app_path
@@ -297,7 +327,21 @@ data:
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;
+          # The HTML body filter needs uncompressed upstream text.
+          proxy_set_header Accept-Encoding "";
+          # Frigate natively rewrites its HTML/JS and router base from this
+          # header. Host-routed requests leave it empty rather than adding a path.
+          proxy_set_header X-Ingress-Path $app_ingress_path;
           header_filter_by_lua_block {
+            local content_type = ngx.header["Content-Type"] or ""
+            if ngx.var.app_base_path == "" and ngx.var.app_name ~= "frigate"
+                and content_type:find("text/html", 1, true) then
+              -- Rewriting root-relative URLs changes the byte count. Retaining
+              -- the upstream length corrupts keep-alive response framing.
+              ngx.header["Content-Length"] = nil
+              ngx.header["ETag"] = nil
+              ngx.header["Content-MD5"] = nil
+            end
             local location = ngx.header["Location"]
             if location then
               local app_prefix = "/" .. ngx.var.app_name
@@ -316,6 +360,9 @@ data:
             end
           }
           body_filter_by_lua_block {
+            if ngx.var.app_name == "frigate" then
+              return -- Frigate already applied X-Ingress-Path, including JS URLs.
+            end
             local content_type = ngx.header["Content-Type"] or ""
             if not content_type:find("text/html", 1, true) then
               return

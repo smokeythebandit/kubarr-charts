@@ -39,11 +39,58 @@ class GatewayTests(unittest.TestCase):
             raise AssertionError("Catch-all access block not found")
         cls.config = config
         cls.access_lua = match.group(2)
+        cls.app_location = config.split(location, 1)[1]
+        cls.header_lua = re.search(r"^( *)header_filter_by_lua_block \{\n(.*?)^\1\}", cls.app_location, re.M | re.S).group(2)
+        cls.body_lua = re.search(r"^( *)body_filter_by_lua_block \{\n(.*?)^\1\}", cls.app_location, re.M | re.S).group(2)
         api_block = config.split("location /api/ {", 1)[1]
         api_match = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", api_block, re.M | re.S)
         if api_match is None:
             raise AssertionError("API route access block not found")
         cls.api_access_lua = api_match.group(2)
+        auth_block = config.split("location /auth/ {", 1)[1]
+        cls.auth_access_lua = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", auth_block, re.M | re.S).group(2)
+
+    def test_host_app_auth_html_does_not_intercept_kubarr_login_or_host_transfer(self):
+        script = r'''
+local captured = 0
+local method = "POST"
+local route = {status=204, header={["x-kubarr-route-mode"]="exact_host", ["x-kubarr-upstream"]="http://immich:2283"}}
+local exited
+ngx = {
+ HTTP_OK=200, HTTP_NO_CONTENT=204, HTTP_UNAUTHORIZED=401, HTTP_FORBIDDEN=403,
+ HTTP_NOT_FOUND=404, HTTP_INTERNAL_SERVER_ERROR=500,
+ var={host="photos.test", uri="/auth/login", request_uri="/auth/login", http_accept="text/html", auth_upstream="http://kubarr_api"},
+ req={get_method=function() return method end},
+ exit=function(code) exited=code end,
+ location={capture=function() captured=captured+1; return route end}
+}
+'''
+        script += "\nlocal function access()\n" + self.auth_access_lua + "\nend\n"
+        script += r'''
+access()
+assert(captured == 0 and ngx.var.auth_upstream == "http://kubarr_api")
+method = "GET"
+ngx.var.uri = "/auth/host-transfer/complete"
+access()
+assert(captured == 0)
+ngx.var.uri = "/auth/login"
+ngx.var.http_accept = "application/json"
+access()
+assert(captured == 0)
+ngx.var.http_accept = "text/html"
+access()
+assert(captured == 1 and ngx.var.auth_upstream == "http://immich:2283")
+route = {status=403, header={}}
+access()
+assert(exited == 403)
+exited = nil
+route = {status=404, header={}}
+ngx.var.auth_upstream = "http://kubarr_api"
+access()
+assert(exited == nil and ngx.var.auth_upstream == "http://kubarr_api")
+'''
+        result = subprocess.run(["luajit", "-"], input=script, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_api_host_routing_preserves_kubarr_login_and_denies_unauthorized_apps(self):
         script = r'''
@@ -92,6 +139,47 @@ assert(exit_status == 403)
         self.assertIn('if ngx.var.app_name ~= "" then\n', self.config)
         self.assertIn('return ngx.exec("@frontend_index")', self.config)
 
+    def test_html_rewrite_drops_stale_response_length_and_validators(self):
+        script = r'''
+ngx = {
+  header = {["Content-Type"]="text/html; charset=utf-8", ["Content-Length"]="23", ["ETag"]="old", ["Content-MD5"]="old"},
+  var = {app_name="deluge", app_base_path=""},
+  arg = {'<script src="/main.js">', true}
+}
+'''
+        script += "\nlocal function headers()\n" + self.header_lua + "\nend\n"
+        script += "\nlocal function body()\n" + self.body_lua + "\nend\n"
+        script += r'''
+headers()
+body()
+assert(ngx.arg[1] == '<script src="/deluge/main.js">')
+assert(ngx.header["Content-Length"] == nil)
+assert(ngx.header["ETag"] == nil and ngx.header["Content-MD5"] == nil)
+ngx.header = {["Content-Type"]="application/json", ["Content-Length"]="2", ["ETag"]="json"}
+ngx.arg[1] = '{}'
+headers()
+body()
+assert(ngx.header["Content-Length"] == "2" and ngx.arg[1] == '{}')
+ngx.header = {["Content-Type"]="text/html", ["Content-Length"]="23", ["ETag"]="native"}
+ngx.var.app_base_path = "/sonarr"
+ngx.arg[1] = '<script src="/sonarr/main.js">'
+headers()
+body()
+assert(ngx.header["Content-Length"] == "23" and ngx.header["ETag"] == "native")
+assert(ngx.arg[1] == '<script src="/sonarr/main.js">')
+ngx.var.app_name = "frigate"
+ngx.var.app_base_path = ""
+ngx.arg[1] = '<script src="/frigate/assets/main.js">'
+headers()
+body()
+assert(ngx.arg[1] == '<script src="/frigate/assets/main.js">')
+assert(ngx.header["Content-Length"] == "23")
+'''
+        result = subprocess.run(["luajit", "-"], input=script, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('proxy_set_header Accept-Encoding "";', self.app_location.split('header_filter_by_lua_block', 1)[0])
+        self.assertIn('proxy_set_header X-Ingress-Path $app_ingress_path;', self.app_location)
+
     def check_gateway(self, setup="", outcome="proxy", captures=1, checks=""):
         script = r'''
 local route = {status = 404, header = {}}
@@ -107,7 +195,7 @@ ngx = {
   var = {
     host = "kubarr.test", uri = "/nonexistent-route",
     app_name = "nonexistent-route", app_path = "",
-    app_upstream = "", app_base_path = "", target_path = ""
+    app_upstream = "", app_base_path = "", app_ingress_path = "", target_path = ""
   },
   location = {},
   log = function() end,
@@ -252,6 +340,7 @@ route.header = {{
 assert(ngx.var.app_name == "sonarr")
 assert(ngx.var.app_upstream == "http://sonarr:8989")
 assert(ngx.var.app_base_path == "/sonarr")
+assert(ngx.var.app_ingress_path == "")
 assert(ngx.var.target_path == {json.dumps(target or '/nonexistent-route')})
 ''',
                     )
@@ -277,6 +366,7 @@ auth.header = {{
 assert(ngx.var.app_name == "sonarr")
 assert(ngx.var.app_upstream == "http://sonarr:8989")
 assert(ngx.var.app_base_path == {json.dumps(base_path)})
+assert(ngx.var.app_ingress_path == "/sonarr")
 assert(ngx.var.target_path == {json.dumps('/sonarr' + app_path if base_path else app_path or '/')})
 ''',
                         )

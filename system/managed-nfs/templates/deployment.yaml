@@ -1,3 +1,6 @@
+{{- if not (has .Values.nfs.implementation (list "kernel" "ganesha")) -}}
+{{- fail "nfs.implementation must be kernel or ganesha" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,6 +17,10 @@ spec:
       {{- include "managed-nfs.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- if eq .Values.nfs.implementation "ganesha" }}
+      annotations:
+        checksum/ganesha: {{ include (print $.Template.BasePath "/ganesha-configmap.yaml") . | sha256sum }}
+      {{- end }}
       labels:
         {{- include "managed-nfs.selectorLabels" . | nindent 8 }}
     spec:
@@ -33,6 +40,14 @@ spec:
       {{- end }}
       containers:
         - name: nfs
+          {{- if eq .Values.nfs.implementation "ganesha" }}
+          image: "{{ .Values.ganesha.image.repository }}:{{ .Values.ganesha.image.tag }}"
+          imagePullPolicy: {{ .Values.ganesha.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -ec
+            - mkdir -p /var/run/ganesha /var/lib/nfs/ganesha; exec /usr/local/bin/ganesha.nfsd -F -p /var/run/ganesha/ganesha.pid -L /dev/stdout -f /etc/ganesha/ganesha.conf
+          {{- else }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
@@ -48,12 +63,22 @@ spec:
             - name: SYNC
               value: "true"
             {{- end }}
+          {{- end }}
           ports:
             - name: nfs
               containerPort: 2049
               protocol: TCP
           securityContext:
             privileged: true
+          startupProbe:
+            tcpSocket:
+              port: nfs
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: nfs
+            periodSeconds: 5
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -61,7 +86,20 @@ spec:
           volumeMounts:
             - name: data
               mountPath: {{ .Values.nfs.exportPath | quote }}
+            {{- if eq .Values.nfs.implementation "ganesha" }}
+            - name: ganesha-config
+              mountPath: /etc/ganesha
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/nfs/ganesha
+              subPath: .kubarr-nfs-recovery
+            {{- end }}
       volumes:
+        {{- if eq .Values.nfs.implementation "ganesha" }}
+        - name: ganesha-config
+          configMap:
+            name: kubarr-managed-nfs-ganesha
+        {{- end }}
         - name: data
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.claimName }}

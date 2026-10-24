@@ -52,6 +52,20 @@ def pods(resources):
 
 
 class DeclarativeStorageTests(unittest.TestCase):
+    def test_private_config_is_mounted_at_the_application_config_directory(self):
+        for chart in PRIVATE_CONFIG:
+            with self.subTest(chart=chart):
+                result, resources = render(chart)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                name = Path(chart).name
+                pod = next(pod for _, pod in pods(resources)
+                           if any(container["name"] == name for container in pod["containers"]))
+                container = next(container for container in pod["containers"] if container["name"] == name)
+                mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "config")
+                self.assertEqual(mount["mountPath"], "/app/config" if name == "jellyseerr" else "/config")
+                volume = next(volume for volume in pod["volumes"] if volume["name"] == "config")
+                self.assertNotEqual(volume["persistentVolumeClaim"]["claimName"], "media-data")
+
     def test_persistent_nfs_state_cannot_silently_become_ephemeral(self):
         required = {
             "development/jenkins": "/var/jenkins_home",

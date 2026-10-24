@@ -4,6 +4,15 @@ Photo and video backup at `http://immich:2283` inside the `immich` namespace (Ku
 
 ## Before installation
 
+Immich **does not support a URL subpath** such as `/immich/`. Configure a
+dedicated hostname under Kubarr Settings → Domains and assign Immich an
+exact-host or subdomain route. Point that hostname at the gateway. Opening the
+default path URL can leave the web client stuck on its loading logo even while
+its workload and health endpoint are healthy. See
+[Immich's reverse-proxy requirements](https://docs.immich.app/administration/reverse-proxy/).
+The web frontend, API, and mobile well-known endpoint must all use the hostname
+root; HTML link rewriting does not make subpath hosting supported.
+
 1. Allocate at least **2 CPU cores and 6 GiB RAM** to Immich (4 cores and 8 GiB recommended). The ML image on amd64 requires **x86-64-v2**. Prepare writable, persistent shared media storage (`media-data` in namespace `immich`, using Kubarr managed NFS by default). The `/data` upload root uses the explicitly declared `storage.mounts` source `immich`; a writable `/data` mount is required. The NFS export must permit UID/GID 1000 to write; pre-create `immich` with appropriate ownership/permissions if your NFS server root-squashes or denies subPath creation. Avoid modifying Immich's library folders outside the app.
 2. **PostgreSQL must have local, Unix-compatible block storage, preferably SSD.** By default the claim uses the cluster's default StorageClass (which need not be named `local-path`). Verify it provides local/block storage; otherwise set `database.bundled.persistence.storageClassName` to a *local block* class or supply `database.bundled.persistence.existingClaim` backed by local storage. Never use `media-data`, NFS, SMB or any network share for the database. RWO alone does not imply local storage. On HDD set `database.bundled.storageType=HDD`. A local PVC pins the database to its node; plan node recovery and backups accordingly. The chart retains StatefulSet PVCs on uninstall.
 3. No database Secret needs to be pre-created for bundled PostgreSQL. Install through Kubarr or directly with Helm:

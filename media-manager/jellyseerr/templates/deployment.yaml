@@ -82,7 +82,7 @@ spec:
           resources:
             {{- toYaml .Values.jellyseerr.resources | nindent 12 }}
           volumeMounts:
-            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/app/config") | nindent 12 }}
             {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/app/config")) | nindent 12 }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
