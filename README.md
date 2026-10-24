@@ -118,8 +118,9 @@ build metadata as the chart revision.
   CoreDNS metrics on TCP 9153.
 - Helm 4.3 supports Kubernetes 1.34 through 1.37; Kubarr release E2E uses
   1.35.8. Chart API versions remain `v2`.
-- Core application images default to local repositories with `pullPolicy:
-  Never`. Preload them or configure image repository, tag, and pull policy.
+- Core API, frontend, and worker charts use version-pinned GHCR images with
+  `pullPolicy: IfNotPresent`. For locally built images, override the repository,
+  tag, and pull policy and preload them into the cluster.
 - App NetworkPolicies depend on namespace names in `ingressFrom`/`egressTo`.
   Custom release names are supported by pod selectors; namespace access
   still needs to reflect the deployment topology.
