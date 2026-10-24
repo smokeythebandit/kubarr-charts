@@ -115,6 +115,18 @@ ngx = {
 ngx.var.uri = "/api/system/health"
 access()
 assert(captured == 0 and ngx.var.api_upstream == "http://kubarr_api")
+route.status = 401
+for _, uri in ipairs({"/api/oauth/available", "/api/oauth/google/login", "/api/oauth/microsoft/callback"}) do
+  ngx.var.uri = uri
+  access()
+  assert(captured == 0 and ngx.var.api_upstream == "http://kubarr_api")
+end
+ngx.var.uri = "/api/oauth/providers"
+access()
+assert(captured == 1 and exit_status == 401)
+captured = 0
+exit_status = nil
+route.status = 404
 ngx.var.host = "localhost"
 ngx.var.uri = "/api/users/me"
 access()

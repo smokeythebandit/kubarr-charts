@@ -58,6 +58,14 @@ data:
             if ngx.var.uri == "/api/system/health" then
               return
             end
+            -- These endpoints belong to Kubarr's public login flow, not an
+            -- authenticated app API. Administrative OAuth routes stay gated.
+            local provider, action = ngx.var.uri:match("^/api/oauth/([a-z0-9_-]+)/([a-z]+)$")
+            if ngx.var.uri == "/api/oauth/available"
+                or ((provider == "google" or provider == "microsoft")
+                  and (action == "login" or action == "callback")) then
+              return
+            end
             local route = ngx.location.capture("/_kubarr_route_lookup", {
               args = { host = ngx.var.host, path = ngx.var.uri }
             })
