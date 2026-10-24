@@ -5,7 +5,7 @@ namespace:
 image:
   repository: ghcr.io/smokeythebandit/kubarr-worker
   pullPolicy: IfNotPresent
-  tag: "0.3.2"
+  tag: "0.3.3"
 pollIntervalSeconds: 5
 reconcileIntervalSeconds: 30
 domainReconcileIntervalSeconds: 60

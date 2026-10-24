@@ -5,7 +5,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/smokeythebandit/kubarr-backend
   pullPolicy: IfNotPresent
-  tag: "0.3.2"
+  tag: "0.3.3"
 service:
   type: ClusterIP
   port: 8000
