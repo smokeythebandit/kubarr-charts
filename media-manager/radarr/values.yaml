@@ -12,7 +12,7 @@ radarr:
   image:
     repository: linuxserver/radarr
     pullPolicy: IfNotPresent
-    tag: "6.3.0"
+    tag: "6.4.4"
 
   # Service configuration
   service:

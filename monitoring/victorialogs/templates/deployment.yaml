@@ -7,6 +7,10 @@ metadata:
     {{- include "victorialogs.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.victorialogs.replicaCount }}
+  # The embedded storage engine requires exclusive access to its data directory.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
   selector:
     matchLabels:
       {{- include "victorialogs.selectorLabels" . | nindent 6 }}

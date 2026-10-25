@@ -36,13 +36,13 @@ class FrigateTests(unittest.TestCase):
         result, resources = render()
         self.assertEqual(result.returncode, 0, result.stderr)
         chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
-        self.assertEqual(chart["appVersion"], "0.18.0")
+        self.assertEqual(chart["appVersion"], "0.18.2")
         self.assertEqual(chart["annotations"]["kubarr.io/category"], "media-server")
         deployment = objects(resources, "Deployment")["frigate"]
         pod = deployment["spec"]["template"]["spec"]
         app = pod["containers"][0]
         self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
-        self.assertEqual(app["image"], "ghcr.io/blakeblackshear/frigate:0.18.0")
+        self.assertEqual(app["image"], "ghcr.io/blakeblackshear/frigate:0.18.2")
         self.assertEqual(objects(resources, "Service")["frigate"]["spec"]["ports"],
                          [{"port": 8971, "targetPort": "http", "protocol": "TCP", "name": "http"}])
         self.assertEqual(app["ports"], [{"name": "http", "containerPort": 8971, "protocol": "TCP"}])

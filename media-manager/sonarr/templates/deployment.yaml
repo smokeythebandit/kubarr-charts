@@ -33,6 +33,9 @@ spec:
         - name: init-config
           image: busybox:1.38.0
           securityContext:
+            runAsUser: {{ .Values.sonarr.env.PUID | int }}
+            runAsGroup: {{ .Values.sonarr.env.PGID | int }}
+            runAsNonRoot: {{ ne (int .Values.sonarr.env.PUID) 0 }}
             allowPrivilegeEscalation: false
             capabilities:
               drop:

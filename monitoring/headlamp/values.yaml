@@ -5,7 +5,7 @@ headlamp:
   replicaCount: 1
   image:
     repository: ghcr.io/headlamp-k8s/headlamp
-    tag: v0.45.0
+    tag: v0.46.0
     pullPolicy: IfNotPresent
   # Must match the gateway app name. The gateway preserves this path.
   basePath: /headlamp

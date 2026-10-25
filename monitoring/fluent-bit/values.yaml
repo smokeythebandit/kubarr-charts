@@ -5,7 +5,7 @@ namespace:
 fluentbit:
   image:
     repository: fluent/fluent-bit
-    tag: "5.1.1"
+    tag: "5.1.5"
     pullPolicy: IfNotPresent
 
   resources:

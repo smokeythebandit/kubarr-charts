@@ -1,9 +1,9 @@
 namespace:
   name: default
 image:
-  repository: kubarr-dns-webhook
-  tag: 0.1.0
-  pullPolicy: Never
+  repository: ghcr.io/smokeythebandit/kubarr-dns-webhook
+  tag: "0.3.4"
+  pullPolicy: IfNotPresent
 groupName: dns.kubarr.local
 replicaCount: 1
 service:

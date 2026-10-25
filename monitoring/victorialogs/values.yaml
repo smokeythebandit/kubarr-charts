@@ -7,7 +7,7 @@ victorialogs:
 
   image:
     repository: victoriametrics/victoria-logs
-    tag: "v1.52.0"
+    tag: "v1.53.0"
     pullPolicy: IfNotPresent
 
   service:

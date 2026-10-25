@@ -44,6 +44,25 @@ def render(chart, enabled, extra=None, app_values=None, network_policy=None, exp
 
 
 class MediaVpnTests(unittest.TestCase):
+    def test_config_initializers_use_the_application_file_owner(self):
+        for chart in ("indexer/jackett", "media-manager/sonarr", "media-manager/radarr"):
+            with self.subTest(chart=chart):
+                pod, _ = render(chart, False, app_values={"env": {"PUID": "1234", "PGID": "5678"}})
+                init = next(c for c in pod["initContainers"] if c["name"] == "init-config")
+                self.assertEqual(init["securityContext"]["runAsUser"], 1234)
+                self.assertEqual(init["securityContext"]["runAsGroup"], 5678)
+                self.assertTrue(init["securityContext"]["runAsNonRoot"])
+                self.assertEqual(init["securityContext"]["capabilities"], {"drop": ["ALL"]})
+
+    def test_seerr_keeps_existing_config_mount_and_runs_as_node(self):
+        pod, _ = render("media-manager/jellyseerr", False)
+        app = next(c for c in pod["containers"] if c["name"] == "jellyseerr")
+        self.assertEqual(app["image"], "ghcr.io/seerr-team/seerr:v3.5.1")
+        self.assertEqual(app["command"], ["node", "dist/index.js"])
+        self.assertEqual(app["securityContext"]["runAsUser"], 1000)
+        self.assertTrue(app["securityContext"]["runAsNonRoot"])
+        self.assertIn({"name": "config", "mountPath": "/app/config"}, app["volumeMounts"])
+
     def test_exporter_ingress_is_scoped_and_independent_of_vpn(self):
         for chart, (app, port, exporter_port) in CHARTS.items():
             for vpn_enabled in (False, True):

@@ -36,6 +36,9 @@ spec:
         - name: init-config
           image: busybox:1.38.0
           securityContext:
+            runAsUser: {{ .Values.jackett.env.PUID | int }}
+            runAsGroup: {{ .Values.jackett.env.PGID | int }}
+            runAsNonRoot: {{ ne (int .Values.jackett.env.PUID) 0 }}
             allowPrivilegeEscalation: false
             capabilities:
               drop:

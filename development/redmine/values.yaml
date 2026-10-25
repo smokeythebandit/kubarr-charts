@@ -4,7 +4,7 @@ namespace:
 redmine:
   image:
     repository: docker.io/library/redmine
-    tag: 7.0.1-bookworm
+    tag: 7.0.2-bookworm
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP

@@ -52,7 +52,7 @@ class SonarrExporterTests(unittest.TestCase):
         deployment, init_container, _ = startup_script()
         exporter, = deployment["spec"]["template"]["spec"]["containers"]
 
-        self.assertEqual(init_container["image"], "linuxserver/sonarr:4.0.19")
+        self.assertEqual(init_container["image"], "linuxserver/sonarr:4.0.20")
         self.assertEqual(init_container["command"][:2], ["/bin/sh", "-c"])
         self.assertEqual(exporter["image"], "ghcr.io/onedr0p/exportarr:v2.3.0")
         self.assertEqual(exporter["args"], ["sonarr", "--config=/config/config.xml"])

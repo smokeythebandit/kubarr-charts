@@ -1,15 +1,15 @@
 apiVersion: v2
 name: jellyseerr
-description: Request management and media discovery tool for Jellyfin
+description: Seerr media request manager, compatible with existing Jellyseerr releases
 type: application
-version: 2.7.3+9
-appVersion: "2.7.3"
+version: 3.5.1+10
+appVersion: "3.5.1"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar
 # category: groups apps in catalog (download-client, media-server, media-manager, etc.)
 annotations:
-  kubarr.io/display-name: "Jellyseerr"
+  kubarr.io/display-name: "Seerr"
   kubarr.io/icon: "🔍"
   kubarr.io/category: "media-manager"
 dependencies:

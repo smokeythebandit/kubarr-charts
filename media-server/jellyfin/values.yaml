@@ -12,7 +12,7 @@ jellyfin:
   image:
     repository: linuxserver/jellyfin
     pullPolicy: IfNotPresent
-    tag: "10.11.11"
+    tag: "12.3ubu2604-ls56"
 
   # Service configuration
   service:

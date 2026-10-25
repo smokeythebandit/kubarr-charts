@@ -12,7 +12,7 @@ sonarr:
   image:
     repository: linuxserver/sonarr
     pullPolicy: IfNotPresent
-    tag: "4.0.19"
+    tag: "4.0.20"
 
   # Service configuration
   service:

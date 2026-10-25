@@ -40,6 +40,9 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.jellyseerr.image.repository }}:{{ .Values.jellyseerr.image.tag }}"
           imagePullPolicy: {{ .Values.jellyseerr.image.pullPolicy }}
+          # Run Node directly so Kubernetes signals reach Seerr, without npm's
+          # shell wrapper (the upstream image no longer includes an init).
+          command: [node, dist/index.js]
           ports:
             - name: http
               containerPort: {{ .Values.jellyseerr.service.targetPort }}

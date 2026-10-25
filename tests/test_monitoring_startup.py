@@ -33,6 +33,14 @@ def deployment(resources):
 
 
 class MonitoringStartupTests(unittest.TestCase):
+    def test_persistent_stores_do_not_overlap_writers_during_upgrade(self):
+        for chart, application in CHARTS:
+            with self.subTest(application=application):
+                workload = deployment(render(chart, chart.name))
+                self.assertEqual(workload["spec"]["replicas"], 1)
+                self.assertEqual(workload["spec"]["strategy"]["type"], "Recreate")
+                self.assertIsNone(workload["spec"]["strategy"].get("rollingUpdate"))
+
     def test_startup_probe_guards_existing_health_probes(self):
         for chart, application in CHARTS:
             with self.subTest(chart=chart.name):

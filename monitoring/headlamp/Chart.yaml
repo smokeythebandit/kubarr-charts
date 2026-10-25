@@ -2,8 +2,8 @@ apiVersion: v2
 name: headlamp
 description: Headlamp Kubernetes web UI with per-user token login
 type: application
-version: 0.45.0+5
-appVersion: "0.45.0"
+version: 0.46.0+6
+appVersion: "0.46.0"
 annotations:
   kubarr.io/display-name: "Headlamp"
   kubarr.io/icon: "🔦"

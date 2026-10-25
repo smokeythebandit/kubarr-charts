@@ -14,7 +14,7 @@ qbittorrent:
   image:
     repository: linuxserver/qbittorrent
     pullPolicy: IfNotPresent
-    tag: "5.2.3"
+    tag: "5.3.0"
 
   # Service configuration
   service:

@@ -2,8 +2,8 @@ apiVersion: v2
 name: redmine
 description: Redmine project and issue tracking
 type: application
-version: 7.0.1+9
-appVersion: "7.0.1"
+version: 7.0.2+10
+appVersion: "7.0.2"
 annotations:
   kubarr.io/display-name: "Redmine"
   kubarr.io/icon: "📋"

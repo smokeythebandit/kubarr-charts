@@ -1,4 +1,4 @@
-# Default values for jellyseerr
+# Seerr defaults. Keep the jellyseerr chart/release identity for in-place upgrades.
 # This is a YAML-formatted file.
 
 # Namespace configuration
@@ -11,9 +11,9 @@ jellyseerr:
   replicaCount: 1
 
   image:
-    repository: fallenbagel/jellyseerr
+    repository: ghcr.io/seerr-team/seerr
     pullPolicy: IfNotPresent
-    tag: "2.7.3"
+    tag: "v3.5.1"
 
   # Base path for URL routing (leave empty for root)
   # Jellyseerr does not support serving from a subpath
@@ -75,7 +75,9 @@ jellyseerr:
 
 # Security context
 securityContext:
-  runAsNonRoot: false
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
   allowPrivilegeEscalation: false
   capabilities:
     drop:

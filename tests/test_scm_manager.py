@@ -45,7 +45,7 @@ class ScmManagerTests(unittest.TestCase):
         policy = resource(resources, "NetworkPolicy")["spec"]
         self.assertEqual(deployment["spec"]["replicas"], 1)
         self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
-        self.assertEqual(app["image"], "scmmanager/scm-manager:3.12.1")
+        self.assertEqual(app["image"], "scmmanager/scm-manager:3.12.2")
         self.assertEqual(app["ports"][0]["containerPort"], 8080)
         self.assertEqual(service["metadata"]["annotations"]["kubarr.io/base-path"], "/scm-manager")
         self.assertEqual(service["spec"]["ports"][0]["targetPort"], "http")

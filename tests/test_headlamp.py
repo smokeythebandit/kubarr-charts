@@ -36,7 +36,7 @@ class HeadlampTests(unittest.TestCase):
         self.assertEqual(service["metadata"]["annotations"]["kubarr.io/base-path"], "/headlamp")
         self.assertEqual(service["spec"]["ports"][0]["targetPort"], "http")
         self.assertEqual(container["ports"][0]["containerPort"], 4466)
-        self.assertEqual(container["image"], "ghcr.io/headlamp-k8s/headlamp:v0.45.0")
+        self.assertEqual(container["image"], "ghcr.io/headlamp-k8s/headlamp:v0.46.0")
         self.assertIn("-in-cluster", container["args"])
         self.assertIn("-base-url=/headlamp", container["args"])
         self.assertFalse(any("unsafe" in arg or "skip-login" in arg for arg in container["args"]))

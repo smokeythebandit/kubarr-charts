@@ -12,7 +12,7 @@ plex:
   image:
     repository: linuxserver/plex
     pullPolicy: IfNotPresent
-    tag: "1.43.3"
+    tag: "1.43.5"
 
   # Service configuration
   service:
