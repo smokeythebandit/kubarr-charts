@@ -49,6 +49,67 @@ class GatewayTests(unittest.TestCase):
         cls.api_access_lua = api_match.group(2)
         auth_block = config.split("location /auth/ {", 1)[1]
         cls.auth_access_lua = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", auth_block, re.M | re.S).group(2)
+        failure_block = config.split("location @app_connection_failed {", 1)[1]
+        cls.connection_failure_lua = re.search(r"^( *)content_by_lua_block \{\n(.*?)^\1\}", failure_block, re.M | re.S).group(2)
+
+    def test_api_connection_failures_preserve_errors_instead_of_returning_html(self):
+        script = r'''
+local exited, redirect, body
+local method = "GET"
+ngx = {
+ HTTP_BAD_GATEWAY=502, HTTP_MOVED_TEMPORARILY=302,
+ header={}, var={app_name="jellyfin", upstream_status="502"},
+ req={get_method=function() return method end},
+ say=function(value) body=value end,
+ exit=function(status) exited=status end,
+ escape_uri=function(value) return value end,
+ redirect=function(uri, status) redirect={uri,status} end
+}
+'''
+        script += "\nlocal function failure()\n" + self.connection_failure_lua + "\nend\n"
+        script += r'''
+for _, accept in ipairs({"", "application/json, text/plain, */*", "*/*", "text/event-stream"}) do
+ for _, status in ipairs({502,503,504}) do
+  ngx.header = { ["Content-Length"]="old" }
+  ngx.var.http_accept=accept
+  ngx.var.upstream_status="502, " .. status
+  exited, redirect, body=nil,nil,nil
+  failure()
+  assert(exited==status and ngx.status==status)
+  assert(redirect==nil and body=='{"error":"app_connection_failed"}')
+  assert(ngx.header["Content-Type"]=="application/json")
+  assert(ngx.header["Cache-Control"]=="no-store")
+  assert(ngx.header["Content-Length"]==nil)
+ end
+end
+method="POST"
+ngx.var.http_accept="text/html"
+ngx.var.upstream_status="502"
+exited, redirect=nil,nil
+failure()
+assert(exited==502 and redirect==nil)
+for _, navigation_method in ipairs({"GET","HEAD"}) do
+ method=navigation_method
+ exited, redirect=nil,nil
+ failure()
+ assert(exited==nil and redirect[2]==302)
+ assert(redirect[1]=="/app-error?app=jellyfin&reason=connection_failed")
+end
+'''
+        result = subprocess.run(["luajit", "-"], input=script, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_api_auth_failures_do_not_redirect_to_status_ui(self):
+        for status in (500, 502, 503, 504):
+            with self.subTest(status=status):
+                self.check_gateway(
+                    f'auth.status = {status}\nngx.var.http_accept = "application/json"',
+                    outcome=f"exit:{status}", captures=2,
+                )
+        self.check_gateway(
+            'catalog.status = 200\nngx.var.http_accept = "application/json"',
+            outcome="exit:404", captures=3,
+        )
 
     def test_host_app_auth_html_does_not_intercept_kubarr_login_or_host_transfer(self):
         script = r'''
@@ -205,7 +266,7 @@ ngx = {
   HTTP_INTERNAL_SERVER_ERROR = 500, HTTP_BAD_GATEWAY = 502,
   HTTP_SERVICE_UNAVAILABLE = 503, HTTP_GATEWAY_TIMEOUT = 504, ERR = "error",
   var = {
-    host = "kubarr.test", uri = "/nonexistent-route",
+    host = "kubarr.test", uri = "/nonexistent-route", http_accept = "text/html",
     app_name = "nonexistent-route", app_path = "",
     app_upstream = "", app_base_path = "", app_ingress_path = "", target_path = ""
   },
