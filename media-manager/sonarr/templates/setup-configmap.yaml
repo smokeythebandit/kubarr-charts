@@ -199,6 +199,33 @@ data:
         jq -r ".[] | select(.implementation == \"$implementation\") | .id" | head -1
     }
 
+    ensure_qbittorrent_path_mapping() {
+      local api_key="$1"
+      local host="$2"
+      local endpoint="http://localhost:$API_PORT$API_BASE/api/v3/remotepathmapping"
+      local mappings payload
+
+      # The client reports /downloads, but this app mounts that same NFS
+      # directory at /downloads/qbittorrent. Reconcile on every pass so existing
+      # clients are repaired too, without replacing a user's mapping.
+      mappings=$(curl -fsS --connect-timeout 3 --max-time 10 \
+        -H "X-Api-Key: $api_key" "$endpoint") || return 1
+      echo "$mappings" | jq -e 'type == "array"' > /dev/null || return 1
+      if echo "$mappings" | jq -e --arg host "$host" '
+        any(.[]; ((.host // "" | ascii_downcase) == ($host | ascii_downcase))
+          and ((.remotePath // "" | rtrimstr("/")) == "/downloads"))
+      ' > /dev/null; then
+        return 0
+      fi
+
+      payload=$(jq -nc --arg host "$host" \
+        '{host: $host, remotePath: "/downloads/", localPath: "/downloads/qbittorrent/"}') || return 1
+      curl -fsS --connect-timeout 3 --max-time 10 -X POST \
+        -H "X-Api-Key: $api_key" -H "Content-Type: application/json" \
+        "$endpoint" -d "$payload" > /dev/null || return 1
+      echo "[setup] Configured qBittorrent download path mapping"
+    }
+
     add_qbittorrent() {
       local api_key="$1"
       local host="$2"
@@ -380,6 +407,12 @@ data:
         check_path=$(echo "$check_path" | tr -d ' ')
 
         available=$(is_client_available "$host" "$port" "$check_path" && echo "yes" || echo "no")
+        if [ "$name" = "qBittorrent" ] && [ "$available" = "yes" ]; then
+          if ! ensure_qbittorrent_path_mapping "$API_KEY" "$host"; then
+            echo "[setup] Could not configure qBittorrent path mapping; retrying next pass"
+            continue
+          fi
+        fi
         client_id=$(get_client_id "$API_KEY" "$implementation")
         exists=$([ -n "$client_id" ] && echo "yes" || echo "no")
 
