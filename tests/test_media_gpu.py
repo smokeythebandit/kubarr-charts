@@ -31,6 +31,33 @@ def render(app, overrides, set_flags=()):
 
 
 class MediaGpuTests(unittest.TestCase):
+    def test_jellyfin_prepares_writable_nfs_paths_as_app_user_before_subpath_mounts(self):
+        for vpn in (False, True):
+            result, deployment = render("jellyfin", {
+                "vpn": {"enabled": vpn},
+                "jellyfin": {"env": {"PUID": "1234", "PGID": "5678"}},
+                "storage": {"mounts": [
+                    {"name": "cache", "source": "custom/cache", "target": "/cache", "mode": "read-write"},
+                    {"name": "library", "source": "media", "target": "/data", "mode": "read"},
+                ]},
+            })
+            self.assertEqual(result.returncode, 0, result.stderr)
+            init = deployment["spec"]["template"]["spec"]["initContainers"]
+            prepare = next(c for c in init if c["name"] == "prepare-media-directories")
+            self.assertEqual(prepare["args"], ["/nfs/custom/cache"])
+            self.assertEqual(prepare["volumeMounts"], [{"name": "media", "mountPath": "/nfs"}])
+            self.assertEqual(prepare["securityContext"]["runAsUser"], 1234)
+            self.assertEqual(prepare["securityContext"]["runAsGroup"], 5678)
+            self.assertEqual(prepare["securityContext"]["capabilities"], {"drop": ["ALL"]})
+            self.assertEqual(any(c["name"] == "gluetun-tmp-permissions" for c in init), vpn)
+            with tempfile.TemporaryDirectory() as directory:
+                cache = Path(directory) / "custom/cache"
+                for _ in range(2):
+                    subprocess.run([*prepare["command"], str(cache)], check=True,
+                                   capture_output=True, text=True)
+                self.assertTrue(cache.is_dir())
+                self.assertFalse((Path(directory) / "media").exists())
+
     def test_legacy_release_without_gpu_values(self):
         for app in CHARTS:
             # A pre-GPU release has no gpu key in its stored values. -f models

@@ -8,7 +8,8 @@ metadata:
 data:
   99-apply-config.sh: |
     #!/bin/bash
-    # Seed new installations, then update only Kubarr-managed VPN settings.
+    # Seed missing defaults, then update only Kubarr-managed VPN settings.
+    set -eu
 
     CONFIG_DIR="/config/qBittorrent"
     CONFIG_FILE="${CONFIG_DIR}/qBittorrent.conf"
@@ -21,6 +22,55 @@ data:
       cp "$IMMUTABLE_CONFIG" "$CONFIG_FILE"
       exit 0
     fi
+
+    # LinuxServer creates a minimal config before custom-cont-init.d runs.
+    # Merge defaults by INI section/key instead of treating any existing file
+    # as fully initialized. Explicit user preferences always take precedence.
+    awk '
+      function emit_missing(group, i, entry) {
+        for (i = 1; i <= count[group]; i++) {
+          entry = group SUBSEP keys[group, i]
+          if (!(entry in seen)) {
+            print defaults[entry]
+            seen[entry] = 1
+          }
+        }
+      }
+      FNR == 1 { section = "" }
+      FILENAME == ARGV[1] {
+        if ($0 ~ /^\[/) {
+          section = $0
+          groups[++group_count] = section
+        } else if (index($0, "=") > 0) {
+          key = substr($0, 1, index($0, "=") - 1)
+          keys[section, ++count[section]] = key
+          defaults[section, key] = $0
+        }
+        next
+      }
+      /^\[/ {
+        emit_missing(section)
+        section = $0
+        present[section] = 1
+      }
+      {
+        if (index($0, "=") > 0)
+          seen[section, substr($0, 1, index($0, "=") - 1)] = 1
+        print
+      }
+      END {
+        emit_missing(section)
+        for (g = 1; g <= group_count; g++) {
+          section = groups[g]
+          if (!(section in present)) {
+            print ""
+            print section
+            emit_missing(section)
+          }
+        }
+      }
+    ' "$IMMUTABLE_CONFIG" "$CONFIG_FILE" > "${CONFIG_FILE}.tmp"
+    mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
 
     update_managed_setting() {
       key="$1"

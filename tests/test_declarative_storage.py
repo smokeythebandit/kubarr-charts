@@ -220,7 +220,8 @@ class DeclarativeStorageTests(unittest.TestCase):
                     self.assertEqual(claims[config]["spec"]["accessModes"], ["ReadWriteOnce"])
                     self.assertEqual(claims[config]["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
                     self.assertEqual({m["subPath"] for _, pod in pods(resources)
-                                      for c in pod.get("initContainers", []) + pod["containers"]
+                                      for c in pod["containers"] + [init for init in pod.get("initContainers", [])
+                                                                   if not init["name"].startswith("prepare-")]
                                       for m in c.get("volumeMounts", []) if m["name"] == "media"},
                                      {m["source"] for m in defaults["mounts"]})
 

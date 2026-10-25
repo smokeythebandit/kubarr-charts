@@ -1,6 +1,7 @@
 """Render-level coverage for qBittorrent's optional Gluetun sidecar."""
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import configparser
 import os
 from pathlib import Path
 import subprocess
@@ -40,6 +41,44 @@ def env(container):
 
 
 class QBittorrentVpnTests(unittest.TestCase):
+    def test_startup_merges_linuxserver_minimal_config_without_resetting_preferences(self):
+        resources = render_resources()
+        script = next(resource["data"]["99-apply-config.sh"] for resource in resources
+                      if resource["kind"] == "ConfigMap" and "99-apply-config.sh" in resource["data"])
+        defaults = next(resource["data"]["qBittorrent.conf"] for resource in resources
+                        if resource["kind"] == "ConfigMap" and "qBittorrent.conf" in resource["data"])
+        for initial in ["", "[Preferences]\nWebUI\\Address=*\nWebUI\\ServerDomains=*\n",
+                        "[Preferences]\nWebUI\\CSRFProtection=true\nWebUI\\Password_PBKDF2=keep-hash\n"
+                        "[BitTorrent]\nSession\\DefaultSavePath=/my/downloads/\nSession\\Port=12345\n"
+                        "[Custom]\nKeep=value\n"]:
+            with self.subTest(initial=initial), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config_dir = root / "qBittorrent"
+                config_dir.mkdir()
+                config_file = config_dir / "qBittorrent.conf"
+                config_file.write_text(initial)
+                immutable = root / "defaults.conf"
+                immutable.write_text(defaults)
+                executable = root / "init.sh"
+                executable.write_text(script.replace('CONFIG_DIR="/config/qBittorrent"',
+                                                      f'CONFIG_DIR="{config_dir}"')
+                                      .replace('/config-immutable/qBittorrent.conf', str(immutable)))
+                subprocess.run(["bash", str(executable)], check=True, capture_output=True, text=True)
+                result = config_file.read_text()
+                config = configparser.RawConfigParser(strict=True)
+                config.read_string(result)
+                self.assertEqual(config["Preferences"]["WebUI\\LocalHostAuth"], "false")
+                self.assertEqual(config["Preferences"]["WebUI\\AuthSubnetWhitelistEnabled"], "true")
+                self.assertEqual(config["Preferences"]["WebUI\\CSRFProtection"],
+                                 "true" if "keep-hash" in initial else "false")
+                if "keep-hash" in initial:
+                    self.assertEqual(config["Preferences"]["WebUI\\Password_PBKDF2"], "keep-hash")
+                    self.assertEqual(config["BitTorrent"]["Session\\DefaultSavePath"], "/my/downloads/")
+                    self.assertEqual(config["Custom"]["Keep"], "value")
+                    self.assertEqual(config["BitTorrent"]["Session\\Port"], "6881")
+                subprocess.run(["bash", str(executable)], check=True, capture_output=True, text=True)
+                self.assertEqual(config_file.read_text(), result)
+
     def test_control_policy_only_allows_backend_on_8001_when_vpn_enabled(self):
         resources = render_resources({"vpn": {"enabled": True}})
         policies = [resource for resource in resources if resource["kind"] == "NetworkPolicy"]
