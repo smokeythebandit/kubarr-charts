@@ -12,8 +12,8 @@ jobs:
   helm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310
         with:
           version: v4.3.0
       - run: |
@@ -70,7 +70,7 @@ jobs:
           "$RUNNER_TEMP/chart-tests/bin/python" -B -m unittest discover -s tests -v
 
       - name: Upload validated packages
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: validated-charts
           path: ${{ runner.temp }}/helm-packages/*.tgz
