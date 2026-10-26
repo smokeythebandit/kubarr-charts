@@ -1,3 +1,7 @@
+{{- $writableMounts := list -}}
+{{- range .Values.storage.mounts -}}
+{{- if eq .mode "read-write" -}}{{- $writableMounts = append $writableMounts . -}}{{- end -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -21,8 +25,34 @@ spec:
         runAsUser: 999
         runAsGroup: 999
         fsGroup: 999
+        # The shared NFS export is writable by the configured media group.
+        # Keep the database UID for data files it already owns.
+        supplementalGroups: [1000]
         seccompProfile:
           type: RuntimeDefault
+      {{- if $writableMounts }}
+      initContainers:
+        # Kubelet creates subPath directories as root, which a normal export
+        # squashes. Prepare the data directory as the media group instead.
+        - name: prepare-media-directories
+          image: busybox:1.37.0
+          command: [sh, -ec, 'umask 0002; for directory do mkdir -p -- "$directory"; test -w "$directory"; done', --]
+          args:
+            {{- range $writableMounts }}
+            - {{ printf "/nfs/%s" .source | quote }}
+            {{- end }}
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: media
+              mountPath: /nfs
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
