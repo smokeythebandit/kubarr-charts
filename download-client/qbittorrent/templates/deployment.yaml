@@ -1,3 +1,7 @@
+{{- $writableMounts := list -}}
+{{- range .Values.storage.mounts -}}
+{{- if eq .mode "read-write" -}}{{- $writableMounts = append $writableMounts . -}}{{- end -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,9 +35,29 @@ spec:
       serviceAccountName: {{ include "qbittorrent.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- with (include "kubarr-common.gluetun.initContainer" (dict "root" .)) }}
+      {{- if or .Values.vpn.enabled $writableMounts }}
       initContainers:
-        {{- . | nindent 8 }}
+        {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
+        {{- if $writableMounts }}
+        - name: prepare-media-directories
+          image: busybox:1.37.0
+          command: [sh, -ec, 'umask 0002; for directory do mkdir -p -- "$directory"; test -w "$directory"; done', --]
+          args:
+            {{- range $writableMounts }}
+            - {{ printf "/nfs/%s" .source | quote }}
+            {{- end }}
+          securityContext:
+            runAsUser: {{ .Values.qbittorrent.env.PUID | int }}
+            runAsGroup: {{ .Values.qbittorrent.env.PGID | int }}
+            runAsNonRoot: {{ ne (int .Values.qbittorrent.env.PUID) 0 }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: media
+              mountPath: /nfs
+        {{- end }}
       {{- end }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.qbittorrent.service.targetPort "inputPorts" (ternary (toString .Values.exporter.port) "" .Values.exporter.enabled) "defaultUpCommand" (printf "/bin/sh -c 'i=0; until wget -q -T 5 -O /dev/null --post-data=\"json={\\\"listen_port\\\":{{PORT}}}\" http://127.0.0.1:%v/api/v2/app/setPreferences; do i=$((i+1)); [ \"$i\" -lt 30 ] || exit 1; sleep 2; done'" .Values.qbittorrent.service.targetPort)) | nindent 8 }}

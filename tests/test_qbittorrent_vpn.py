@@ -113,7 +113,7 @@ class QBittorrentVpnTests(unittest.TestCase):
         self.assertNotIn("gluetun", by_name(pod["containers"]))
         self.assertIn("qbittorrent", by_name(pod["containers"]))
         self.assertIn("exporter", by_name(pod["containers"]))
-        self.assertNotIn("initContainers", pod)
+        self.assertEqual(set(by_name(pod["initContainers"])), {"prepare-media-directories"})
         self.assertNotIn("gluetun-tmp", by_name(pod["volumes"]))
         self.assertNotIn("dev-net-tun", by_name(pod["volumes"]))
 

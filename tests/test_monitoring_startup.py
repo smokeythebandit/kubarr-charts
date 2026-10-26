@@ -2,6 +2,8 @@
 
 import os
 import subprocess
+import tempfile
+from pathlib import Path
 import unittest
 
 import yaml
@@ -33,6 +35,29 @@ def deployment(resources):
 
 
 class MonitoringStartupTests(unittest.TestCase):
+    def test_nfs_subpaths_are_prepared_without_root_or_recursive_ownership_changes(self):
+        for chart, application in CHARTS:
+            with self.subTest(application=application):
+                pod = deployment(render(chart, chart.name))["spec"]["template"]["spec"]
+                prepare, = pod["initContainers"]
+                uid = 1000 if application == "victorialogs" else 65534
+                self.assertEqual(prepare["name"], "prepare-media-directories")
+                self.assertEqual(prepare["securityContext"]["runAsUser"], uid)
+                self.assertEqual(prepare["securityContext"]["runAsGroup"], 1000)
+                self.assertEqual(prepare["securityContext"]["capabilities"], {"drop": ["ALL"]})
+                self.assertEqual(prepare["args"], [f"/nfs/system/{application}"])
+                self.assertEqual(prepare["volumeMounts"], [{"name": "media", "mountPath": "/nfs"}])
+                if application == "victoriametrics":
+                    self.assertEqual(pod["securityContext"]["runAsUser"], 65534)
+                    self.assertIn(1000, pod["securityContext"]["supplementalGroups"])
+                with tempfile.TemporaryDirectory() as directory:
+                    target = Path(directory) / "system" / application
+                    for _ in range(2):
+                        subprocess.run([*prepare["command"], str(target)],
+                                       check=True, capture_output=True, text=True)
+                    self.assertTrue(target.is_dir())
+                    self.assertEqual(target.stat().st_mode & 0o777, 0o775)
+
     def test_persistent_stores_do_not_overlap_writers_during_upgrade(self):
         for chart, application in CHARTS:
             with self.subTest(application=application):

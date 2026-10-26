@@ -96,7 +96,7 @@ class SonarrVpnTests(unittest.TestCase):
         self.assertIn({"name": "gluetun-tmp", "emptyDir": {}}, pod["volumes"])
         self.assertEqual(
             {container["name"] for container in pod["initContainers"]},
-            {"init-config", "gluetun-tmp-permissions"},
+            {"prepare-media-directories", "init-config", "gluetun-tmp-permissions"},
         )
         permissions = next(c for c in pod["initContainers"] if c["name"] == "gluetun-tmp-permissions")
         self.assertEqual(permissions["command"], ["/bin/sh", "-c", "chmod 0700 /tmp/gluetun"])

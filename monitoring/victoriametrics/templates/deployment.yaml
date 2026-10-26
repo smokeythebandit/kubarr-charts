@@ -1,3 +1,7 @@
+{{- $writableMounts := list -}}
+{{- range .Values.storage.mounts -}}
+{{- if eq .mode "read-write" -}}{{- $writableMounts = append $writableMounts . -}}{{- end -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,8 +34,32 @@ spec:
         runAsUser: 65534
         runAsGroup: 65534
         fsGroup: 65534
+        # The shared NFS export is writable by the configured media group.
+        # Keep the existing application UID for already-owned database files.
+        supplementalGroups: [1000]
         seccompProfile:
           type: RuntimeDefault
+      {{- if $writableMounts }}
+      initContainers:
+        - name: prepare-media-directories
+          image: busybox:1.37.0
+          command: [sh, -ec, 'umask 0002; for directory do mkdir -p -- "$directory"; test -w "$directory"; done', --]
+          args:
+            {{- range $writableMounts }}
+            - {{ printf "/nfs/%s" .source | quote }}
+            {{- end }}
+          securityContext:
+            runAsUser: 65534
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: media
+              mountPath: /nfs
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
