@@ -2,7 +2,7 @@ apiVersion: v2
 name: headlamp
 description: Headlamp Kubernetes web UI with per-user token login
 type: application
-version: 0.46.0+6
+version: 0.46.0+7
 appVersion: "0.46.0"
 annotations:
   kubarr.io/display-name: "Headlamp"
@@ -10,5 +10,5 @@ annotations:
   kubarr.io/category: "monitoring"
 dependencies:
   - name: kubarr-common
-    version: 0.4.0
+    version: 0.5.0
     repository: file://../../system/kubarr-common

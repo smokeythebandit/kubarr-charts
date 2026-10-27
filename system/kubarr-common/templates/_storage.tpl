@@ -37,6 +37,48 @@
 {{- .root.Values.storage.media.existingClaim -}}
 {{- end }}
 
+{{/* Kubelet creates subPath directories as root, which a normal export
+     squashes. Create them first as the application's own uid in the media
+     group, so neither a chown nor a privileged step is involved. A "." source
+     mounts the export root, which already exists. */}}
+{{- define "kubarr-common.storage.prepareMounts" -}}
+{{- $mounts := .root.Values.storage.mounts -}}
+{{- if hasKey . "mounts" -}}{{- $mounts = .mounts -}}{{- end -}}
+{{- $uid := default 1000 .uid -}}
+{{- $selected := list -}}
+{{- range $mount := $mounts -}}
+{{- if and (eq $mount.mode "read-write") (ne $mount.source ".") -}}
+{{- $selected = append $selected $mount -}}
+{{- end -}}
+{{- end -}}
+{{- if $selected -}}
+- name: prepare-media-directories
+  image: {{ default "busybox:1.37.0" .root.Values.storage.prepareImage }}
+  command: [sh, -ec, 'umask 0002; for directory do mkdir -p -- "$directory"; test -w "$directory"; done', --]
+  args:
+    {{- range $mount := $selected }}
+    - {{ printf "/nfs/%s" $mount.source | quote }}
+    {{- end }}
+  securityContext:
+    runAsUser: {{ $uid }}
+    runAsGroup: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  volumeMounts:
+    - name: media
+      mountPath: /nfs
+{{- end -}}
+{{- end }}
+
+{{/* The shared export is writable by the media group. An application whose uid
+     is not 1000 needs its membership to reach prepared directories. */}}
+{{- define "kubarr-common.storage.mediaGroup" -}}
+supplementalGroups: [1000]
+{{- end }}
+
 {{- define "kubarr-common.storage.mediaClaim" -}}
 {{- $root := .root -}}
 {{- include "kubarr-common.storage.deprecated" $root -}}

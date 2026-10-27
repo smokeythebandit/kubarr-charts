@@ -2,7 +2,7 @@ apiVersion: v2
 name: jackett
 description: API support for torrent trackers for Sonarr and Radarr
 type: application
-version: 0.24.2903+8
+version: 0.24.2903+9
 appVersion: "0.24.2903"
 keywords:
   - jackett
@@ -25,5 +25,5 @@ annotations:
   kubarr.io/category: "indexer"
 dependencies:
   - name: kubarr-common
-    version: 0.4.0
+    version: 0.5.0
     repository: file://../../system/kubarr-common

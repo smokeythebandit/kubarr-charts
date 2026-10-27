@@ -2,7 +2,7 @@ apiVersion: v2
 name: jellyfin
 description: Free software media server for organizing and streaming media
 type: application
-version: 12.3.0+10
+version: 12.3.0+11
 appVersion: "12.3"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
@@ -14,5 +14,5 @@ annotations:
   kubarr.io/category: "media-server"
 dependencies:
   - name: kubarr-common
-    version: 0.4.0
+    version: 0.5.0
     repository: file://../../system/kubarr-common
