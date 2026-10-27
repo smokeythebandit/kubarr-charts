@@ -122,5 +122,26 @@ class PrepareMountsTests(unittest.TestCase):
             self.assertEqual(target.stat().st_mode & 0o777, 0o775)
 
 
+LIBRARY_MOUNTS = {
+    "media-manager/sonarr": ("media/shows", "/media/shows", "read-write"),
+    "media-manager/radarr": ("media/movies", "/media/movies", "read-write"),
+    "media-server/jellyfin": ("media", "/media", "read"),
+    "media-server/plex": ("media", "/media", "read"),
+}
+
+
+class LibraryPathTests(unittest.TestCase):
+    def test_library_mounts_use_identical_export_and_container_paths(self):
+        for chart, (source, target, mode) in LIBRARY_MOUNTS.items():
+            with self.subTest(chart=chart):
+                mounts = yaml.safe_load(
+                    (ROOT / chart / "values.yaml").read_text())["storage"]["mounts"]
+                library = next(m for m in mounts if m["name"] == "library")
+                self.assertEqual(library["source"], source)
+                self.assertEqual(library["target"], target)
+                self.assertEqual(library["mode"], mode)
+                self.assertEqual(library["target"], "/" + library["source"])
+
+
 if __name__ == "__main__":
     unittest.main()

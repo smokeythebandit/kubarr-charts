@@ -116,7 +116,7 @@ imagePullSecrets: []
 storage:
   mounts:
     - {name: transcode, source: transcode/plex, target: /transcode, mode: read-write}
-    - {name: library, source: media, target: /data, mode: read}
+    - {name: library, source: media, target: /media, mode: read}
   config:
     migrationConfirmed: false
     create: true

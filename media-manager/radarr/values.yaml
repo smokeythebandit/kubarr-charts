@@ -94,7 +94,7 @@ imagePullSecrets: []
 
 storage:
   mounts:
-    - {name: library, source: media, target: /media, mode: read-write}
+    - {name: library, source: media/movies, target: /media/movies, mode: read-write}
     - {name: qbittorrent, source: downloads/qbittorrent, target: /downloads/qbittorrent, mode: read-write}
     - {name: transmission, source: downloads/transmission, target: /downloads/transmission, mode: read-write}
     - {name: deluge, source: downloads/deluge, target: /downloads/deluge, mode: read-write}

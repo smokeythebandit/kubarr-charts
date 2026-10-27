@@ -110,7 +110,7 @@ imagePullSecrets: []
 storage:
   mounts:
     - {name: cache, source: cache/jellyfin, target: /cache, mode: read-write}
-    - {name: library, source: media, target: /data, mode: read}
+    - {name: library, source: media, target: /media, mode: read}
   config:
     migrationConfirmed: false
     create: true
