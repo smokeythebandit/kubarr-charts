@@ -199,6 +199,34 @@ data:
         jq -r ".[] | select(.implementation == \"$implementation\") | .id" | head -1
     }
 
+{{- $library := "" }}
+{{- range .Values.storage.mounts }}{{- if eq .name "library" }}{{- $library = .target }}{{- end }}{{- end }}
+{{- if $library }}
+    ensure_root_folder() {
+      local api_key="$1"
+      local endpoint="http://localhost:$API_PORT$API_BASE/api/v3/rootfolder"
+      local wanted={{ $library | quote }}
+      local folders
+
+      # The library mount is this application's own subtree. Register it so the
+      # application is usable without manual configuration, and never replace a
+      # path the operator chose.
+      folders=$(curl -fsS --connect-timeout 3 --max-time 10 \
+        -H "X-Api-Key: $api_key" "$endpoint") || return 1
+      echo "$folders" | jq -e 'type == "array"' > /dev/null || return 1
+      if echo "$folders" | jq -e --arg wanted "$wanted" '
+        any(.[]; (.path // "" | rtrimstr("/")) == $wanted)
+      ' > /dev/null; then
+        return 0
+      fi
+
+      curl -fsS --connect-timeout 3 --max-time 10 -X POST \
+        -H "X-Api-Key: $api_key" -H "Content-Type: application/json" \
+        "$endpoint" -d "$(jq -nc --arg path "$wanted" '{path: $path}')" > /dev/null || return 1
+      echo "[setup] Registered root folder $wanted"
+    }
+{{- end }}
+
     ensure_qbittorrent_path_mapping() {
       local api_key="$1"
       local host="$2"
@@ -393,6 +421,12 @@ data:
         sleep $CHECK_INTERVAL
         continue
       fi
+
+{{- if $library }}
+      if ! ensure_root_folder "$API_KEY"; then
+        echo "[setup] Could not register the root folder; retrying next pass"
+      fi
+{{- end }}
 
       # Process each client
       echo "$CLIENTS" | while IFS='|' read -r name implementation host port check_path category_field category_value; do
