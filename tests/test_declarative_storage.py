@@ -99,9 +99,9 @@ class DeclarativeStorageTests(unittest.TestCase):
             result, resources = render(chart, {"storage": {"mounts": mounts}})
             self.assertEqual(result.returncode, 0, result.stderr)
             prep = [c for _, pod in pods(resources) for c in pod.get("initContainers", [])
-                    if c["name"] in ("prepare-home", "prepare-files")]
-            self.assertEqual(len(prep), 1)
-            self.assertIn("/nfs/separate-home", prep[0]["command"])
+                    if c["name"] == "prepare-media-directories"]
+            matching = [c for c in prep if "/nfs/separate-home" in c["args"]]
+            self.assertEqual(len(matching), 1)
 
     def test_redmine_fixed_config_mount_cannot_be_hidden(self):
         for target in ("/usr/src/redmine", "/usr/src/redmine/config.ru",

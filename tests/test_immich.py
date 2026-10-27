@@ -83,7 +83,8 @@ class ImmichTests(unittest.TestCase):
         ml = deployments["immich-ml"]["spec"]["template"]["spec"]
         self.assertEqual(ml["volumes"][0]["persistentVolumeClaim"]["claimName"], "media-data")
         self.assertEqual(ml["containers"][0]["volumeMounts"][0]["subPath"], "media-server/immich/immich/models")
-        self.assertEqual(ml["initContainers"][0]["securityContext"]["capabilities"]["add"], ["CHOWN"])
+        self.assertEqual(ml["initContainers"][0]["securityContext"]["capabilities"], {"drop": ["ALL"]})
+        self.assertNotEqual(ml["initContainers"][0]["securityContext"]["runAsUser"], 0)
         self.assertEqual(deployments["immich"]["spec"]["template"]["spec"]["containers"][0]["volumeMounts"][0],
                          {"name": "media", "mountPath": "/data", "subPath": "immich"})
         self.assertEqual(deployments["immich"]["spec"]["strategy"]["type"], "Recreate")

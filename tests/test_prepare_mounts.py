@@ -85,10 +85,15 @@ class PrepareMountsTests(unittest.TestCase):
                     self.assertEqual(context["capabilities"], {"drop": ["ALL"]})
 
     def test_no_preparation_step_relies_on_root_or_chown(self):
+        """Only steps that touch the shared export are constrained. A container
+        fixing up its own in-Pod directories is unaffected by root squashing."""
         for chart in list(UIDS) + list(WITHOUT_PREPARATION):
             for workload in workloads(chart):
                 pod = workload["spec"]["template"]["spec"]
                 for container in pod.get("initContainers", []):
+                    if not any(mount["name"] == "media"
+                               for mount in container.get("volumeMounts", [])):
+                        continue
                     with self.subTest(chart=chart, container=container["name"]):
                         context = container.get("securityContext", {})
                         self.assertNotEqual(context.get("runAsUser"), 0)

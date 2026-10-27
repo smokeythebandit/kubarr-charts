@@ -119,7 +119,9 @@ class RedmineTests(unittest.TestCase):
         self.assertNotIn("volumeClaimTemplates", db["spec"])
         self.assertEqual(db["spec"]["template"]["spec"]["volumes"][1]["persistentVolumeClaim"]["claimName"], "media-data")
         self.assertEqual(container(db)["volumeMounts"][0]["subPath"], "development/redmine/redmine/postgres")
-        self.assertEqual(db["spec"]["template"]["spec"]["initContainers"][0]["securityContext"]["capabilities"]["add"], ["CHOWN"])
+        prepare = db["spec"]["template"]["spec"]["initContainers"][0]["securityContext"]
+        self.assertEqual(prepare["capabilities"], {"drop": ["ALL"]})
+        self.assertEqual(prepare["runAsUser"], 999)
         self.assertEqual(env(db)["POSTGRES_PASSWORD"]["valueFrom"]["secretKeyRef"],
                          env(app)["REDMINE_DB_PASSWORD"]["valueFrom"]["secretKeyRef"])
         self.assertEqual(env(app)["SECRET_KEY_BASE"]["valueFrom"]["secretKeyRef"],
@@ -253,9 +255,12 @@ class RedmineTests(unittest.TestCase):
         result, resources = render({"storage": {"workloads": {"postgres": {"mounts": mounts}}}})
         self.assertEqual(result.returncode, 0, result.stderr)
         db = objects(resources, "StatefulSet")["redmine-postgres"]
-        init = next(c for c in db["spec"]["template"]["spec"]["initContainers"] if c["name"] == "prepare-database")
-        self.assertEqual(init["command"][-1], "/nfs/development/redmine/real-postgres")
-        self.assertNotIn("scratch", init["command"][-1])
+        init = next(c for c in db["spec"]["template"]["spec"]["initContainers"]
+                    if c["name"] == "prepare-media-directories")
+        # Every writable mount is prepared: kubelet cannot create any of them
+        # on a root-squashed export, not only the required database target.
+        self.assertEqual(sorted(init["args"]), ["/nfs/development/redmine/real-postgres",
+                                                "/nfs/development/redmine/scratch"])
         mounted = {m["mountPath"]: m["subPath"] for m in container(db)["volumeMounts"] if m["name"] == "media"}
         self.assertEqual(mounted, {"/scratch": "development/redmine/scratch",
                                    "/var/lib/postgresql/data": "development/redmine/real-postgres"})

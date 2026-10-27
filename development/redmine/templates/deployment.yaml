@@ -25,6 +25,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         fsGroup: 999
+        {{- include "kubarr-common.storage.mediaGroup" . | nindent 8 }}
         seccompProfile: {type: RuntimeDefault}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -32,12 +33,7 @@ spec:
       {{- end }}
       initContainers:
         {{- if and .Values.storage.mounts (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
-        - name: prepare-files
-          image: busybox:1.37.0
-          command: [sh, -ec, 'mkdir -p -- "$1" && chown 999:999 -- "$1"', --, {{ printf "/nfs/%s" (include "redmine.filesSubPath" .) | quote }}]
-          securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
-          volumeMounts:
-             - {name: media, mountPath: /nfs} # bootstrap creates the attachments directory
+        {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" 999) | nindent 8 }}
         {{- end }}
         - name: wait-for-postgres
           image: "{{ .Values.database.bundled.image.repository }}:{{ .Values.database.bundled.image.tag }}"

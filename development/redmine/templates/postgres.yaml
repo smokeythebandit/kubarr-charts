@@ -19,15 +19,13 @@ spec:
     spec:
       serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
       automountServiceAccountToken: false
-      securityContext: {fsGroup: 999, seccompProfile: {type: RuntimeDefault}}
+      securityContext:
+        fsGroup: 999
+        {{- include "kubarr-common.storage.mediaGroup" . | nindent 8 }}
+        seccompProfile: {type: RuntimeDefault}
       {{- if and .Values.storage.workloads.postgres.mounts (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
       initContainers:
-        - name: prepare-database
-          image: busybox:1.37.0
-          command: [sh, -ec, 'mkdir -p -- "$1" && chown 999:999 -- "$1"', --, {{ printf "/nfs/%s" (include "redmine.dbSubPath" .) | quote }}]
-          securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
-          volumeMounts:
-            - {name: media, mountPath: /nfs} # bootstrap creates the bundled DB directory
+        {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" 999 "mounts" .Values.storage.workloads.postgres.mounts) | nindent 8 }}
       {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

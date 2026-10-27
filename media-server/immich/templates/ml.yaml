@@ -28,14 +28,10 @@ spec:
       serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
       automountServiceAccountToken: false
       securityContext: {fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
-      {{- if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "mounts" .Values.storage.workloads.machineLearning.mounts) }}
+      {{- if and $prepare (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
       initContainers:
-        - name: prepare-model-cache
-          image: busybox:1.37.0
-          command: [sh, -ec, 'mkdir -p -- "$1" && chown 1000:1000 -- "$1"', --, {{ printf "/nfs/%s" (index .Values.storage.workloads.machineLearning.mounts 0).source | quote }}]
-          securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, capabilities: {drop: [ALL], add: [CHOWN]}}
-          volumeMounts:
-            - {name: media, mountPath: /nfs} # explicit bootstrap root access to create the model subdirectory
+        {{- $prepare | nindent 8 }}
       {{- end }}
       containers:
         - name: machine-learning
