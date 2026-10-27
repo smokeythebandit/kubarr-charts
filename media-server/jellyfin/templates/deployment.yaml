@@ -1,7 +1,4 @@
-{{- $writableMounts := list -}}
-{{- range .Values.storage.mounts -}}
-{{- if eq .mode "read-write" -}}{{- $writableMounts = append $writableMounts . -}}{{- end -}}
-{{- end -}}
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.jellyfin.env.PUID "gid" .Values.jellyfin.env.PGID) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,31 +33,10 @@ spec:
       serviceAccountName: {{ include "jellyfin.serviceAccountName" . }}
       securityContext:
         {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
-      {{- if or .Values.vpn.enabled $writableMounts }}
+      {{- if or .Values.vpn.enabled $prepare }}
       initContainers:
         {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
-        {{- if $writableMounts }}
-        # Kubelet cannot mkdir subPaths as root on a root-squashed NFS export.
-        # Prepare only writable app directories using the application's identity.
-        - name: prepare-media-directories
-          image: busybox:1.37.0
-          command: [sh, -ec, 'umask 0002; for directory do mkdir -p -- "$directory"; test -w "$directory"; done', --]
-          args:
-            {{- range $writableMounts }}
-            - {{ printf "/nfs/%s" .source | quote }}
-            {{- end }}
-          securityContext:
-            runAsUser: {{ .Values.jellyfin.env.PUID | int }}
-            runAsGroup: {{ .Values.jellyfin.env.PGID | int }}
-            runAsNonRoot: {{ ne (int .Values.jellyfin.env.PUID) 0 }}
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-          volumeMounts:
-            - name: media
-              mountPath: /nfs
-        {{- end }}
+        {{- with $prepare }}{{- . | nindent 8 }}{{- end }}
       {{- end }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.jellyfin.service.targetPort) | nindent 8 }}

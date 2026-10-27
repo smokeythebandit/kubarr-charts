@@ -44,7 +44,8 @@
 {{- define "kubarr-common.storage.prepareMounts" -}}
 {{- $mounts := .root.Values.storage.mounts -}}
 {{- if hasKey . "mounts" -}}{{- $mounts = .mounts -}}{{- end -}}
-{{- $uid := default 1000 .uid -}}
+{{- $uid := int (default 1000 .uid) -}}
+{{- $gid := int (default 1000 .gid) -}}
 {{- $selected := list -}}
 {{- range $mount := $mounts -}}
 {{- if and (eq $mount.mode "read-write") (ne $mount.source ".") -}}
@@ -61,8 +62,8 @@
     {{- end }}
   securityContext:
     runAsUser: {{ $uid }}
-    runAsGroup: 1000
-    runAsNonRoot: true
+    runAsGroup: {{ $gid }}
+    runAsNonRoot: {{ ne $uid 0 }}
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
     capabilities:

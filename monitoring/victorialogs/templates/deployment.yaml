@@ -1,7 +1,3 @@
-{{- $writableMounts := list -}}
-{{- range .Values.storage.mounts -}}
-{{- if eq .mode "read-write" -}}{{- $writableMounts = append $writableMounts . -}}{{- end -}}
-{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,27 +31,10 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      {{- if $writableMounts }}
-      # Kubelet runs as root, which cannot create subPaths on root-squashed NFS.
+      {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) }}
+      {{- if $prepare }}
       initContainers:
-        - name: prepare-media-directories
-          image: busybox:1.37.0
-          command: [sh, -ec, 'umask 0002; for directory do mkdir -p -- "$directory"; test -w "$directory"; done', --]
-          args:
-            {{- range $writableMounts }}
-            - {{ printf "/nfs/%s" .source | quote }}
-            {{- end }}
-          securityContext:
-            runAsUser: 1000
-            runAsGroup: 1000
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-          volumeMounts:
-            - name: media
-              mountPath: /nfs
+        {{- $prepare | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
