@@ -75,8 +75,9 @@ class FrigateTests(unittest.TestCase):
         self.assertEqual(seed["mqtt"]["enabled"], False)
         self.assertEqual(seed["tls"]["enabled"], False)
         self.assertEqual(seed["cameras"]["dummy_camera"]["enabled"], False)
+        seed_init = next(c for c in pod["initContainers"] if c["name"] == "seed-config")
         self.assertIn("[ ! -e /config/config.yml ] && [ ! -e /config/config.yaml ]",
-                      pod["initContainers"][0]["command"][2])
+                      seed_init["command"][2])
         for probe in ("startupProbe", "livenessProbe", "readinessProbe"):
             self.assertEqual(app[probe]["httpGet"], {"path": "/", "port": "http"})
 

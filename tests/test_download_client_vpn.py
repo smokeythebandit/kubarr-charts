@@ -44,8 +44,10 @@ class DownloadClientVpnTests(unittest.TestCase):
                 self.assertNotIn("gluetun", named(pod["containers"]))
                 self.assertNotIn("dev-net-tun", named(pod["volumes"]))
                 self.assertNotIn("gluetun-tmp", named(pod["volumes"]))
-                self.assertEqual(set(named(pod.get("initContainers", []))),
-                                 {APP_INIT[client]} if client in APP_INIT else set())
+                expected = {"prepare-media-directories"}
+                if client in APP_INIT:
+                    expected.add(APP_INIT[client])
+                self.assertEqual(set(named(pod.get("initContainers", []))), expected)
                 policy = next(item for item in resources if item["kind"] == "NetworkPolicy")
                 self.assertFalse(any(port["port"] == 8001 for rule in policy["spec"]["ingress"]
                                      for port in rule["ports"]))

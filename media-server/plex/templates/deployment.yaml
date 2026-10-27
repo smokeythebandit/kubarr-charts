@@ -32,9 +32,12 @@ spec:
       serviceAccountName: {{ include "plex.serviceAccountName" . }}
       securityContext:
         {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
-      {{- if .Values.vpn.enabled }}
+      {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.plex.env.PUID "gid" .Values.plex.env.PGID) }}
+      {{- $gluetun := include "kubarr-common.gluetun.initContainer" (dict "root" .) }}
+      {{- if or $gluetun $prepare }}
       initContainers:
-        {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
+        {{- with $gluetun }}{{- . | nindent 8 }}{{- end }}
+        {{- with $prepare }}{{- . | nindent 8 }}{{- end }}
       {{- end }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.plex.service.targetPort) | nindent 8 }}

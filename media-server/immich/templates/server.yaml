@@ -32,6 +32,11 @@ spec:
       securityContext:
         fsGroup: 1000
         seccompProfile: {type: RuntimeDefault}
+      {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) }}
+      {{- if $prepare }}
+      initContainers:
+        {{- $prepare | nindent 8 }}
+      {{- end }}
       containers:
         - name: immich
           image: "{{ .Values.immich.image.repository }}:{{ .Values.immich.image.tag }}"

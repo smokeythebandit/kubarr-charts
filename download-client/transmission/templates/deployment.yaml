@@ -63,6 +63,7 @@ spec:
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/config") | nindent 12 }}
         {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
+        {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.transmission.env.PUID "gid" .Values.transmission.env.PGID) | nindent 8 }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.transmission.service.targetPort "inputPorts" (ternary (toString .Values.exporter.port) "" .Values.exporter.enabled)) | nindent 8 }}
         - name: transmission
