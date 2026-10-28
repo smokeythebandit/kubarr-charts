@@ -6,7 +6,7 @@ replicaCount: 1
 image:
   repository: openresty/openresty
   pullPolicy: IfNotPresent
-  tag: "1.29.2.5-alpine"
+  tag: "1.31.1.1.5"
 compression:
   # Level 5 is the usual balance: most of the saving, little CPU.
   level: 5
