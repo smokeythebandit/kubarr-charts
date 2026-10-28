@@ -54,6 +54,13 @@ rbac:
     - apiGroups: ["networking.k8s.io"]
       resources: ["networkpolicies", "ingresses"]
       verbs: ["get", "list", "watch", "create", "update", "delete", "patch"]
+    # Several charts ship CiliumNetworkPolicies. Helm reads every resource it
+    # owns before an upgrade, so without these rules an upgrade of those charts
+    # fails on its own policy rather than on anything the user changed.
+    - apiGroups: ["cilium.io"]
+      resources:
+        ["ciliumnetworkpolicies", "ciliumclusterwidenetworkpolicies"]
+      verbs: ["get", "list", "watch", "create", "update", "delete", "patch"]
     - apiGroups: ["extensions"]
       resources: ["ingresses"]
       verbs: ["get", "list", "watch", "create", "update", "delete", "patch"]

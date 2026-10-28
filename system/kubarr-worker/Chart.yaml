@@ -2,7 +2,7 @@ apiVersion: v2
 name: kubarr-worker
 description: Kubarr lifecycle worker
 type: application
-version: 0.3.6
+version: 0.3.6+1
 appVersion: "0.3.6"
 annotations:
   kubarr.io/display-name: "Kubarr Worker"
