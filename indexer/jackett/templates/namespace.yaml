@@ -1,0 +1,1 @@
+{{- include "kubarr-common.namespace" (dict "root" . "level" "baseline" "labels" (include "jackett.labels" .)) }}

@@ -2,7 +2,7 @@ apiVersion: v2
 name: grafana
 description: Grafana visualization and dashboards (optional - uses ~512Mi memory)
 type: application
-version: 13.2.4
+version: 13.2.4+1
 appVersion: "13.2.4"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
@@ -14,3 +14,7 @@ annotations:
   kubarr.io/icon: "📈"
   kubarr.io/category: "monitoring"
   kubarr.io/optional: "true"
+dependencies:
+  - name: kubarr-common
+    version: 0.6.0
+    repository: file://../../system/kubarr-common

@@ -24,6 +24,7 @@ spec:
       labels:
         {{- include "managed-nfs.selectorLabels" . | nindent 8 }}
     spec:
+      automountServiceAccountToken: false
       hostNetwork: {{ .Values.nfs.hostNetwork }}
       dnsPolicy: {{ ternary "ClusterFirstWithHostNet" "ClusterFirst" .Values.nfs.hostNetwork }}
       {{- with .Values.nodeSelector }}

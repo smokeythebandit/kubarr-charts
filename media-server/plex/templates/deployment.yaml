@@ -30,6 +30,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "plex.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
       {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.plex.env.PUID "gid" .Values.plex.env.PGID) }}

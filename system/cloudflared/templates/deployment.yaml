@@ -16,6 +16,7 @@ spec:
         {{- include "cloudflared.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "cloudflared.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

@@ -18,6 +18,7 @@ spec:
         app.kubernetes.io/name: kubarr-frontend
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      automountServiceAccountToken: false
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

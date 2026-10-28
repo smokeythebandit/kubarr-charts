@@ -239,3 +239,36 @@ spec:
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/* The one way a chart creates its namespace.
+
+     Creation is conditional because Kubarr creates application namespaces
+     through the API before Helm runs, and an API-created namespace must never
+     be adopted by a chart: a later upgrade that dropped the Namespace would
+     delete it and everything inside. The Pod Security level travels with the
+     namespace so enforcement is declared in one place per chart. */}}
+{{- define "kubarr-common.namespace" -}}
+{{- $root := .root -}}
+{{- $level := default "baseline" .level -}}
+{{- if not (has $level (list "restricted" "baseline" "privileged")) -}}
+{{- fail (printf "namespace level %q must be restricted, baseline or privileged" $level) -}}
+{{- end -}}
+{{- if $root.Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $root.Values.namespace.name }}
+  labels:
+    {{- if .labels }}
+    {{- .labels | nindent 4 }}
+    {{- else }}
+    {{- include "kubarr-common.labels" $root | nindent 4 }}
+    {{- end }}
+    {{- with .reason }}
+    # {{ . }}
+    {{- end }}
+    pod-security.kubernetes.io/enforce: {{ $level }}
+    pod-security.kubernetes.io/audit: {{ $level }}
+    pod-security.kubernetes.io/warn: {{ $level }}
+{{- end }}
+{{- end }}

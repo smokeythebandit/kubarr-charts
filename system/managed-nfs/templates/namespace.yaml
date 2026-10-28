@@ -1,11 +1,1 @@
-{{- if .Values.namespace.create }}
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ .Values.namespace.name }}
-  labels:
-    {{- include "managed-nfs.labels" . | nindent 4 }}
-    # The NFS server uses host networking and privileged filesystem access.
-    # Scope this exception to its dedicated namespace, not application namespaces.
-    pod-security.kubernetes.io/enforce: privileged
-{{- end }}
+{{- include "kubarr-common.namespace" (dict "root" . "level" "privileged" "labels" (include "managed-nfs.labels" .) "reason" "The NFS server needs host networking and privileged filesystem access.") }}

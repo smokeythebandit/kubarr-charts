@@ -31,6 +31,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "jellyfin.serviceAccountName" . }}
+      automountServiceAccountToken: false
       securityContext:
         {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
       {{- if or .Values.vpn.enabled $prepare }}

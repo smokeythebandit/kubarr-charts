@@ -16,6 +16,7 @@ spec:
       labels:
         {{- include "postgresql.selectorLabels" . | nindent 8 }}
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 999

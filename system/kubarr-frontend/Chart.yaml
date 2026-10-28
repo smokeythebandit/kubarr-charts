@@ -2,7 +2,7 @@ apiVersion: v2
 name: kubarr-frontend
 description: Kubarr static frontend
 type: application
-version: 0.3.4
+version: 0.3.4+1
 appVersion: "0.3.4"
 annotations:
   kubarr.io/display-name: "Kubarr Frontend"
@@ -11,3 +11,7 @@ annotations:
   kubarr.io/system: "true"
   kubarr.io/hidden: "false"
   kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.6.0
+    repository: file://../kubarr-common

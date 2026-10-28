@@ -2,7 +2,7 @@ apiVersion: v2
 name: immich
 description: Self-hosted photo and video backup with machine learning
 type: application
-version: 3.3.5+10
+version: 3.3.5+11
 appVersion: "3.3.5"
 annotations:
   kubarr.io/display-name: "Immich"
@@ -10,5 +10,5 @@ annotations:
   kubarr.io/category: "media-server"
 dependencies:
   - name: kubarr-common
-    version: 0.5.0
+    version: 0.6.0
     repository: file://../../system/kubarr-common
