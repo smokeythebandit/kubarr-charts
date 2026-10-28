@@ -1,0 +1,25 @@
+{{/* Egress to the Kubernetes API for a workload that calls it.
+
+     A NetworkPolicy cannot express this: the apiserver runs in the host
+     network, so Cilium identifies that destination as the host, and CIDR
+     selectors never match the host identity. An ipBlock rule for 0.0.0.0/0
+     therefore looks correct while silently denying the API.
+
+     Rendered only where the CRD exists, so a cluster on another CNI never
+     receives a resource whose kind it does not know. */}}
+{{- if and .Values.networkPolicy.enabled (.Capabilities.APIVersions.Has "cilium.io/v2") }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-apiserver
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "fluent-bit.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "fluent-bit.selectorLabels" . | nindent 6 }}
+  egress:
+    - toEntities:
+        - kube-apiserver
+{{- end }}

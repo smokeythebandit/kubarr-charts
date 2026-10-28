@@ -5,7 +5,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/smokeythebandit/kubarr-backend
   pullPolicy: IfNotPresent
-  tag: "0.3.4"
+  tag: "0.3.5"
 service:
   type: ClusterIP
   port: 8000
@@ -91,10 +91,12 @@ securityContext:
   readOnlyRootFilesystem: true
 resources:
   limits:
-    cpu: 500m
+    # A dashboard load fans out ~60 concurrent API calls. At 500m the CFS
+    # quota throttled them into a ~1s batch; the work itself is milliseconds.
+    cpu: "2"
     memory: 512Mi
   requests:
-    cpu: 100m
+    cpu: 200m
     memory: 256Mi
 livenessProbe:
   httpGet:
