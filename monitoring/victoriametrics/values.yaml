@@ -82,6 +82,11 @@ networkPolicy:
     - kubarr-backend  # Kubarr backend for monitoring
   # VictoriaMetrics needs to scrape all app namespaces
   scrapeNamespaces:
+    # Cilium's agents export Hubble flow metrics, which is where the network
+    # page's internet/LAN/cluster split comes from. Without this entry the
+    # default-deny egress policy blocks the scrape and the panels are silently
+    # empty.
+    - kube-system
     - sonarr
     - radarr
     - qbittorrent

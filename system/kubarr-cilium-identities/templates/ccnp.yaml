@@ -1,0 +1,24 @@
+{{- if .Capabilities.APIVersions.Has "cilium.io/v2" }}
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-cidr-identities
+  labels:
+    app.kubernetes.io/name: kubarr-cilium-identities
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  # Deliberately selects no Pod. Cilium mints a CIDR identity for every CIDR a
+  # policy references, and selecting nothing means no endpoint's enforcement
+  # changes: in Cilium a policy that does select an endpoint switches it to
+  # default-deny for that direction, which on a running cluster is an outage.
+  # The identity is the only thing wanted here, never the enforcement.
+  endpointSelector:
+    matchLabels:
+      kubarr.io/cidr-identity-only: "true"
+  egress:
+    - toCIDRSet:
+        {{- range .Values.lanCidrs }}
+        - cidr: {{ . | quote }}
+        {{- end }}
+{{- end }}

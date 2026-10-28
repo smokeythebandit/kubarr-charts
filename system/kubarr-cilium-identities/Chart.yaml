@@ -1,0 +1,12 @@
+apiVersion: v2
+name: kubarr-cilium-identities
+description: Cilium CIDR identities that make LAN traffic distinguishable from internet traffic
+type: application
+version: 0.1.0
+appVersion: "1.20.4"
+annotations:
+  kubarr.io/display-name: "Network Identities"
+  kubarr.io/system: "true"
+  # No workload and no web UI: this chart ships policy only.
+  kubarr.io/hidden: "true"
+  kubarr.io/browseable: "false"

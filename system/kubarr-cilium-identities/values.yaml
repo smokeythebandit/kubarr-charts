@@ -1,0 +1,10 @@
+# Ranges treated as the local network.
+#
+# Cilium labels everything outside the cluster `reserved:world`, so LAN and
+# internet traffic are indistinguishable until a CIDR identity exists for the
+# local ranges. Importing a policy that references these CIDRs is what mints
+# those identities; see templates/ccnp.yaml for why it selects no Pod.
+lanCidrs:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-lan-ranges
+  labels:
+    app.kubernetes.io/name: kubarr-cilium-identities
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  # The ranges the network page counts as LAN rather than internet. Readable
+  # without Cilium so the configured intent is inspectable on any cluster,
+  # including one where the policy below did not render.
+  lanCidrs: |
+    {{- range .Values.lanCidrs }}
+    {{ . }}
+    {{- end }}
