@@ -7,6 +7,17 @@ image:
   repository: openresty/openresty
   pullPolicy: IfNotPresent
   tag: "1.29.2.5-alpine"
+compression:
+  # Level 5 is the usual balance: most of the saving, little CPU.
+  level: 5
+  # Below this, framing overhead outweighs the saving.
+  minLength: 256
+lookupCache:
+  # Seconds a route/authorization decision stays cached in the gateway.
+  # A revoked permission takes effect within this window.
+  seconds: 5
+  # Shared memory for the cache; 10m holds many thousands of entries.
+  size: 10m
 service:
   type: NodePort
   port: 8080

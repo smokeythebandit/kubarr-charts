@@ -49,6 +49,10 @@ class GatewayTests(unittest.TestCase):
         cls.api_access_lua = api_match.group(2)
         auth_block = config.split("location /auth/ {", 1)[1]
         cls.auth_access_lua = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", auth_block, re.M | re.S).group(2)
+        frontend_block = config.split("location / {", 1)[1]
+        cls.frontend_header_lua = re.search(
+            r"^( *)header_filter_by_lua_block \{\n(.*?)^\1\}",
+            frontend_block, re.M | re.S).group(2)
         failure_block = config.split("location @app_connection_failed {", 1)[1]
         cls.connection_failure_lua = re.search(r"^( *)content_by_lua_block \{\n(.*?)^\1\}", failure_block, re.M | re.S).group(2)
 
@@ -319,18 +323,264 @@ end
             captures=3,
         )
 
-    def test_catalog_lookup_proxy_is_internal_and_authenticated(self):
-        self.assertRegex(
-            self.config,
-            r"location ~ \^/_kubarr_catalog_lookup/"
-            r"\(\?<catalog_app_name>\[a-z0-9-\]\+\)\$ \{\n"
-            r"\s+internal;\n"
-            r"\s+proxy_pass http://kubarr_api/api/apps/catalog/"
-            r"\$catalog_app_name;\n"
-            r"\s+proxy_pass_request_body off;\n"
-            r"\s+proxy_set_header Content-Length \"\";\n"
-            r"\s+proxy_set_header Cookie \$http_cookie;",
+    # Each proxied request and internal lookup must reuse a pooled connection.
+    # Without this the gateway opens a fresh TCP connection to the API for every
+    # route lookup and every proxied asset, which a page fetching many assets
+    # pays for over and over.
+
+    def upstream(self, name):
+        block = re.search(rf"upstream {name} \{{\n(.*?)\n *\}}", self.config, re.S)
+        self.assertIsNotNone(block, f"upstream {name} not found")
+        return block.group(1)
+
+    def test_both_upstreams_pool_connections(self):
+        for name in ("kubarr_api", "kubarr_frontend"):
+            with self.subTest(upstream=name):
+                self.assertRegex(self.upstream(name), r"keepalive \d+;")
+
+    def test_internal_lookups_speak_http_11_without_closing_the_connection(self):
+        for marker in ("location = /_kubarr_route_lookup {",
+                       "location ~ ^/_kubarr_app_auth/",
+                       "location ~ ^/_kubarr_catalog_lookup/"):
+            with self.subTest(location=marker):
+                tail = self.config.split(marker, 1)[1]
+                block = tail.split("\n        }", 1)[0]
+                self.assertIn("proxy_http_version 1.1;", block)
+                self.assertRegex(block, r'proxy_set_header Connection "";')
+
+    def test_ordinary_requests_do_not_ask_the_upstream_to_close(self):
+        # Websockets still need "upgrade"; everything else must omit Connection
+        # so the pooled connection survives the response.
+        upgrade_map = re.search(r"map \$http_upgrade \$connection_upgrade \{\n(.*?)\n *\}",
+                                self.config, re.S)
+        self.assertIsNotNone(upgrade_map)
+        body = upgrade_map.group(1)
+        self.assertRegex(body, r"default\s+upgrade;")
+        self.assertNotRegex(body, r"''\s+close;")
+        self.assertRegex(body, r"''\s+\"\";")
+
+    # The gateway resolves a route and an app authorization on every proxied
+    # request. A shared-memory cache keyed by session stops one page's many
+    # asset requests from each paying for the same backend round trip.
+    def init_lua(self):
+        # Delimited by its own indentation, as the other Lua blocks are.
+        match = re.search(r"^( *)init_by_lua_block \{\n(.*?)^\1\}",
+                          self.config, re.M | re.S)
+        self.assertIsNotNone(match, "init_by_lua_block not found")
+        return match.group(2)
+
+    def cache_script(self, *body):
+        # Stub the digest modules and a shared dictionary, then load the real
+        # rendered helper so these assertions exercise shipped Lua.
+        harness = [
+            "local stored, ttls, captured = {}, {}, 0",
+            "local digested = {}",
+            "package.loaded['resty.sha256'] = {",
+            "  new = function(self)",
+            "    local buffer = ''",
+            "    return {",
+            "      update = function(_, value)",
+            "        buffer = buffer .. value; digested[#digested+1] = value end,",
+            "      -- Input-sensitive but not reversible, like a real digest.",
+            "      final = function()",
+            "        local sum = 0",
+            "        for index = 1, #buffer do sum = sum + buffer:byte(index) * index end",
+            "        return #buffer .. ':' .. sum end } end }",
+            "package.loaded['resty.string'] = {",
+            "  to_hex = function(value) return 'hex-' .. value end }",
+            "local result = {status = 204, header = {",
+            "  ['x-kubarr-app-name'] = 'sonarr',",
+            "  ['x-kubarr-upstream'] = 'http://sonarr:8989',",
+            "  ['x-kubarr-target-path'] = '/api/v3/system' }}",
+            "ngx = {",
+            "  shared = {kubarr_lookups = {",
+            "    get = function(_, key) return stored[key] end,",
+            "    set = function(_, key, value, ttl)",
+            "      stored[key] = value; ttls[key] = ttl end }},",
+            "  location = {capture = function() captured = captured + 1",
+            "    return result end},",
+            "  var = {http_cookie = 'kubarr_active=0; kubarr_session_0=tok; other=x'},",
+            "  log = function() end, ERR = 'error' }",
+        ]
+        return "\n".join(harness) + "\n" + self.init_lua() + "\n" + "\n".join(body)
+
+    def run_lua(self, script):
+        outcome = subprocess.run(["luajit", "-"], input=script,
+                                 capture_output=True, text=True)
+        self.assertEqual(outcome.returncode, 0, outcome.stdout + outcome.stderr)
+
+    def test_text_responses_are_compressed_for_the_client(self):
+        # Upstreams are asked for identity encoding so the Lua body filter can
+        # rewrite HTML; without gzip here the client then receives a 1MB
+        # bundle raw, which dwarfs every other per-request cost.
+        self.assertRegex(self.config, r"\n\s+gzip on;")
+        self.assertRegex(self.config, r"\n\s+gzip_vary on;")
+        # Responses arrive via proxy_pass, so compression must apply to them.
+        self.assertRegex(self.config, r"\n\s+gzip_proxied any;")
+        types, = re.findall(r"gzip_types\s+([^;]+);", self.config)
+        for mime in ("text/css", "application/javascript", "application/json",
+                     "image/svg+xml"):
+            self.assertIn(mime, types)
+        # Already-compressed payloads must not be run through gzip again.
+        for mime in ("image/png", "image/jpeg", "font/woff2", "video/"):
+            self.assertNotIn(mime, types)
+        level, = re.findall(r"gzip_comp_level (\d+);", self.config)
+        self.assertIn(int(level), range(1, 7), "high levels cost CPU per request")
+        minimum, = re.findall(r"gzip_min_length (\d+);", self.config)
+        self.assertGreaterEqual(int(minimum), 256, "tiny bodies are not worth it")
+    def frontend_headers(self, *body):
+        harness = [
+            "ngx = {header = {}, var = {}}",
+        ]
+        script = "\n".join(harness) + "\n"
+        script += "local function filter()\n" + self.frontend_header_lua + "\nend\n"
+        script += "\n".join(body)
+        self.run_lua(script)
+
+    def test_content_hashed_assets_are_cached_forever(self):
+        # The filename carries a content hash, so the bytes can never change.
+        # Without this the browser revalidates every asset on every visit.
+        self.frontend_headers(
+            'ngx.var.app_name = ""',
+            'ngx.var.uri = "/assets/index-DD3Bqp8e.js"',
+            'filter()',
+            'local value = ngx.header["Cache-Control"]',
+            'assert(value, "hashed assets need a Cache-Control header")',
+            'assert(value:find("immutable", 1, true), value)',
+            'assert(value:find("max-age=31536000", 1, true), value)',
         )
+
+    def test_the_spa_document_must_always_revalidate(self):
+        # A stale index would reference asset hashes a deploy has removed.
+        for uri in ("/", "/login", "/settings"):
+            with self.subTest(uri=uri):
+                self.frontend_headers(
+                    'ngx.var.app_name = ""',
+                    f'ngx.var.uri = "{uri}"',
+                    'filter()',
+                    'local value = ngx.header["Cache-Control"]',
+                    'assert(value == "no-cache", tostring(value))',
+                )
+
+    def test_host_routed_app_responses_keep_their_own_caching(self):
+        # Immich and friends serve their own /assets/ through this location.
+        # Overriding their headers would cache another product's files wrongly.
+        self.frontend_headers(
+            'ngx.var.app_name = "immich"',
+            'ngx.var.uri = "/assets/immich-bundle.js"',
+            'ngx.header["Location"] = "http://photos.test/web"',
+            'filter()',
+            'assert(ngx.header["Cache-Control"] == nil,',
+            '  "an app response must keep its own caching")',
+            'assert(ngx.header["Location"] == "/web", ngx.header["Location"])',
+        )
+
+    def test_status_page_assets_and_spa_fallback_declare_caching(self):
+        for marker, expected in (("location ^~ /_kubarr_assets/ {", "immutable"),
+                                 ("location @frontend_index {", "no-cache")):
+            with self.subTest(location=marker):
+                tail = self.config.split(marker, 1)[1]
+                block = re.split(r"\n {4}\}", tail, maxsplit=1)[0]
+                self.assertRegex(block, r"add_header Cache-Control [^;]*"
+                                 + expected)
+    def test_lookup_cache_dictionary_is_declared(self):
+        self.assertRegex(self.config, r"lua_shared_dict kubarr_lookups \S+;")
+
+    def test_a_cached_grant_is_served_without_a_second_subrequest(self):
+        self.run_lua(self.cache_script(
+            'local key = kubarr_cache.key("route", "host|/api/v3/system")',
+            'local first = kubarr_cache.capture("/_kubarr_route_lookup", {}, key)',
+            'assert(first.status == 204 and captured == 1, captured)',
+            'assert(stored[key], "a grant must be stored")',
+            'local second = kubarr_cache.capture("/_kubarr_route_lookup", {}, key)',
+            'assert(captured == 1, "a cached grant must not reach the backend")',
+            'assert(second.status == 204, second.status)',
+            'assert(second.header["x-kubarr-upstream"] == "http://sonarr:8989")',
+            'assert(second.header["x-kubarr-target-path"] == "/api/v3/system")',
+            'assert(second.header["x-kubarr-base-path"] == nil, "absent headers stay absent")',
+        ))
+
+    def test_the_key_hashes_the_session_and_never_holds_the_raw_token(self):
+        self.run_lua(self.cache_script(
+            'local key = kubarr_cache.key("auth", "sonarr")',
+            'assert(key:find("hex-", 1, true), key)',
+            'assert(not key:find("tok", 1, true), "the session token must not appear in the key")',
+            'assert(#digested == 1, #digested)',
+            'assert(digested[1]:find("kubarr_active=0", 1, true), digested[1])',
+            'assert(digested[1]:find("kubarr_session_0=tok", 1, true), digested[1])',
+            'assert(not digested[1]:find("other=x", 1, true), "only kubarr cookies key the cache")',
+        ))
+
+    def test_distinct_sessions_and_targets_never_share_an_entry(self):
+        self.run_lua(self.cache_script(
+            'local a = kubarr_cache.key("auth", "sonarr")',
+            'ngx.var.http_cookie = "kubarr_active=0; kubarr_session_0=other-token"',
+            'local b = kubarr_cache.key("auth", "sonarr")',
+            'assert(a ~= b, "a different session must produce a different key")',
+            'local c = kubarr_cache.key("auth", "radarr")',
+            'assert(b ~= c, "a different app must produce a different key")',
+        ))
+
+    def test_requests_without_a_session_are_never_cached(self):
+        self.run_lua(self.cache_script(
+            'ngx.var.http_cookie = "other=x"',
+            'assert(kubarr_cache.key("route", "host|/") == nil)',
+            'kubarr_cache.capture("/_kubarr_route_lookup", {}, nil)',
+            'kubarr_cache.capture("/_kubarr_route_lookup", {}, nil)',
+            'assert(captured == 2, "an anonymous lookup must not share an entry")',
+            'assert(next(stored) == nil)',
+        ))
+
+    def test_denials_and_errors_are_never_cached(self):
+        for status in (401, 403, 500, 502, 503, 504):
+            with self.subTest(status=status):
+                self.run_lua(self.cache_script(
+                    f'result.status = {status}',
+                    'kubarr_cache.capture("/_kubarr_app_auth/sonarr", nil, "k")',
+                    f'assert(next(stored) == nil, "{status} must never be cached")',
+                    'kubarr_cache.capture("/_kubarr_app_auth/sonarr", nil, "k")',
+                    'assert(captured == 2, "a denial must be re-checked")',
+                ))
+
+    def test_entries_expire_with_the_configured_window(self):
+        self.run_lua(self.cache_script(
+            'kubarr_cache.capture("/_kubarr_route_lookup", {}, "k")',
+            'assert(kubarr_cache.ttl > 0, "a zero window would disable the cache")',
+            'assert(ttls["k"] == kubarr_cache.ttl, tostring(ttls["k"]))',
+        ))
+
+    def test_without_shared_memory_every_lookup_reaches_the_backend(self):
+        self.run_lua(self.cache_script(
+            'ngx.shared = nil',
+            'local r = kubarr_cache.capture("/_kubarr_route_lookup", {}, "k")',
+            'assert(r.status == 204 and captured == 1)',
+            'kubarr_cache.capture("/_kubarr_route_lookup", {}, "k")',
+            'assert(captured == 2, "no shared memory means no caching")',
+        ))
+
+    def test_lookups_use_the_cache_helper_keyed_by_session(self):
+        for marker in ('location ~ ^/(?!(api|auth', 'location ~ ^/(?<absolute_app_path>'):
+            with self.subTest(location=marker):
+                tail = self.config.split(marker, 1)[1]
+                block = re.split(r"\n {4}\}", tail, maxsplit=1)[0]
+                self.assertIn("(kubarr_cache or ngx.location).capture", block)
+                self.assertIn("kubarr_cache.key(", block)
+
+    def test_catalog_lookup_proxy_is_internal_and_authenticated(self):
+        # Assert the properties rather than the directive order, so adding
+        # connection-reuse settings to the location cannot fail this.
+        tail = self.config.split(
+            "location ~ ^/_kubarr_catalog_lookup/"
+            "(?<catalog_app_name>[a-z0-9-]+)$ {", 1)[1]
+        block = tail.split("\n        }", 1)[0]
+        for directive in (
+            "internal;",
+            "proxy_pass http://kubarr_api/api/apps/catalog/$catalog_app_name;",
+            "proxy_pass_request_body off;",
+            'proxy_set_header Content-Length "";',
+            "proxy_set_header Cookie $http_cookie;",
+        ):
+            self.assertIn(directive, block)
 
     def test_denials_are_preserved(self):
         for source in ("route", "auth"):
