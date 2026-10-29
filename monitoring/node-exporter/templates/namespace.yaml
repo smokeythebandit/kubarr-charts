@@ -1,0 +1,1 @@
+{{- include "kubarr-common.namespace" (dict "root" . "level" "privileged" "labels" (include "node-exporter.labels" .) "reason" "Reads the host's /proc and NFS client counters through hostPath; no other namespace may.") }}

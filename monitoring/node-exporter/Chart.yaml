@@ -1,0 +1,22 @@
+apiVersion: v2
+name: node-exporter
+description: Prometheus node exporter - host metrics, including NFS client byte counters
+type: application
+version: 1.10.2
+appVersion: "1.10.2"
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+# system: "true" = cannot be uninstalled by users
+# browseable: "false" = no web UI proxy (app has no accessible web interface)
+annotations:
+  kubarr.io/display-name: "Node Exporter"
+  kubarr.io/icon: "node-exporter"
+  kubarr.io/category: "monitoring"
+  kubarr.io/system: "true"
+  kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.6.0
+    repository: file://../../system/kubarr-common

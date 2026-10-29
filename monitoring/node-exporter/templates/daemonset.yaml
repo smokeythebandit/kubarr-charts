@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "node-exporter.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "node-exporter.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "node-exporter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "node-exporter.labels" . | nindent 8 }}
+      annotations:
+        # VictoriaMetrics discovers scrape targets from these annotations.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.nodeExporter.port | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ default (include "node-exporter.fullname" .) .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      # hostPID, but deliberately not hostNetwork. The exporter needs the
+      # host's view of /proc, which the shared PID namespace and the hostPath
+      # mount give it. Host networking would additionally give this Pod the
+      # `reserved:host` identity, and VictoriaMetrics' egress policy selects
+      # scrape targets by namespace -- a selector that never matches the host
+      # identity, so the scrape would be silently denied.
+      hostPID: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      {{- with .Values.nodeExporter.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: node-exporter
+          image: "{{ .Values.nodeExporter.image.repository }}:{{ .Values.nodeExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.nodeExporter.image.pullPolicy }}
+          args:
+            - --path.procfs=/host/proc
+            - --path.sysfs=/host/sys
+            - --path.rootfs=/host/root
+            - --web.listen-address=:{{ .Values.nodeExporter.port }}
+            # Start from nothing and name what is wanted. The default set
+            # collects a great deal this cluster has no use for, and every
+            # extra collector is cardinality VictoriaMetrics keeps for a week.
+            - --collector.disable-defaults
+            {{- range .Values.nodeExporter.collectors }}
+            - --collector.{{ . }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.nodeExporter.port }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.nodeExporter.resources | nindent 12 }}
+          volumeMounts:
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: root
+              mountPath: /host/root
+              mountPropagation: HostToContainer
+              readOnly: true
+      volumes:
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: root
+          hostPath:
+            path: /

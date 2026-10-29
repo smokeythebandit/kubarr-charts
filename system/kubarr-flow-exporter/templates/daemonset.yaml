@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "kubarr-flow-exporter.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-flow-exporter.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kubarr-flow-exporter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubarr-flow-exporter.labels" . | nindent 8 }}
+      annotations:
+        # VictoriaMetrics discovers scrape targets from these annotations.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.exporter.port | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ default (include "kubarr-flow-exporter.fullname" .) .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      # Deliberately not hostNetwork. The dumper reaches the conntrack map
+      # through the BPF filesystem, not the network, and host networking would
+      # give this Pod the host identity -- which VictoriaMetrics' egress policy
+      # selects scrape targets by namespace, a selector that never matches the
+      # host.
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        # The only privileged container, and it does one thing: write the
+        # conntrack table to a file. Keeping the parsing in a separate,
+        # unprivileged container means a bug in the parser is not a bug with
+        # access to the host.
+        - name: dumper
+          image: "{{ .Values.dumper.image.repository }}:{{ .Values.dumper.image.tag }}"
+          imagePullPolicy: {{ .Values.dumper.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              while true; do
+                # Written aside and moved into place, so the exporter never
+                # reads a half-written dump.
+                if cilium-dbg bpf ct list global > /run/conntrack/.ct.tmp 2>/dev/null; then
+                  mv /run/conntrack/.ct.tmp /run/conntrack/ct.txt
+                fi
+                sleep {{ .Values.dumper.intervalSeconds }}
+              done
+          securityContext:
+            privileged: true
+          resources:
+            {{- toYaml .Values.resources.dumper | nindent 12 }}
+          volumeMounts:
+            - name: bpf
+              mountPath: /sys/fs/bpf
+            - name: dump
+              mountPath: /run/conntrack
+        - name: exporter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/kubarr-flow-exporter"]
+          env:
+            - name: KUBARR_CONNTRACK_DUMP
+              value: /run/conntrack/ct.txt
+            - name: KUBARR_FLOW_EXPORTER_LISTEN
+              value: "0.0.0.0:{{ .Values.exporter.port }}"
+            - name: KUBARR_FLOW_EXPORTER_INTERVAL_SECONDS
+              value: {{ .Values.exporter.intervalSeconds | quote }}
+            - name: KUBARR_POD_CIDRS
+              value: {{ .Values.podCidrs | quote }}
+            - name: KUBARR_LAN_CIDRS
+              value: {{ .Values.lanCidrs | quote }}
+            # The node's own address usually sits inside the LAN range, so
+            # without this every apiserver call is filed as LAN traffic.
+            - name: KUBARR_NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.exporter.port }}
+              protocol: TCP
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.exporter | nindent 12 }}
+          volumeMounts:
+            - name: dump
+              mountPath: /run/conntrack
+              readOnly: true
+      volumes:
+        - name: bpf
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
+        - name: dump
+          emptyDir: {}

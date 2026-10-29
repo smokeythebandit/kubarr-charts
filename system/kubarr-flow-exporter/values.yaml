@@ -1,0 +1,52 @@
+namespace:
+  create: true
+  name: kubarr-flow-exporter
+
+image:
+  repository: ghcr.io/smokeythebandit/kubarr-worker
+  tag: "0.3.9"
+  pullPolicy: IfNotPresent
+
+# Reads the conntrack map. Only this container is privileged, and it does
+# nothing but dump the map to a file the exporter reads.
+dumper:
+  image:
+    repository: quay.io/cilium/cilium
+    tag: "v1.20.4"
+    pullPolicy: IfNotPresent
+  intervalSeconds: 15
+
+exporter:
+  port: 9970
+  intervalSeconds: 15
+
+# Which addresses belong to this cluster rather than to the network around it.
+#
+# The node's own address is added at runtime from the Pod's status.hostIP: it
+# usually sits inside the LAN range, so without it every call to the apiserver
+# would be filed as LAN traffic.
+podCidrs: "10.244.0.0/16"
+lanCidrs: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+resources:
+  dumper:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 300m
+      memory: 192Mi
+  exporter:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+tolerations:
+  - operator: Exists
+
+serviceAccount:
+  create: true
+  name: ""

@@ -87,6 +87,10 @@ networkPolicy:
     # default-deny egress policy blocks the scrape and the panels are silently
     # empty.
     - kube-system
+    # Storage traffic lives only in the kernel's NFS client counters: NFS is
+    # mounted by the node, not by the pods, so Cilium never sees a byte of it.
+    # node-exporter is where those counters come from.
+    - node-exporter
     - sonarr
     - radarr
     - qbittorrent

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: kubarr-flow-exporter
+description: Per-class network byte counters read from Cilium's conntrack map
+type: application
+version: 0.3.9
+appVersion: "0.3.9"
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+# system: "true" = cannot be uninstalled by users
+# browseable: "false" = no web UI proxy (app has no accessible web interface)
+annotations:
+  kubarr.io/display-name: "Flow Exporter"
+  kubarr.io/icon: "network"
+  kubarr.io/category: "monitoring"
+  kubarr.io/system: "true"
+  kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.6.0
+    repository: file://../../system/kubarr-common

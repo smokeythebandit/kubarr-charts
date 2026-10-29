@@ -111,10 +111,19 @@ class PodHardeningTests(unittest.TestCase):
                 labels = doc["metadata"].get("labels") or {}
                 if labels.get("pod-security.kubernetes.io/enforce") == "privileged":
                     with self.subTest(chart=str(chart.relative_to(ROOT))):
-                        # Fluent Bit reads node pod logs through a hostPath and
-                        # the NFS server needs host networking. Nothing else.
+                        # Each of these reaches something in the host that a
+                        # restricted namespace cannot, and nothing else may:
+                        #   fluent-bit         node pod logs, through a hostPath
+                        #   managed-nfs        host networking
+                        #   node-exporter      the host's /proc, for the kernel's
+                        #                      NFS client byte counters
+                        #   kubarr-flow-exporter  Cilium's conntrack map, through
+                        #                      the host BPF filesystem
                         self.assertIn(str(chart.relative_to(ROOT)),
-                                      ("monitoring/fluent-bit", "system/managed-nfs"))
+                                      ("monitoring/fluent-bit",
+                                       "system/managed-nfs",
+                                       "monitoring/node-exporter",
+                                       "system/kubarr-flow-exporter"))
 
 
 if __name__ == "__main__":

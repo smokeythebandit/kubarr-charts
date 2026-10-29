@@ -1,0 +1,3 @@
+{{/* The dumper needs the host's BPF filesystem, so this namespace cannot be
+     `restricted`. Nothing else is scheduled here. */}}
+{{- include "kubarr-common.namespace" (dict "root" . "level" "privileged" "labels" (include "kubarr-flow-exporter.labels" .) "reason" "Reads Cilium's conntrack map from the host BPF filesystem; no other namespace may.") }}

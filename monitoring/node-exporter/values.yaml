@@ -1,0 +1,49 @@
+namespace:
+  create: true
+  name: node-exporter
+
+nodeExporter:
+  image:
+    repository: quay.io/prometheus/node-exporter
+    tag: "v1.10.2"
+    pullPolicy: IfNotPresent
+
+  port: 9100
+
+  # Storage traffic is the reason this chart exists.
+  #
+  # NFS is mounted by the node's own kernel, not by the pods that use it, so
+  # the traffic never crosses a Cilium endpoint: neither Hubble nor Cilium's
+  # conntrack map sees a single byte of it. Measured on a live cluster while
+  # reading hundreds of megabytes off the share, both reported zero. The
+  # kernel's own NFS client counters are the only place those bytes exist, and
+  # `mountstats` is what exposes them -- per mount, already split into read
+  # and write.
+  #
+  # `mountstats` is off by default upstream, which is why it is named here.
+  # Everything a host exporter collects by default is noise for this cluster: a
+  # media server has no use for thermal zones or IPMI, and every extra
+  # collector is cardinality VictoriaMetrics keeps for a week. The defaults are
+  # switched off and only these run.
+  collectors:
+    - mountstats
+    - netdev
+    - filesystem
+    - meminfo
+    - cpu
+    - loadavg
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 24Mi
+    limits:
+      cpu: 200m
+      memory: 96Mi
+
+  tolerations:
+    - operator: Exists
+
+serviceAccount:
+  create: true
+  name: ""
