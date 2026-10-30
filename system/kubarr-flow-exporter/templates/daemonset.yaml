@@ -41,11 +41,18 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              set -eu
+              set -u
               while true; do
+                # The exit code cannot be trusted here. On a cluster without
+                # IPv6 the command dumps the whole IPv4 table and *then* exits
+                # 1, because the v6 map it also looks for does not exist:
+                #   Unable to open .../cilium_ct6_global: no such file
+                # Gating on the exit code threw away twelve thousand good rows
+                # every cycle. What matters is whether anything was written.
+                cilium-dbg bpf ct list global > /run/conntrack/.ct.tmp 2>/dev/null || true
                 # Written aside and moved into place, so the exporter never
                 # reads a half-written dump.
-                if cilium-dbg bpf ct list global > /run/conntrack/.ct.tmp 2>/dev/null; then
+                if [ -s /run/conntrack/.ct.tmp ]; then
                   mv /run/conntrack/.ct.tmp /run/conntrack/ct.txt
                 fi
                 sleep {{ .Values.dumper.intervalSeconds }}

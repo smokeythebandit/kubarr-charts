@@ -27,7 +27,12 @@ nodeExporter:
   # switched off and only these run.
   collectors:
     - mountstats
-    - netdev
+    # No netdev. /proc/net/dev is scoped to the network namespace, and this Pod
+    # deliberately does not use host networking (see the DaemonSet), so the
+    # collector would report this Pod's own veth as though it were the node's
+    # NIC. Measured: it claimed 3.3 KB/s on "eth0" while a single pod was
+    # moving 53 MB/s. mountstats is unaffected -- it reads the mount
+    # namespace, not the network one.
     - filesystem
     - meminfo
     - cpu

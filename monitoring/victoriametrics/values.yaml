@@ -91,6 +91,8 @@ networkPolicy:
     # mounted by the node, not by the pods, so Cilium never sees a byte of it.
     # node-exporter is where those counters come from.
     - node-exporter
+    # Per-class byte counters, read from Cilium's conntrack map.
+    - kubarr-flow-exporter
     - sonarr
     - radarr
     - qbittorrent
