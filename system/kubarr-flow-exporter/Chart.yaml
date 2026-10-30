@@ -2,8 +2,8 @@ apiVersion: v2
 name: kubarr-flow-exporter
 description: Per-class network byte counters read from Cilium's conntrack map
 type: application
-version: 0.3.9
-appVersion: "0.3.9"
+version: 0.3.10
+appVersion: "0.3.10"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar
