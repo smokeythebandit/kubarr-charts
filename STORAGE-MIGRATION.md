@@ -126,3 +126,37 @@ Secrets with database backups. Media claim names and static NFS PV naming stay
 Kubarr API/CLI bootstrap now supplies shared claim and NFS server settings,
 letting charts own their mount defaults; it no longer sends obsolete mount
 path keys. This is a chart-values contract change, not a live data migration.
+
+## Transcoding scratch moves off the shared export (0.7.0)
+
+Jellyfin's `/cache` and Plex's `/transcode` are no longer `storage.mounts`
+entries on the media claim. They are `storage.scratch`, a node-local `emptyDir`
+with a mandatory `sizeLimit`. Nothing needs copying: a transcoder regenerates
+its scratch, and whatever sits in `cache/jellyfin` or `transcode/plex` on the
+export can be deleted once the upgrade is in place.
+
+The upgrade is not transparent, because `storage.scratch.target` is a reserved
+path. A release whose **stored** values still carry the old mount fails to
+render:
+
+```
+Error: execution error at (jellyfin/templates/deployment.yaml): storage.mounts[0].target overlaps /cache
+```
+
+Helm coalesces values maps, so `--reuse-values` keeps that entry and reproduces
+the error. Rewrite the release's user-supplied values instead: drop the mount
+whose target is the scratch path, and let the chart default supply `scratch`.
+
+```sh
+helm get values jellyfin -n jellyfin -o yaml > jellyfin-values.yaml
+# remove the storage.mounts entry targeting /cache, then
+helm upgrade jellyfin <chart> -n jellyfin -f jellyfin-values.yaml
+```
+
+Size the cap against the node, not the library: the eviction threshold is a
+share of the node filesystem, and an overrun evicts the pod rather than the
+node's other workloads. Bound the application too -- Jellyfin ships with
+*Enable throttling* and *Delete segments* off, so it transcodes as far ahead as
+the GPU allows and keeps every finished segment. On a node with no room, set
+`backend: nfs` with a `source` and `sizeLimit: null` to keep the old placement,
+or `storage.scratch: null` to return the path to `storage.mounts` entirely.

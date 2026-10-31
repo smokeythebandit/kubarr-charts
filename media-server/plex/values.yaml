@@ -115,8 +115,21 @@ imagePullSecrets: []
 
 storage:
   mounts:
-    - {name: transcode, source: transcode/plex, target: /transcode, mode: read-write}
     - {name: library, source: media, target: /media, mode: read}
+  # Transcoding scratch. Plex writes segments here at the full output bitrate
+  # and regenerates anything it loses, so this belongs on the node, not the
+  # shared export: a 4K session can write over 100 GB, and on NFS every segment
+  # crosses the network three times (written, read back, delivered).
+  # sizeLimit is mandatory -- an overrun evicts this pod instead of filling the
+  # node. Keep it well under the node's free space, and cap Plex's own
+  # transcoder throughput so a session stays bounded.
+  # On a node too small for a local cache, set backend: nfs with a source
+  # (e.g. transcode/plex) and sizeLimit: null -- Helm merges values, so the
+  # default cap survives an override that only omits it.
+  scratch:
+    backend: node
+    target: /transcode
+    sizeLimit: 24Gi
   config:
     migrationConfirmed: false
     create: true

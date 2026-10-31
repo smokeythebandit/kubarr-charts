@@ -36,8 +36,10 @@ class MediaGpuTests(unittest.TestCase):
             result, deployment = render("jellyfin", {
                 "vpn": {"enabled": vpn},
                 "jellyfin": {"env": {"PUID": "1234", "PGID": "5678"}},
+                # /cache is reserved for storage.scratch, so this exercises
+                # preparation on an unrelated writable mount.
                 "storage": {"mounts": [
-                    {"name": "cache", "source": "custom/cache", "target": "/cache", "mode": "read-write"},
+                    {"name": "cache", "source": "custom/cache", "target": "/extras", "mode": "read-write"},
                     {"name": "library", "source": "media", "target": "/data", "mode": "read"},
                 ]},
             })

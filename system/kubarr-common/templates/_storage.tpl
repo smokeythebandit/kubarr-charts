@@ -33,6 +33,70 @@
     claimName: {{ include "kubarr-common.storage.mediaClaimName" . }}
 {{- end }}
 
+{{/* Transcoding scratch. A transcoder writes segments at the full output
+     bitrate and regenerates whatever it loses, so the shared export is the
+     wrong home: one 4K session can exceed 100 GB, and every segment crosses
+     the network three times (written, read back, delivered). Default it to the
+     node and require a cap, so an unbounded session evicts the pod rather than
+     filling the node and taking its neighbours with it. backend=nfs restores
+     the shared-export placement for a node with no room to spare. */}}
+{{- define "kubarr-common.storage.scratchBackend" -}}
+{{- $storage := default dict .root.Values.storage -}}
+{{- if hasKey $storage "scratch" -}}
+{{- default "node" (default dict $storage.scratch).backend -}}
+{{- end -}}
+{{- end }}
+
+{{- define "kubarr-common.storage.validateScratch" -}}
+{{- $storage := default dict .root.Values.storage -}}
+{{- if hasKey $storage "scratch" -}}
+{{- $scratch := $storage.scratch -}}
+{{- if not (kindIs "map" $scratch) -}}{{- fail "storage.scratch must be an object" -}}{{- end -}}
+{{- range $key, $_ := $scratch -}}
+  {{- if not (has $key (list "backend" "target" "sizeLimit" "source")) -}}{{- fail (printf "storage.scratch.%s is not supported" $key) -}}{{- end -}}
+{{- end -}}
+{{- $backend := default "node" $scratch.backend -}}
+{{- if not (has $backend (list "node" "nfs")) -}}{{- fail "storage.scratch.backend must be node or nfs" -}}{{- end -}}
+{{- if not (regexMatch "^/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+$" (toString (default "" $scratch.target))) -}}{{- fail "storage.scratch.target must be an absolute path without traversal" -}}{{- end -}}
+{{- if eq $scratch.target "/config" -}}{{- fail "storage.scratch.target must not shadow the private config mount" -}}{{- end -}}
+{{- if eq $backend "node" -}}
+  {{- if hasKey $scratch "source" -}}{{- fail "storage.scratch.source applies only when backend=nfs" -}}{{- end -}}
+  {{- if not (regexMatch "^[1-9][0-9]*(\\.[0-9]+)?(Ki|Mi|Gi|Ti)$" (toString (default "" $scratch.sizeLimit))) -}}{{- fail "storage.scratch.sizeLimit must be a positive binary quantity when backend=node" -}}{{- end -}}
+{{- else -}}
+  {{- if hasKey $scratch "sizeLimit" -}}{{- fail "storage.scratch.sizeLimit applies only when backend=node" -}}{{- end -}}
+  {{- if not (regexMatch "^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$" (toString (default "" $scratch.source))) -}}{{- fail "storage.scratch.source must be a safe relative subpath when backend=nfs" -}}{{- end -}}
+  {{- if or (eq $scratch.source "config") (hasPrefix "config/" $scratch.source) -}}{{- fail "storage.scratch.source exposes the former shared config root" -}}{{- end -}}
+  {{- if not $storage.media.existingClaim -}}{{- fail "storage.media.existingClaim is required when storage.scratch.backend=nfs" -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{- define "kubarr-common.storage.scratchMount" -}}
+{{- include "kubarr-common.storage.validateScratch" . -}}
+{{- $storage := default dict .root.Values.storage -}}
+{{- if hasKey $storage "scratch" -}}
+{{- $scratch := $storage.scratch -}}
+{{- if eq (default "node" $scratch.backend) "node" }}
+- name: scratch
+  mountPath: {{ $scratch.target | quote }}
+{{- else }}
+- name: media
+  mountPath: {{ $scratch.target | quote }}
+  subPath: {{ $scratch.source | quote }}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{- define "kubarr-common.storage.scratchVolume" -}}
+{{- include "kubarr-common.storage.validateScratch" . -}}
+{{- $storage := default dict .root.Values.storage -}}
+{{- if eq (include "kubarr-common.storage.scratchBackend" .) "node" }}
+- name: scratch
+  emptyDir:
+    sizeLimit: {{ $storage.scratch.sizeLimit | quote }}
+{{- end -}}
+{{- end }}
+
 {{- define "kubarr-common.storage.mediaClaimName" -}}
 {{- .root.Values.storage.media.existingClaim -}}
 {{- end }}
@@ -51,6 +115,10 @@
 {{- if and (eq $mount.mode "read-write") (ne $mount.source ".") -}}
 {{- $selected = append $selected $mount -}}
 {{- end -}}
+{{- end -}}
+{{/* A shared-export scratch directory needs the same preparation. */}}
+{{- if eq (include "kubarr-common.storage.scratchBackend" (dict "root" .root)) "nfs" -}}
+{{- $selected = append $selected .root.Values.storage.scratch -}}
 {{- end -}}
 {{- if $selected -}}
 - name: prepare-media-directories
@@ -173,9 +241,10 @@ spec:
 
 {{- define "kubarr-common.storage.configOrMediaVolume" -}}
 {{- $mounts := .root.Values.storage.mounts -}}
-{{- if gt (len $mounts) 0 }}
+{{- if or (gt (len $mounts) 0) (eq (include "kubarr-common.storage.scratchBackend" .) "nfs") }}
 {{ include "kubarr-common.storage.mediaVolume" . }}
 {{- end }}
+{{- include "kubarr-common.storage.scratchVolume" . }}
 {{ include "kubarr-common.storage.configVolume" . }}
 {{- end }}
 
@@ -232,7 +301,12 @@ spec:
 {{- $label := default "storage.mounts" .label -}}
 {{- if not (kindIs "slice" $mounts) -}}{{- fail (printf "%s must be a list" $label) -}}{{- end -}}
 {{- if and (gt (len $mounts) 0) (not .root.Values.storage.media.existingClaim) -}}{{- fail "storage.media.existingClaim is required for NFS mounts" -}}{{- end -}}
+{{- include "kubarr-common.storage.validateScratch" (dict "root" .root) -}}
 {{- $names := list -}}{{- $targets := default list .reservedPaths -}}{{- $sources := list -}}{{- $modes := list -}}
+{{/* Scratch is mounted outside this list, so reserve its path here rather than
+     letting a shared mount shadow it. */}}
+{{- $scratch := default dict (default dict .root.Values.storage).scratch -}}
+{{- with (default "" $scratch.target) -}}{{- $targets = append $targets . -}}{{- end -}}
 {{- range $i, $m := $mounts -}}
   {{- $at := printf "%s[%d]" $label $i -}}
   {{- if not (kindIs "map" $m) -}}{{- fail (printf "%s must be an object" $at) -}}{{- end -}}

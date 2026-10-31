@@ -16,6 +16,34 @@ copy existing data: stop writes, back up, migrate and verify it before setting
 `storage.config.migrationConfirmed=true` on upgrade. Old role/layout/path
 settings fail rendering, including those reused from an earlier Helm release.
 
+### Transcoding scratch
+
+Jellyfin and Plex keep their transcode scratch in `storage.scratch`, not in
+`storage.mounts`. A transcoder writes segments at the full output bitrate and
+regenerates whatever it loses, so the shared export is the wrong home: a single
+4K session can exceed 100 GB, and over NFS every segment crosses the network
+three times (written, read back, delivered).
+
+```yaml
+storage:
+  scratch:
+    backend: node      # node-local emptyDir (default), or nfs
+    target: /cache     # /transcode for Plex
+    sizeLimit: 24Gi    # required when backend=node
+```
+
+`sizeLimit` is mandatory under `backend: node` so an unbounded session evicts
+that pod instead of filling the node and taking its neighbours with it. Keep it
+well under the node's free space, and bound the application's own transcoder
+too -- Jellyfin needs *Enable throttling* and *Delete segments* on, or it races
+ahead of playback and never reclaims finished segments.
+
+`backend: nfs` restores the shared-export placement for a node with no room to
+spare; it takes a `source` and `sizeLimit: null`, because Helm coalesces values
+maps and the default cap survives an override that merely omits it. Setting
+`storage.scratch: null` removes the volume entirely and frees its path for a
+`storage.mounts` entry, which is the pre-0.7.0 layout.
+
 The managed-NFS server's backing PVC remains on its bootstrap StorageClass.
 Immich PostgreSQL and Frigate SQLite need local/block storage; Grafana SQLite
 stays on its dedicated PVC, and Fluent Bit positions stay node-local. Verify
