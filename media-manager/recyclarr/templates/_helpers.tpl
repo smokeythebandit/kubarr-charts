@@ -89,3 +89,14 @@
 {{ $p }}    #   add:
 {{ $p }}    #     - trash_id: <group id from the page above>
 {{- end }}
+
+{{/*
+Whether /config is backed by a claim. False means an emptyDir: recyclarr
+rebuilds the TRaSH clone and its sync state from upstream, and a claim cannot
+bind at install time because this chart's only workload is a CronJob that
+creates no pod while suspended.
+*/}}
+{{- define "recyclarr.configPersistent" -}}
+{{- $config := .Values.storage.config -}}
+{{- if or $config.create (ne (default "" $config.existingClaim) "") -}}true{{- end -}}
+{{- end -}}

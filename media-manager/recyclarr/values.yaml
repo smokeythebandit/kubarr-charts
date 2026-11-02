@@ -137,12 +137,23 @@ storage:
   # Radarr and Sonarr APIs. The list stays empty and the claim below is the
   # chart's only volume.
   mounts: []
-  # Private claim at /config: recyclarr's configuration directory, holding the
-  # TRaSH-Guides clone it caches and the sync state that lets it recognise the
-  # custom formats it created on an earlier run.
+  # /config holds recyclarr's configuration directory: the TRaSH-Guides clone
+  # it caches and the sync state that lets it recognise the custom formats it
+  # created on an earlier run. Both are rebuilt from upstream on the next run,
+  # so the default is ephemeral.
+  #
+  # A claim cannot be the default here. This chart's only workload is a
+  # CronJob, which creates no pod until its schedule fires -- and none at all
+  # while suspended, which is how it ships. The cluster default StorageClass
+  # is typically WaitForFirstConsumer (local-path is), so the claim stays
+  # Pending with nothing to consume it, and the install waits on a bind that
+  # cannot happen until it times out and rolls back.
+  #
+  # Set create: true with a storageClassName whose binding mode is Immediate,
+  # or point existingClaim at a bound claim, to keep the cache across runs.
   config:
     migrationConfirmed: false
-    create: true
+    create: false
     existingClaim: ""
     size: 2Gi
     storageClassName: "" # empty: cluster default StorageClass (not managed NFS)

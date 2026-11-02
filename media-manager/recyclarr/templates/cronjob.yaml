@@ -93,7 +93,12 @@ spec:
                 - name: tmp
                   mountPath: /tmp
           volumes:
+            {{- if include "recyclarr.configPersistent" . }}
             {{- include "kubarr-common.storage.configVolume" (dict "root" . "fullname" (include "recyclarr.fullname" .)) | nindent 12 }}
+            {{- else }}
+            - name: config
+              emptyDir: {}
+            {{- end }}
             - name: starter-config
               configMap:
                 name: {{ include "recyclarr.fullname" . }}-config

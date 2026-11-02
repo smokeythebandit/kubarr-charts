@@ -277,6 +277,34 @@ class InstallContractTests(unittest.TestCase):
                         (doc["spec"].get("strategy") or {}).get("type"), "Recreate",
                         f"mounts {sorted(mounted)}")
 
+    def test_no_claim_waits_on_a_pod_that_will_never_be_scheduled(self):
+        """A claim needs a consumer, or the install waits for a bind that
+        cannot happen.
+
+        The cluster default StorageClass is typically WaitForFirstConsumer
+        (local-path is), so a PersistentVolumeClaim stays Pending until a pod
+        using it is scheduled. Recyclarr shipped a private claim with nothing
+        but a suspended CronJob to consume it: no pod was ever created, the
+        claim never bound, and `helm --wait` timed out and rolled the release
+        back. A chart whose only workload is a CronJob must therefore not
+        create a claim by default."""
+        for chart in charts():
+            if yaml.safe_load((chart / "Chart.yaml").read_text()).get("type") == "library":
+                continue
+            result = render(chart, {"database": {"existingSecret": "kubarr-db-app"}})
+            if result.returncode:
+                continue
+            docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+            kinds = {doc.get("kind") for doc in docs}
+            claims = [doc for doc in docs if doc.get("kind") == "PersistentVolumeClaim"]
+            if not claims or kinds & {"Deployment", "StatefulSet", "DaemonSet"}:
+                continue
+            with self.subTest(chart=str(chart.relative_to(ROOT))):
+                self.fail(
+                    f"{[claim['metadata']['name'] for claim in claims]} has no pod to "
+                    "bind it: the only workloads here are "
+                    f"{sorted(kinds & {'CronJob', 'Job'})}")
+
     def test_victorialogs_requirement_tracks_its_storage_path(self):
         # The chart exposes the same path twice: as the wizard's requirement and
         # as the flag it passes to the binary. They must not drift apart.

@@ -26,6 +26,15 @@ PRIVATE_CONFIG = (
 PRIVATE_CONFIG_ONLY = (
     "media-manager/recyclarr", "monitoring/alertmanager",
 )
+# Charts whose private claim is opt-in, with the values that turn it on.
+# Recyclarr's /config is ephemeral by default: its only workload is a
+# suspended CronJob, so a WaitForFirstConsumer claim would never bind and the
+# install would wait for it until it timed out.
+CLAIM_OPT_IN = {
+    "media-manager/recyclarr": {
+        "storage": {"config": {"create": True, "storageClassName": "kubarr-nfs"}}
+    },
+}
 # Where a chart's private claim lands when it is not /config, because the
 # application owns that path.
 CONFIG_PATHS = {
@@ -82,7 +91,7 @@ class DeclarativeStorageTests(unittest.TestCase):
     def test_private_config_is_mounted_at_the_application_config_directory(self):
         for chart in PRIVATE_CONFIG + PRIVATE_CONFIG_ONLY:
             with self.subTest(chart=chart):
-                result, resources = render(chart)
+                result, resources = render(chart, CLAIM_OPT_IN.get(chart))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 name = Path(chart).name
                 pod = next(pod for _, pod in pods(resources)
@@ -255,10 +264,14 @@ class DeclarativeStorageTests(unittest.TestCase):
     def test_private_config_upgrade_requires_acknowledgement(self):
         for chart in PRIVATE_CONFIG + PRIVATE_CONFIG_ONLY:
             with self.subTest(chart=chart):
-                result, _ = render(chart, upgrade=True)
+                opt_in = CLAIM_OPT_IN.get(chart, {})
+                result, _ = render(chart, opt_in, upgrade=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("storage.config.migrationConfirmed", result.stderr)
-                result, _ = render(chart, {"storage": {"config": {"migrationConfirmed": True}}}, upgrade=True)
+                confirmed = {"storage": {"config": {"migrationConfirmed": True}}}
+                for key, value in opt_in.get("storage", {}).get("config", {}).items():
+                    confirmed["storage"]["config"][key] = value
+                result, _ = render(chart, confirmed, upgrade=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_legacy_keys_fail_closed_including_reused_null(self):
