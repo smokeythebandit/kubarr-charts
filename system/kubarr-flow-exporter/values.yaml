@@ -4,7 +4,7 @@ namespace:
 
 image:
   repository: ghcr.io/smokeythebandit/kubarr-worker
-  tag: "0.3.10"
+  tag: "0.3.11"
   pullPolicy: IfNotPresent
 
 # Reads the conntrack map. Only this container is privileged, and it does
