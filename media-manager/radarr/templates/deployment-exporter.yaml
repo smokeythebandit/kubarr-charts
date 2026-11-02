@@ -9,6 +9,10 @@ metadata:
     app.kubernetes.io/component: exporter
 spec:
   replicas: 1
+  # Mounts the application's ReadWriteOnce config claim, which a second pod
+  # cannot attach while the first holds it.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "radarr.name" . }}-exporter

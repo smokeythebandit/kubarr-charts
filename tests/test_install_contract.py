@@ -243,6 +243,40 @@ class InstallContractTests(unittest.TestCase):
                         self.assertTrue(resources.get("requests"), "no requests")
                         self.assertTrue(resources.get("limits"), "no limits")
 
+    def test_a_rolling_update_never_waits_on_a_claim_it_cannot_attach(self):
+        """A Deployment that mounts a ReadWriteOnce claim must use Recreate.
+        Under RollingUpdate the replacement pod cannot attach the volume the
+        outgoing pod still holds, so the rollout waits on a pod that can never
+        start -- which is what Grafana and the four exportarr sidecar
+        Deployments did."""
+        for chart in charts():
+            if yaml.safe_load((chart / "Chart.yaml").read_text()).get("type") == "library":
+                continue
+            result = render(chart, {"database": {"existingSecret": "kubarr-db-app"}})
+            if result.returncode:
+                continue
+            docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+            single_writer = {
+                doc["metadata"]["name"] for doc in docs
+                if doc.get("kind") == "PersistentVolumeClaim"
+                and "ReadWriteOnce" in (doc["spec"].get("accessModes") or [])
+            }
+            for doc in docs:
+                if doc.get("kind") != "Deployment":
+                    continue
+                mounted = {
+                    volume["persistentVolumeClaim"]["claimName"]
+                    for volume in doc["spec"]["template"]["spec"].get("volumes", [])
+                    if volume.get("persistentVolumeClaim")
+                } & single_writer
+                if not mounted:
+                    continue
+                with self.subTest(chart=str(chart.relative_to(ROOT)),
+                                  workload=doc["metadata"]["name"]):
+                    self.assertEqual(
+                        (doc["spec"].get("strategy") or {}).get("type"), "Recreate",
+                        f"mounts {sorted(mounted)}")
+
     def test_victorialogs_requirement_tracks_its_storage_path(self):
         # The chart exposes the same path twice: as the wizard's requirement and
         # as the flag it passes to the binary. They must not drift apart.

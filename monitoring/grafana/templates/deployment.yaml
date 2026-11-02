@@ -7,6 +7,11 @@ metadata:
     {{- include "grafana.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.grafana.replicaCount }}
+  # The dashboard database is a SQLite file on a ReadWriteOnce claim: a second
+  # pod cannot attach it, so a rolling update would wait on a pod that can
+  # never start.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "grafana.selectorLabels" . | nindent 6 }}
