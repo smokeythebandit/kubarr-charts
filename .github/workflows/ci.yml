@@ -69,6 +69,19 @@ jobs:
         run: |
           "$RUNNER_TEMP/chart-tests/bin/python" -B -m unittest discover -s tests -v
 
+      # Rendering cannot tell whether the images a chart names exist, nor
+      # whether a changed chart carries a version that will actually publish.
+      # Both have shipped broken: the platform charts deployed kubarr-*:0.3.10,
+      # a tag whose release never published, and publish.yml silently skips a
+      # version already in the registry. These checks need the network, so they
+      # are opt-in and run here rather than in a developer's unit-test loop.
+      - name: Registry consistency
+        env:
+          KUBARR_REGISTRY_CHECKS: "1"
+        run: |
+          "$RUNNER_TEMP/chart-tests/bin/python" -B -m unittest \
+            discover -s tests -p 'test_registry_consistency.py' -v
+
       - name: Upload validated packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
