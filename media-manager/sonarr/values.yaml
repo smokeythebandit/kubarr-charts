@@ -171,6 +171,10 @@ networkPolicy:
   ingressFrom:
     - openresty  # Kubarr gateway proxy
     - victoriametrics  # metrics scraping
+    - jellyseerr  # request manager adds movies/series
+    - bazarr  # subtitle manager reads the library and queues searches
+    - prowlarr  # indexer manager syncs indexer definitions in
+    - recyclarr  # quality profile sync
   # Namespaces this app can send traffic to
   egressTo:
     - qbittorrent
@@ -179,6 +183,7 @@ networkPolicy:
     - rutorrent
     - sabnzbd
     - jackett
+    - prowlarr  # indexer manager syncs indexer definitions in
 
 # Jellyfin connection. Kubarr sets secretName to a Secret (key: api-key) holding
 # the API key it also registers in Jellyfin; Sonarr then adds a Jellyfin

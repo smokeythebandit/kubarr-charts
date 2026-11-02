@@ -2,7 +2,7 @@ apiVersion: v2
 name: lidarr
 description: Music collection manager for Usenet and BitTorrent users
 type: application
-version: 3.1.6+3
+version: 3.1.6+4
 appVersion: "3.1.6"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI

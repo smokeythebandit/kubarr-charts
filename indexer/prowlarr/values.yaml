@@ -160,6 +160,9 @@ networkPolicy:
   ingressFrom:
     - openresty  # Kubarr gateway proxy
     - victoriametrics  # metrics scraping
+    - radarr  # movie manager searches through the indexer manager
+    - sonarr  # series manager searches through the indexer manager
+    - lidarr  # music manager searches through the indexer manager
   # Namespaces this app can send traffic to. The shared policy already permits
   # egress to the public internet, which is what indexer queries need.
   egressTo:

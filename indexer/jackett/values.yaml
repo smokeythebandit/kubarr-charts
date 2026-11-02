@@ -161,7 +161,9 @@ networkPolicy:
     - openresty  # Kubarr gateway proxy
     - sonarr
     - radarr
-  egressTo: []
+    - lidarr
+  egressTo:
+    - flaresolverr  # solves Cloudflare challenges for protected indexers
 # Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
 vpa:
   enabled: false
