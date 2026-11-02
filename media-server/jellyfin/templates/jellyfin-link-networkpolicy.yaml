@@ -1,0 +1,28 @@
+{{- /* Policies add up: this opens Jellyfin to Sonarr and Radarr only while
+Kubarr links them, and does not depend on networkPolicy.ingressFrom, which
+--reuse-values would pin to an older release's list. */ -}}
+{{- if and .Values.networkPolicy.enabled (default dict .Values.jellyfinIntegration).secretName }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-library-refresh
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "jellyfin.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jellyfin.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- range list "sonarr" "radarr" }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.jellyfin.service.targetPort }}
+    {{- end }}
+{{- end }}

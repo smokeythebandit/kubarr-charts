@@ -1,0 +1,26 @@
+{{- /* Policies add up: this lets Sonarr reach Jellyfin only while Kubarr
+links them, and does not depend on networkPolicy.egressTo, which
+--reuse-values would pin to an older release's list. */ -}}
+{{- if and .Values.networkPolicy.enabled (default dict .Values.jellyfinIntegration).secretName }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-jellyfin
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "sonarr.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sonarr.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: jellyfin
+      ports:
+        - protocol: TCP
+          port: 8096
+{{- end }}

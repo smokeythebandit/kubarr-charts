@@ -467,3 +467,124 @@ data:
 
       sleep $CHECK_INTERVAL
     done
+  setup-mediaservers.sh: |
+    #!/bin/bash
+    # Add a Jellyfin connection so imports, renames and deletes refresh the
+    # Jellyfin library at once instead of waiting for its next scheduled scan.
+    # Kubarr mounts the API key it registered in Jellyfin; without it this
+    # service idles. A Jellyfin connection the user made is left alone, and
+    # ours is removed once the Jellyfin service no longer exists.
+
+    umask 077  # the last-applied key file holds a secret
+    KEY_FILE="/kubarr-secrets/jellyfin/api-key"
+    CONFIG_FILE="/config/config.xml"
+    API_PORT="8989"
+    API_BASE="/sonarr"
+    JELLYFIN_HOST="jellyfin.jellyfin.svc.cluster.local"
+    JELLYFIN_PORT="8096"
+    NAME="Jellyfin"
+    # Last key written to our connection, so a changed key gets pushed once.
+    APPLIED_FILE="/config/.kubarr-jellyfin-key"
+    CHECK_INTERVAL=60
+
+    if [ ! -s "$KEY_FILE" ]; then
+      echo "[setup] No Jellyfin key from Kubarr; Jellyfin connection disabled"
+      exec sleep infinity
+    fi
+
+    get_api_key() {
+      sed -n 's/.*<ApiKey>\([^<]*\)<\/ApiKey>.*/\1/p' "$CONFIG_FILE" 2>/dev/null
+    }
+
+    is_api_ready() {
+      curl -s -f -H "X-Api-Key: $1" "http://localhost:$API_PORT$API_BASE/api/v3/system/status" > /dev/null 2>&1
+    }
+
+    # 0 = reachable, 6 = the service name does not resolve (not installed).
+    jellyfin_state() {
+      curl -s -f -o /dev/null --connect-timeout 5 "http://$JELLYFIN_HOST:$JELLYFIN_PORT/System/Info/Public"
+    }
+
+    connections() {
+      curl -s -f -H "X-Api-Key: $1" "http://localhost:$API_PORT$API_BASE/api/v3/notification"
+    }
+
+    jellyfin_key() {
+      tr -d '[:space:]' < "$KEY_FILE"
+    }
+
+    # Point an existing connection at the current key.
+    update_connection() {
+      echo "$CURRENT" | jq --argjson id "$2" --arg key "$(jellyfin_key)" \
+        '.[] | select(.id == $id) | .fields |= map(if .name == "apiKey" then .value = $key else . end)' |
+        curl -s -f -X PUT \
+          -H "X-Api-Key: $1" \
+          -H "Content-Type: application/json" \
+          "http://localhost:$API_PORT$API_BASE/api/v3/notification/$2?forceSave=true" \
+          -d @- > /dev/null
+    }
+
+    add_connection() {
+      local jellyfin_key
+      jellyfin_key=$(jellyfin_key)
+      # forceSave: Jellyfin rejects the test call until its setup wizard is done.
+      curl -s -f -X POST \
+        -H "X-Api-Key: $1" \
+        -H "Content-Type: application/json" \
+        "http://localhost:$API_PORT$API_BASE/api/v3/notification?forceSave=true" \
+        -d '{
+          "name": "'"$NAME"'",
+          "implementation": "MediaBrowser",
+          "configContract": "MediaBrowserSettings",
+          "onDownload": true, "onUpgrade": true, "onImportComplete": true, "onRename": true, "onSeriesDelete": true, "onEpisodeFileDelete": true, "onEpisodeFileDeleteForUpgrade": true,
+          "tags": [],
+          "fields": [
+            {"name": "host", "value": "'"$JELLYFIN_HOST"'"},
+            {"name": "port", "value": '"$JELLYFIN_PORT"'},
+            {"name": "useSsl", "value": false},
+            {"name": "apiKey", "value": "'"$jellyfin_key"'"},
+            {"name": "notify", "value": false},
+            {"name": "updateLibrary", "value": true}
+          ]
+        }' > /dev/null
+    }
+
+    echo "[setup] Starting Jellyfin connection manager for Sonarr..."
+    while true; do
+      API_KEY=$(get_api_key)
+      if [ -n "$API_KEY" ] && is_api_ready "$API_KEY" && CURRENT=$(connections "$API_KEY"); then
+        ANY=$(echo "$CURRENT" | jq -r '[.[] | select(.implementation == "MediaBrowser")] | length')
+        OURS=$(echo "$CURRENT" | jq -r --arg name "$NAME" --arg host "$JELLYFIN_HOST" \
+          '.[] | select(.implementation == "MediaBrowser" and .name == $name)
+               | select(any(.fields[]; .name == "host" and .value == $host)) | .id' | head -1)
+        jellyfin_state
+        case $? in
+          0)
+            if [ "$ANY" = "0" ]; then
+              if add_connection "$API_KEY"; then
+                jellyfin_key > "$APPLIED_FILE"
+                echo "[setup] Added Jellyfin connection"
+              else
+                echo "[setup] Failed to add Jellyfin connection"
+              fi
+            elif [ -n "$OURS" ] && [ "$(cat "$APPLIED_FILE" 2>/dev/null)" != "$(jellyfin_key)" ]; then
+              if update_connection "$API_KEY" "$OURS"; then
+                jellyfin_key > "$APPLIED_FILE"
+                echo "[setup] Updated the Jellyfin connection's API key"
+              else
+                echo "[setup] Failed to update the Jellyfin connection's API key"
+              fi
+            fi
+            ;;
+          6)
+            if [ -n "$OURS" ]; then
+              curl -s -X DELETE -H "X-Api-Key: $API_KEY" \
+                "http://localhost:$API_PORT$API_BASE/api/v3/notification/$OURS" > /dev/null
+              rm -f "$APPLIED_FILE"
+              echo "[setup] Jellyfin is gone; removed its connection"
+            fi
+            ;;
+        esac
+      fi
+      sleep "$CHECK_INTERVAL"
+    done

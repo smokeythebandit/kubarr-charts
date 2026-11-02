@@ -1,0 +1,87 @@
+{{- if (default dict .Values.jellyfinIntegration).secretName }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "jellyfin.fullname" . }}-api-key
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "jellyfin.labels" . | nindent 4 }}
+data:
+  register-api-key.py: |
+    """Keep the Kubarr-provided API key registered in Jellyfin.
+
+    Jellyfin hands out API keys only to a signed-in administrator, and a fresh
+    install has none until its setup wizard is finished. Sonarr and Radarr need
+    a key before that to refresh the library on import, so this writes the
+    shared key into Jellyfin's ApiKeys table directly. Jellyfin looks keys up
+    per request, so no restart is needed. The row is restored if removed.
+    """
+    import datetime
+    import re
+    import sqlite3
+    import sys
+    import time
+
+    DB = "/config/data/data/jellyfin.db"
+    KEY_FILE = "/kubarr-secrets/jellyfin/api-key"
+    NAME = "Kubarr"
+    INTERVAL = 60
+
+
+    def log(message):
+        print(f"[jellyfin-api-key] {message}", flush=True)
+
+
+    def shared_key():
+        with open(KEY_FILE, encoding="ascii") as handle:
+            key = handle.read().strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", key):
+            raise ValueError("shared key is not 32 lowercase hex characters")
+        return key
+
+
+    def ensure(key):
+        """Return True once the key is registered, False if Jellyfin is not ready."""
+        try:
+            db = sqlite3.connect(f"file:{DB}?mode=rw", uri=True, timeout=30)
+        except sqlite3.OperationalError:
+            return False  # Jellyfin has not created its database yet.
+        try:
+            table = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ApiKeys'"
+            ).fetchone()
+            if not table:
+                return False  # Migrations still running.
+            if db.execute("SELECT 1 FROM ApiKeys WHERE AccessToken = ?", (key,)).fetchone():
+                return True
+            now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            with db:
+                updated = db.execute(
+                    "UPDATE ApiKeys SET AccessToken = ?, DateLastActivity = ? WHERE Name = ?",
+                    (key, now, NAME),
+                ).rowcount
+                if not updated:
+                    db.execute(
+                        "INSERT INTO ApiKeys (DateCreated, DateLastActivity, Name, AccessToken)"
+                        " VALUES (?, ?, ?, ?)",
+                        (now, now, NAME, key),
+                    )
+            log("registered the Kubarr API key")
+            return True
+        finally:
+            db.close()
+
+
+    def main():
+        key = shared_key()
+        while True:
+            try:
+                ensure(key)
+            except sqlite3.Error as error:
+                log(f"database not writable yet: {error}")
+            time.sleep(INTERVAL)
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+{{- end }}

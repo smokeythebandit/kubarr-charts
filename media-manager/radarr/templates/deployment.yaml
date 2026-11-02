@@ -126,13 +126,21 @@ spec:
             {{- toYaml .Values.radarr.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/config" "/custom-services.d/setup-downloadclients" "/custom-services.d/setup-indexers")) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" .Values.kubarr.storage.reserved.main) | nindent 12 }}
             - name: setup-scripts
               mountPath: /custom-services.d/setup-downloadclients
               subPath: setup-downloadclients.sh
             - name: setup-scripts
               mountPath: /custom-services.d/setup-indexers
               subPath: setup-indexers.sh
+            - name: setup-scripts
+              mountPath: /custom-services.d/setup-mediaservers
+              subPath: setup-mediaservers.sh
+            {{- if (default dict .Values.jellyfinIntegration).secretName }}
+            - name: jellyfin-api-key
+              mountPath: /kubarr-secrets/jellyfin
+              readOnly: true
+            {{- end }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "radarr.fullname" .)) | nindent 8 }}
@@ -140,4 +148,12 @@ spec:
           configMap:
             name: {{ include "radarr.fullname" . }}-setup
             defaultMode: 0755
+        {{- if (default dict .Values.jellyfinIntegration).secretName }}
+        - name: jellyfin-api-key
+          secret:
+            secretName: {{ (default dict .Values.jellyfinIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

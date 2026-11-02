@@ -19,6 +19,9 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if (default dict .Values.jellyfinIntegration).secretName }}
+        checksum/api-key: {{ include (print $.Template.BasePath "/api-key-configmap.yaml") . | sha256sum }}
+        {{- end }}
       {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -80,7 +83,48 @@ spec:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
             {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
             {{- include "kubarr-common.storage.scratchMount" (dict "root" .) | nindent 12 }}
+        {{- if (default dict .Values.jellyfinIntegration).secretName }}
+        - name: api-key
+          image: python:3.14.8-alpine3.24
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-u", "/scripts/register-api-key.py"]
+          securityContext:
+            runAsUser: {{ .Values.jellyfin.env.PUID | int }}
+            runAsGroup: {{ .Values.jellyfin.env.PGID | int }}
+            runAsNonRoot: {{ ne (int .Values.jellyfin.env.PUID) 0 }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            - name: api-key-script
+              mountPath: /scripts
+              readOnly: true
+            - name: api-key-secret
+              mountPath: /kubarr-secrets/jellyfin
+              readOnly: true
+        {{- end }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "jellyfin.fullname" .)) | nindent 8 }}
+        {{- if (default dict .Values.jellyfinIntegration).secretName }}
+        - name: api-key-script
+          configMap:
+            name: {{ include "jellyfin.fullname" . }}-api-key
+        - name: api-key-secret
+          secret:
+            secretName: {{ (default dict .Values.jellyfinIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}
