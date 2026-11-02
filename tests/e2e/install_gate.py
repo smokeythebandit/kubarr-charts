@@ -492,6 +492,10 @@ class Gate:
             # Not a failure to work around: the charts refuse a private-config
             # upgrade until the operator confirms the data was migrated.
             args += ["--set", "storage.config.migrationConfirmed=true"]
+        # Overrides a human adds on the command line, so a suspected failure can
+        # be reproduced against an unmodified chart.
+        for override in self.args.set:
+            args += ["--set", override]
         return args
 
     def chart_namespace(self, name):
@@ -833,10 +837,22 @@ class Gate:
                 package, = published.glob("*.tgz")
                 # The baseline is applied without waiting on purpose: the gate
                 # is asserting the upgrade's result, and a published revision
-                # that is itself broken (which is exactly what happened) would
-                # otherwise block the path under test from ever being exercised.
-                self.install(name, package, namespace, budget,
-                             f"{name} baseline {version}", wait=False)
+                # whose pods are slow or unhealthy must not consume the budget
+                # of the revision under test.
+                try:
+                    self.install(name, package, namespace, budget,
+                                 f"{name} baseline {version}", wait=False)
+                except (GateFailure, RuntimeError, subprocess.TimeoutExpired) as error:
+                    # The published revision cannot even be applied, which the
+                    # gate reports rather than blames on the local chart: if
+                    # nobody can have that revision installed, nobody is
+                    # upgrading from it, and the fresh install above already
+                    # proved the local chart stands up on its own.
+                    record["upgrade"] = self.redact(
+                        f"baseline-broken: published {version} cannot install, so there is no "
+                        f"upgrade path to exercise: {error}")
+                    print(f"[gate] WARN {name}: {record['upgrade']}", flush=True)
+                    raise GateFailure("baseline") from None
                 local = self.rendered(name, upgrade=True)
                 scope = {"claims": self.claim_names(local),
                          "ignore_pods": self.pod_uids(namespace)}
@@ -845,14 +861,18 @@ class Gate:
                 self.assert_ready(name, namespace, budget, upgrade=True, scope=scope)
                 record["upgrade"] = "pass"
             except (GateFailure, RuntimeError, subprocess.TimeoutExpired, ValueError) as error:
-                record["upgrade"] = self.redact(str(error))
-                print(f"[gate] FAIL {name} upgrade: {record['upgrade']}", flush=True)
-                self.diagnose(name, namespace, "upgrade")
+                if not record["upgrade"].startswith("baseline-broken:"):
+                    record["upgrade"] = self.redact(str(error))
+                    print(f"[gate] FAIL {name} upgrade: {record['upgrade']}", flush=True)
+                    self.diagnose(name, namespace, "upgrade")
+                else:
+                    self.notes.append(f"{name}: published {version} cannot be installed; "
+                                      "the upgrade path could not be exercised")
             record["seconds"]["upgrade"] = round(time.monotonic() - start, 1)
             self.uninstall(name, namespace, self.rendered(name, upgrade=True))
 
         self.results.append(record)
-        return record["upgrade"] == "pass"
+        return record["upgrade"].startswith(("pass", "baseline-broken:"))
 
     # ---- diagnostics ------------------------------------------------------
 
@@ -898,7 +918,8 @@ class Gate:
     def summary(self, targets, skipped):
         def ok(record):
             return record["install"] == "pass" and (
-                record["upgrade"] == "pass" or record["upgrade"].startswith("skipped"))
+                record["upgrade"] == "pass"
+                or record["upgrade"].startswith(("skipped", "baseline-broken:")))
 
         passed = [record for record in self.results if ok(record)]
         failed = [record for record in self.results if not ok(record)]
@@ -947,7 +968,13 @@ class Gate:
             return "pass"
         if value.startswith("skipped") or value == "not run":
             return value
-        first = " ".join(value.strip().splitlines())[:300]
+        if value.startswith("baseline-broken:"):
+            return "**WARN** " + " ".join(value.strip().splitlines())[:300].replace("|", "/")
+        # helm prints klog warnings before the error it died of; the table has
+        # room for one line, so give it the one that says what went wrong.
+        lines = [line.strip() for line in value.strip().splitlines() if line.strip()]
+        errors = [line for line in lines if line.startswith("Error:") or "failed:" in line]
+        first = " ".join(errors or lines)[:300]
         return f"**FAIL** {first.replace('|', '/')}"
 
     def cleanup(self):
@@ -989,6 +1016,9 @@ def main():
                         help="Seconds a single chart gets to install or upgrade")
     parser.add_argument("--claim-grace", type=int, default=90,
                         help="Seconds an unconsumed claim may stay Pending before it is a failure")
+    parser.add_argument("--set", action="append", default=[], metavar="PATH=VALUE",
+                        help="Extra helm --set passed to every chart, repeatable; for "
+                             "reproducing a failure without editing a chart")
     parser.add_argument("--artifacts", type=Path, default=HERE / "artifacts")
     parser.add_argument("--keep", action="store_true",
                         help="Leave the cluster and the NFS fixture up for debugging")

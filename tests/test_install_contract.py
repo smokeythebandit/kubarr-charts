@@ -243,12 +243,26 @@ class InstallContractTests(unittest.TestCase):
                         self.assertTrue(resources.get("requests"), "no requests")
                         self.assertTrue(resources.get("limits"), "no limits")
 
-    def test_a_rolling_update_never_waits_on_a_claim_it_cannot_attach(self):
-        """A Deployment that mounts a ReadWriteOnce claim must use Recreate.
-        Under RollingUpdate the replacement pod cannot attach the volume the
-        outgoing pod still holds, so the rollout waits on a pod that can never
-        start -- which is what Grafana and the four exportarr sidecar
-        Deployments did."""
+    def test_no_claim_is_shared_by_replicas_that_cannot_all_attach_it(self):
+        """More than one replica cannot share a ReadWriteOnce claim.
+
+        This used to demand `Recreate` from any Deployment mounting such a
+        claim, on the theory that a rolling update would wedge on the volume.
+        The install gate disproved it: switching Grafana and the exportarr
+        Deployments to Recreate made their upgrades fail outright, because a
+        release published without a strategy has the API server's defaulted
+        `rollingUpdate` recorded, and a server-side apply keeps it:
+
+            Deployment.apps "grafana" is invalid: spec.strategy.rollingUpdate:
+            Forbidden: may not be specified when strategy `type` is 'Recreate'
+
+        Those rollouts were never stuck in the first place -- the claim's
+        volume is node-bound and the exporters are pinned to their
+        application's node, so the replacement pod lands where it can attach.
+        What is always broken is two replicas sharing one single-writer claim,
+        so that is what this asserts; whether a rollout actually completes is
+        the gate's job, in a cluster.
+        """
         for chart in charts():
             if yaml.safe_load((chart / "Chart.yaml").read_text()).get("type") == "library":
                 continue
@@ -273,9 +287,9 @@ class InstallContractTests(unittest.TestCase):
                     continue
                 with self.subTest(chart=str(chart.relative_to(ROOT)),
                                   workload=doc["metadata"]["name"]):
-                    self.assertEqual(
-                        (doc["spec"].get("strategy") or {}).get("type"), "Recreate",
-                        f"mounts {sorted(mounted)}")
+                    self.assertLessEqual(
+                        doc["spec"].get("replicas", 1), 1,
+                        f"replicas share the single-writer claim {sorted(mounted)}")
 
     def test_no_claim_waits_on_a_pod_that_will_never_be_scheduled(self):
         """A claim needs a consumer, or the install waits for a bind that
