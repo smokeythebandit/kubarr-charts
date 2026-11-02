@@ -1,0 +1,142 @@
+namespace:
+  create: false  # kubarr deployment manager creates the namespace
+  name: alertmanager
+
+alertmanager:
+  # Silences and the notification log live in one claim, and gossip clustering
+  # is switched off below, so there is exactly one writer.
+  replicaCount: 1
+
+  image:
+    repository: prom/alertmanager
+    tag: "v0.34.2"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 9093
+    targetPort: 9093
+    annotations: {}
+
+  # Base path for URL routing. The Kubarr gateway preserves this prefix and
+  # Alertmanager is started with --web.route-prefix to match.
+  #
+  # This value is also part of monitoring/vmalert's notifierUrl: the
+  # /api/v2/alerts endpoint moves under the prefix with everything else, so
+  # the two must be changed together.
+  basePath: "/alertmanager"
+
+  # Absolute URL Alertmanager puts in notifications so links lead back to the
+  # UI. Empty means it guesses from the pod's hostname, which is useless in a
+  # notification; set it to the dashboard's address.
+  externalUrl: ""
+
+  # How long resolved alerts, silences and the notification log are kept.
+  retention: "120h"
+
+  # Routing and delivery.
+  #
+  # The default receiver is a deliberate black hole: it accepts everything and
+  # notifies nobody, so installing this chart cannot start mailing a
+  # half-configured address. Add a real receiver (webhook_configs,
+  # email_configs, ...) and point the route at it to get notifications.
+  #
+  # The whole object is rendered into alertmanager.yml verbatim.
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      # Alerts from this stack are node- and namespace-shaped, so group on
+      # those. One notification per incident rather than per pod.
+      group_by: [alertname, namespace]
+      # Wait for the rest of a cascade before the first notification.
+      group_wait: 1m
+      group_interval: 5m
+      # A still-firing alert is repeated twice a day, not hourly.
+      repeat_interval: 12h
+      receiver: "null"
+    receivers:
+      - name: "null"
+    inhibit_rules:
+      # A critical alert already says what the matching warning would.
+      - source_matchers: ['severity = "critical"']
+        target_matchers: ['severity = "warning"']
+        equal: [alertname, namespace]
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 48Mi
+    limits:
+      cpu: 200m
+      memory: 160Mi
+
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 15
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Declarative storage. Alertmanager's silences and notification log are state
+# that must survive a restart: losing them re-notifies every firing alert and
+# silently cancels every silence. It is a private block claim, never the shared
+# NFS export -- the files are memory-mapped and locked.
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      # Nothing of Alertmanager's lives on the shared export; its state is on
+      # the private claim below, which is not a user mount.
+      main: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # The private claim holds the silences and notification log, and the
+      # routing ConfigMap is mounted read-only; neither is /config here.
+      main: ["/alertmanager", "/etc/alertmanager"]
+
+storage:
+  mounts: []  # nothing of Alertmanager's belongs on the shared media export
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 1Gi
+    storageClassName: "" # empty: cluster default StorageClass
+  media:
+    existingClaim: ""  # no shared claim
+
+serviceAccount:
+  create: true
+  name: alertmanager
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - vmalert     # posts alerts to /api/v2/alerts
+    - openresty   # Kubarr gateway proxy, for the UI
+  # Receivers reach the outside world: webhooks over HTTPS, SMTP submission.
+  # Private ranges are excluded so a misconfigured receiver cannot be used to
+  # probe the LAN; add a namespace to egressTo for an in-cluster receiver.
+  notificationPorts: [443, 587]
+  egressTo: []

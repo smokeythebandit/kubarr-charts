@@ -1,0 +1,40 @@
+apiVersion: v2
+name: recyclarr
+description: Syncs TRaSH-Guides quality profiles and custom formats into Radarr and Sonarr
+type: application
+version: 8.8.1+1
+appVersion: "8.8.1"
+keywords:
+  - recyclarr
+  - trash-guides
+  - media-manager
+  - radarr
+  - sonarr
+home: https://recyclarr.dev
+sources:
+  - https://github.com/recyclarr/recyclarr
+maintainers:
+  - name: Kubarr Team
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+annotations:
+  kubarr.io/display-name: "Recyclarr"
+  kubarr.io/icon: "♻️"
+  kubarr.io/category: "media-manager"
+  # Recyclarr is a command-line sync job, not a server: it has no listener and
+  # no page, so it refuses browsing and the dashboard offers no "open" tile. It
+  # stays listed because the one thing a user wants from it is the status of the
+  # last scheduled run.
+  #
+  # It is not a system component. "system" here means a platform component the
+  # CLI bootstraps (node-exporter, victoriametrics, fluent-bit, postgresql), and
+  # install_options.rs refuses to install any chart whose system or hidden flag
+  # is true. Recyclarr is an app a user chooses, so both stay false.
+  kubarr.io/system: "false"
+  kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.7.0
+    repository: file://../../system/kubarr-common

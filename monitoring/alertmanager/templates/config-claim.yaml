@@ -1,0 +1,5 @@
+{{/* The private block claim behind /alertmanager. validateConfig rejects the
+     shared export, a second workload sharing the claim, and an upgrade that
+     has not acknowledged the data move. */}}
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "kubarr-common.fullname" .) "replicas" .Values.alertmanager.replicaCount "reservedPaths" .Values.kubarr.storage.reserved.main) -}}
+{{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "kubarr-common.fullname" .)) }}

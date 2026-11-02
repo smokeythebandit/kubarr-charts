@@ -13,17 +13,40 @@ from chart_artifacts import ROOT, chart_input
 
 PRIVATE_CONFIG = (
     "media-manager/radarr", "media-manager/sonarr", "media-manager/jellyseerr",
-    "media-server/plex", "media-server/jellyfin", "indexer/jackett",
+    "media-manager/lidarr", "media-manager/bazarr",
+    "media-server/plex", "media-server/jellyfin", "media-server/navidrome",
+    "media-server/audiobookshelf", "media-server/komga", "media-server/tdarr",
+    "media-server/calibre-web-automated",
+    "indexer/jackett", "indexer/prowlarr",
     "download-client/deluge", "download-client/qbittorrent",
     "download-client/transmission", "download-client/rutorrent", "download-client/sabnzbd",
 )
+# A private claim without a shared-export mount: the config contract applies,
+# the NFS one does not.
+PRIVATE_CONFIG_ONLY = (
+    "media-manager/recyclarr", "monitoring/alertmanager",
+)
+# Where a chart's private claim lands when it is not /config, because the
+# application owns that path.
+CONFIG_PATHS = {
+    "media-manager/jellyseerr": "/app/config",
+    "media-server/tdarr": "/app/server",
+    "monitoring/alertmanager": "/alertmanager",
+}
+# A path the application cannot run without, so an empty mount list is refused
+# rather than silently falling back to the container filesystem.
+REQUIRED_MOUNT = {
+    "media-server/calibre-web-automated": "/calibre-library",
+}
 NFS_CHARTS = PRIVATE_CONFIG + (
     "development/jenkins", "development/redmine", "development/scm-manager",
     "media-server/immich", "media-server/frigate", "monitoring/victoriametrics",
     "monitoring/victorialogs", "system/postgresql", "system/kubarr-backend", "system/kubarr-worker",
 )
-OTHER_CHARTS = (
+OTHER_CHARTS = PRIVATE_CONFIG_ONLY + (
     "monitoring/fluent-bit", "monitoring/grafana", "monitoring/headlamp",
+    "monitoring/kube-state-metrics", "monitoring/vmalert",
+    "indexer/flaresolverr",
     "system/managed-nfs", "system/cert-manager", "system/cloudflared",
     "system/kubarr-dns-webhook", "system/kubarr-frontend", "system/openresty",
     "system/kubarr-common",
@@ -49,11 +72,14 @@ def pods(resources):
     for resource in resources:
         if resource["kind"] in ("Deployment", "StatefulSet", "DaemonSet"):
             yield resource["metadata"]["name"], resource["spec"]["template"]["spec"]
+        elif resource["kind"] == "CronJob":
+            yield (resource["metadata"]["name"],
+                   resource["spec"]["jobTemplate"]["spec"]["template"]["spec"])
 
 
 class DeclarativeStorageTests(unittest.TestCase):
     def test_private_config_is_mounted_at_the_application_config_directory(self):
-        for chart in PRIVATE_CONFIG:
+        for chart in PRIVATE_CONFIG + PRIVATE_CONFIG_ONLY:
             with self.subTest(chart=chart):
                 result, resources = render(chart)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -62,7 +88,7 @@ class DeclarativeStorageTests(unittest.TestCase):
                            if any(container["name"] == name for container in pod["containers"]))
                 container = next(container for container in pod["containers"] if container["name"] == name)
                 mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "config")
-                self.assertEqual(mount["mountPath"], "/app/config" if name == "jellyseerr" else "/config")
+                self.assertEqual(mount["mountPath"], CONFIG_PATHS.get(chart, "/config"))
                 volume = next(volume for volume in pod["volumes"] if volume["name"] == "config")
                 self.assertNotEqual(volume["persistentVolumeClaim"]["claimName"], "media-data")
 
@@ -139,7 +165,7 @@ class DeclarativeStorageTests(unittest.TestCase):
                                  for m in c.get("volumeMounts", [])))
 
     def test_non_nfs_charts_do_not_gain_shared_export_volumes(self):
-        self.assertEqual(len(NFS_CHARTS) + len(OTHER_CHARTS), 31)
+        self.assertEqual(len(NFS_CHARTS) + len(OTHER_CHARTS), 44)
         for chart in OTHER_CHARTS:
             with self.subTest(chart=chart):
                 if chart == "system/kubarr-common":
@@ -226,7 +252,7 @@ class DeclarativeStorageTests(unittest.TestCase):
                                      {m["source"] for m in defaults["mounts"]})
 
     def test_private_config_upgrade_requires_acknowledgement(self):
-        for chart in PRIVATE_CONFIG:
+        for chart in PRIVATE_CONFIG + PRIVATE_CONFIG_ONLY:
             with self.subTest(chart=chart):
                 result, _ = render(chart, upgrade=True)
                 self.assertNotEqual(result.returncode, 0)
@@ -249,10 +275,12 @@ class DeclarativeStorageTests(unittest.TestCase):
     def test_empty_and_invalid_lists_are_not_implicit_roles(self):
         for chart in PRIVATE_CONFIG:
             with self.subTest(chart=chart):
-                if chart.startswith("download-client/"):
+                required = ("/downloads" if chart.startswith("download-client/")
+                            else REQUIRED_MOUNT.get(chart))
+                if required:
                     result, _ = render(chart, {"storage": {"mounts": []}})
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("/downloads", result.stderr)
+                    self.assertIn(required, result.stderr)
                     continue
                 result, resources = render(chart, {"storage": {"mounts": []}})
                 self.assertEqual(result.returncode, 0, result.stderr)

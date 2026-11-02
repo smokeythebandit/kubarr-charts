@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "audiobookshelf.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "audiobookshelf.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.audiobookshelf.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  # Derived settings. The image listens on port 80, which a non-root container
+  # cannot bind; PORT follows the Service target port instead.
+  PORT: {{ .Values.audiobookshelf.service.targetPort | quote }}
+  # Keeps metadata on the private config claim rather than on the shared NFS
+  # export: it is the database's companion state, and it holds the upload temp
+  # directory and cached streams.
+  METADATA_PATH: "/config/metadata"
+  ROUTER_BASE_PATH: {{ .Values.audiobookshelf.basePath | quote }}

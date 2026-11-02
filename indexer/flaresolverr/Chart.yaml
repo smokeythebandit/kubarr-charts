@@ -1,0 +1,41 @@
+apiVersion: v2
+name: flaresolverr
+description: Proxy that solves Cloudflare and DDoS-GUARD challenges for indexers
+type: application
+version: 3.5.2
+appVersion: "3.5.2"
+keywords:
+  - flaresolverr
+  - indexer
+  - cloudflare
+  - proxy
+  - prowlarr
+  - jackett
+home: https://github.com/FlareSolverr/FlareSolverr
+sources:
+  - https://github.com/FlareSolverr/FlareSolverr
+maintainers:
+  - name: Kubarr Team
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+annotations:
+  kubarr.io/display-name: "FlareSolverr"
+  kubarr.io/icon: "🛡️"
+  kubarr.io/category: "indexer"
+  # FlareSolverr serves a JSON API on /v1 and nothing else: there is no page to
+  # open, and no user ever addresses it directly -- Prowlarr and Jackett reach
+  # it by service name. So it refuses browsing, and the dashboard offers no
+  # "open" tile for it.
+  #
+  # It is not a system component. "system" here means a platform component the
+  # CLI bootstraps (node-exporter, victoriametrics, fluent-bit, postgresql), and
+  # install_options.rs refuses to install any chart whose system or hidden flag
+  # is true. FlareSolverr is an app a user chooses, so both stay false.
+  kubarr.io/system: "false"
+  kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.7.0
+    repository: file://../../system/kubarr-common

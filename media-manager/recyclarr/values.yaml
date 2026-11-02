@@ -1,0 +1,201 @@
+# Default values for recyclarr
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Namespace configuration
+namespace:
+  create: true
+  name: recyclarr
+
+# Recyclarr application configuration
+recyclarr:
+  image:
+    repository: ghcr.io/recyclarr/recyclarr
+    pullPolicy: IfNotPresent
+    tag: "8.8.1"
+
+  # Where the rendered starter config (see the ConfigMap) is mounted. It is a
+  # separate path from /config so a read-only ConfigMap never shadows the
+  # directory recyclarr has to write its cache and sync state into.
+  configFile: /etc/recyclarr/recyclarr.yml
+
+  # Schedule. The image ships its own cron scheduler, which this chart does not
+  # use: a CronJob gives Kubernetes the history, the concurrency rule and the
+  # suspend switch instead of hiding them inside a long-running pod.
+  cronJob:
+    # TRaSH-Guides changes slowly; nightly, off-peak, is plenty.
+    schedule: "0 4 * * *"
+    # Suspended on install: with no API key Secret yet (see instances below)
+    # every run would fail with nothing to sync. Set to false once at least one
+    # instance is configured.
+    suspend: true
+    # Control-plane time zone for the schedule above, e.g. "Europe/Amsterdam".
+    # Empty means the controller's own zone (normally UTC).
+    timeZone: ""
+    # A second sync would race the first over the same profiles.
+    concurrencyPolicy: Forbid
+    # A run missed by more than this (node drain, control-plane restart) waits
+    # for the next slot rather than firing late.
+    startingDeadlineSeconds: 300
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    # A failed sync is usually a wrong URL or key, not a blip: retry twice.
+    backoffLimit: 2
+    # A sync is minutes of work; past half an hour it is wedged.
+    activeDeadlineSeconds: 1800
+    # Finished Jobs are cleaned up by the history limits above. Set a number of
+    # seconds to have the TTL controller remove them sooner.
+    ttlSecondsAfterFinished: null
+    # Must be OnFailure or Never; a Job cannot use Always.
+    restartPolicy: OnFailure
+
+  sync:
+    # Which services to sync: empty syncs every configured instance.
+    # "radarr" or "sonarr" narrows it.
+    service: ""
+    # Extra arguments to `recyclarr sync`, e.g. ["--preview"] for a dry run.
+    extraArgs: []
+
+  # Environment variables. RECYCLARR_CONFIG_DIR is already /config in the image
+  # and must stay there: it is the private claim mounted below.
+  env:
+    TZ: "Etc/UTC"
+    # git needs a writable HOME, and the root filesystem is read-only.
+    HOME: "/config"
+
+  # The instances to sync into.
+  #
+  # API keys are never values. Each instance names a Kubernetes Secret and the
+  # key inside it; the CronJob exposes that as an environment variable and the
+  # rendered config reads it with recyclarr's `!env_var` tag. An instance with
+  # no Secret is rendered commented out instead of failing every run, which is
+  # also why cronJob.suspend starts true.
+  #
+  # baseUrl must carry the reverse-proxy base path the target chart sets
+  # (radarr.basePath / sonarr.basePath), because that is the only path those
+  # applications answer their API on.
+  instances:
+    radarr:
+      enabled: true
+      # Instance name in recyclarr.yml; also what `sync --instance` selects.
+      name: movies
+      baseUrl: http://radarr.radarr.svc.cluster.local:7878/radarr
+      apiKeySecret:
+        name: ""
+        key: api-key
+      # TRaSH quality definition set: movie, sqp-streaming or sqp-uhd.
+      qualityDefinition: movie
+      # TRaSH quality profiles, by guide id.
+      # https://recyclarr.dev/reference/configuration/quality-profiles/
+      qualityProfiles:
+        - trash_id: d1d67249d3890e49bc12e275d989a7e9
+          name: HD Bluray + WEB
+    sonarr:
+      enabled: true
+      name: series
+      baseUrl: http://sonarr.sonarr.svc.cluster.local:8989/sonarr
+      apiKeySecret:
+        name: ""
+        key: api-key
+      # TRaSH quality definition set: series or anime.
+      qualityDefinition: series
+      qualityProfiles:
+        - trash_id: 72dae194fc92bf828f32cde7744e51a1
+          name: WEB-1080p
+
+  # Scratch space. The root filesystem is read-only, and recyclarr unpacks
+  # guide data through /tmp.
+  tmp:
+    sizeLimit: 256Mi
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      main: ["/config", "/etc/recyclarr/recyclarr.yml", "/tmp"]
+
+storage:
+  # Recyclarr never touches the shared media export; it only ever talks to the
+  # Radarr and Sonarr APIs. The list stays empty and the claim below is the
+  # chart's only volume.
+  mounts: []
+  # Private claim at /config: recyclarr's configuration directory, holding the
+  # TRaSH-Guides clone it caches and the sync state that lets it recognise the
+  # custom formats it created on an earlier run.
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 2Gi
+    storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
+  media:
+    # Not mounted anywhere by this chart; named only so the shared storage
+    # validator can prove the private config claim is a different claim.
+    existingClaim: media-data
+
+# Security context. The image runs as 1000:1000 and upstream runs it read-only.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: recyclarr
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Network policy configuration
+#
+# Egress only: recyclarr reads the TRaSH guides over HTTPS and writes profiles
+# into the instances it is pointed at. Nothing calls it, so ingress is denied
+# outright rather than left unspecified.
+networkPolicy:
+  enabled: true
+  egressTo:
+    - radarr
+    - sonarr

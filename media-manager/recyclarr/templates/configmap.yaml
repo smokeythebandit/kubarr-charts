@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "recyclarr.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "recyclarr.labels" . | nindent 4 }}
+data:
+  recyclarr.yml: |
+    # yaml-language-server: $schema=https://schemas.recyclarr.dev/v8/config-schema.json
+    ############################################################################
+    # Starter configuration, rendered by the Kubarr recyclarr chart.
+    #
+    # It is mounted read-only at {{ .Values.recyclarr.configFile }} and passed to
+    # `recyclarr sync --config`. Recyclarr's own writable directory stays at
+    # /config (the private claim), which is where it keeps the TRaSH-Guides
+    # clone and its per-instance sync state.
+    #
+    # No API key appears here. Each instance reads its key from an environment
+    # variable that the CronJob fills from a Kubernetes Secret, so this
+    # ConfigMap can be read, diffed and shared as it is.
+    #
+    # Edit it through Helm values (recyclarr.instances.*), not in place: an
+    # edit to the live ConfigMap is overwritten by the next upgrade.
+    #
+    # Reference: https://recyclarr.dev/reference/configuration/
+    ############################################################################
+{{- range $service, $instance := .Values.recyclarr.instances }}
+{{ include "recyclarr.instanceConfig" (dict "service" $service "instance" $instance) | indent 4 }}
+{{- end }}

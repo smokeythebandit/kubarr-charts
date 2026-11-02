@@ -1,0 +1,124 @@
+{{- $app := .Values.vmalert -}}
+{{- if ne (int $app.replicaCount) 1 -}}
+{{- fail "vmalert.replicaCount must be 1; a second replica evaluates every rule a second time" -}}
+{{- end -}}
+{{- if not (regexMatch "^(/[A-Za-z0-9/_-]*[A-Za-z0-9])?$" $app.basePath) -}}
+{{- fail "vmalert.basePath must be empty or an absolute path without a trailing slash" -}}
+{{- end -}}
+{{- if not $app.datasourceUrl -}}
+{{- fail "vmalert.datasourceUrl is required; it is the VictoriaMetrics instance the rules are evaluated against" -}}
+{{- end -}}
+{{- if not $app.notifierUrl -}}
+{{- fail "vmalert.notifierUrl is required; without it vmalert evaluates rules and tells nobody" -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kubarr-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubarr-common.selectorLabels" . | nindent 8 }}
+      annotations:
+        # vmalert hot-reloads rules on SIGHUP only, so a rule change has to
+        # roll the pod to take effect.
+        checksum/rules: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      # vmalert never calls the Kubernetes API: it reads VictoriaMetrics over
+      # HTTP and posts to Alertmanager. A token here would be a pivot and
+      # nothing else.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}
+      containers:
+        - name: vmalert
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          args:
+            # The glob picks up the shipped starter rules and anything added
+            # through vmalert.extraRuleFiles.
+            - "-rule=/etc/vmalert/rules/*.yaml"
+            - "-datasource.url={{ $app.datasourceUrl }}"
+            - "-notifier.url={{ $app.notifierUrl }}"
+            - "-evaluationInterval={{ $app.evaluationInterval }}"
+            - "-rule.resendDelay={{ $app.resendDelay }}"
+            - "-httpListenAddr=:{{ $app.service.targetPort }}"
+            {{- with $app.basePath }}
+            - "-http.pathPrefix={{ . }}"
+            {{- end }}
+            {{- if $app.remoteWrite.enabled }}
+            # Alert state written back to VictoriaMetrics: ALERTS and
+            # ALERTS_FOR_STATE become queryable from Grafana.
+            - "-remoteWrite.url={{ default $app.datasourceUrl $app.remoteWrite.url }}"
+            # The default buffer path is relative to the working directory,
+            # which is read-only here.
+            - "-remoteWrite.tmpDataPath=/tmp/vmalert-remotewrite"
+            {{- end }}
+            {{- if $app.remoteRead.enabled }}
+            # Restores pending alerts after a restart instead of resetting
+            # every `for:` timer to zero.
+            - "-remoteRead.url={{ default $app.datasourceUrl $app.remoteRead.url }}"
+            {{- end }}
+            {{- with $app.externalUrl }}
+            - "-external.url={{ . }}"
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $app.service.targetPort }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          {{- if $app.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ printf "%s/health" $app.basePath }}
+              port: http
+            initialDelaySeconds: {{ $app.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $app.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ printf "%s/health" $app.basePath }}
+              port: http
+            initialDelaySeconds: {{ $app.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}
+          volumeMounts:
+            - name: rules
+              mountPath: /etc/vmalert/rules
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: rules
+          configMap:
+            name: {{ include "kubarr-common.fullname" . }}-rules
+        - name: tmp
+          emptyDir: {}

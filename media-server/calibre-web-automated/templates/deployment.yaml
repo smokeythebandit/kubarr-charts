@@ -1,0 +1,91 @@
+{{- $app := index .Values "calibre-web-automated" -}}
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" $app.env.PUID "gid" $app.env.PGID) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "calibre-web-automated.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "calibre-web-automated.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  # app.db and the Calibre library take a single writer, and the private config
+  # claim is ReadWriteOnce: the old pod goes before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "calibre-web-automated.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "calibre-web-automated.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "calibre-web-automated.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with $prepare }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: calibre-web-automated
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $app.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: CWA_PORT_OVERRIDE
+              value: {{ $app.service.targetPort | quote }}
+            {{- range $key, $value := $app.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- with $app.hardcover.existingSecret }}
+            - name: HARDCOVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: {{ $app.hardcover.tokenKey | quote }}
+            {{- end }}
+          {{- if $app.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ $app.livenessProbe.httpGet.path }}
+              port: {{ $app.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ $app.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $app.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ $app.readinessProbe.httpGet.path }}
+              port: {{ $app.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ $app.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "calibre-web-automated.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

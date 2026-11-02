@@ -1,0 +1,18 @@
+apiVersion: v2
+name: audiobookshelf
+description: Self-hosted audiobook and podcast server with progress sync
+type: application
+version: 2.37.2+1
+appVersion: "2.37.2"
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+annotations:
+  kubarr.io/display-name: "Audiobookshelf"
+  kubarr.io/icon: "🎧"
+  kubarr.io/category: "media-server"
+dependencies:
+  - name: kubarr-common
+    version: 0.7.0
+    repository: file://../../system/kubarr-common

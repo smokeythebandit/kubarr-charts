@@ -1,0 +1,24 @@
+{{- if .Values.exporter.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "prowlarr.fullname" . }}-exporter
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "prowlarr.labels" . | nindent 4 }}
+    app.kubernetes.io/component: exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ .Values.exporter.port }}"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.exporter.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    app.kubernetes.io/name: {{ include "prowlarr.name" . }}-exporter
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

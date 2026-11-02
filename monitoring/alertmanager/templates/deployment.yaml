@@ -1,0 +1,110 @@
+{{- $app := .Values.alertmanager -}}
+{{- if ne (int $app.replicaCount) 1 -}}
+{{- fail "alertmanager.replicaCount must be 1; gossip clustering is off and the state claim takes a single writer" -}}
+{{- end -}}
+{{- if not (regexMatch "^/[A-Za-z0-9/_-]*[A-Za-z0-9]$" $app.basePath) -}}
+{{- fail "alertmanager.basePath must be an absolute path without a trailing slash" -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  # The silences and notification log are mmapped from a ReadWriteOnce claim,
+  # so the old pod must be gone before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kubarr-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubarr-common.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Alertmanager reloads on SIGHUP only; roll the pod when the routing
+        # configuration changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      # Alertmanager talks to vmalert and to its receivers. It has no business
+      # with the Kubernetes API, so it carries no token.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        # The state claim is created empty and owned by root; fsGroup is what
+        # makes it writable for nobody.
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}
+      containers:
+        - name: alertmanager
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          args:
+            - "--config.file=/etc/alertmanager/alertmanager.yml"
+            - "--storage.path=/alertmanager"
+            - "--web.listen-address=:{{ $app.service.targetPort }}"
+            - "--web.route-prefix={{ $app.basePath }}"
+            {{- with $app.externalUrl }}
+            - "--web.external-url={{ . }}"
+            {{- end }}
+            - "--data.retention={{ $app.retention }}"
+            # Empty disables the gossip listener entirely. A single replica
+            # that still opened :9094 would advertise a cluster of one and
+            # need a policy for traffic that never arrives.
+            - "--cluster.listen-address="
+          ports:
+            - name: http
+              containerPort: {{ $app.service.targetPort }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          {{- if $app.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ printf "%s/-/healthy" $app.basePath }}
+              port: http
+            initialDelaySeconds: {{ $app.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $app.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ printf "%s/-/ready" $app.basePath }}
+              port: http
+            initialDelaySeconds: {{ $app.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}
+          volumeMounts:
+            # "config" is the declarative storage contract's name for a
+            # chart's private claim; here it holds Alertmanager's state, not
+            # its configuration, which arrives from the ConfigMap below.
+            {{- include "kubarr-common.storage.configMount" (dict "mountPath" "/alertmanager") | nindent 12 }}
+            - name: routing
+              mountPath: /etc/alertmanager
+              readOnly: true
+      volumes:
+        {{- include "kubarr-common.storage.configVolume" (dict "root" . "fullname" (include "kubarr-common.fullname" .)) | nindent 8 }}
+        - name: routing
+          configMap:
+            name: {{ include "kubarr-common.fullname" . }}-routing

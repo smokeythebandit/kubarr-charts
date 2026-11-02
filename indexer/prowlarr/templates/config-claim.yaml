@@ -1,0 +1,2 @@
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "prowlarr.fullname" .) "replicas" .Values.prowlarr.replicaCount) -}}
+{{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "prowlarr.fullname" .)) }}

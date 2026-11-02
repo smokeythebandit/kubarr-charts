@@ -1,0 +1,32 @@
+{{/* Read-only, cluster-wide, and no wider than the configured collectors.
+
+     kube-state-metrics turns the API server's object graph into metrics, so it
+     must watch objects in every namespace -- a Role cannot express that. What
+     it must never have is a verb that changes anything, or a kind it does not
+     report on: the rules below are generated from
+     kubeStateMetrics.collectors, with get/list/watch and nothing else. */}}
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+rules:
+  {{- include "kube-state-metrics.rules" . | trim | nindent 2 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kubarr-common.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kubarr-common.serviceAccountName" . }}
+    namespace: {{ .Values.namespace.name }}
+{{- end }}

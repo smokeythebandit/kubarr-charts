@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "navidrome.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "navidrome.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.navidrome.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  # Derived settings. The image points its data folder and config file at
+  # /data; the private claim is mounted at /config like every other Kubarr
+  # app, so both move with it. SQLite (navidrome.db) must stay off NFS.
+  ND_DATAFOLDER: "/config"
+  ND_CONFIGFILE: "/config/navidrome.toml"
+  ND_BASEURL: {{ .Values.navidrome.basePath | quote }}
+  {{- with .Values.navidrome.metrics }}
+  {{- if .enabled }}
+  ND_PROMETHEUS_ENABLED: "true"
+  ND_PROMETHEUS_METRICSPATH: {{ .path | quote }}
+  {{- end }}
+  {{- end }}

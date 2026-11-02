@@ -1,0 +1,365 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lidarr.fullname" . }}-setup
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "lidarr.labels" . | nindent 4 }}
+data:
+  setup-downloadclients.sh: |
+    #!/bin/bash
+    # Setup script to manage download clients in Lidarr
+    # Supports: qBittorrent, Transmission, Deluge, ruTorrent, SABnzbd
+    # Adds clients when available, removes when unavailable
+
+    CONFIG_FILE="/config/config.xml"
+    API_PORT="8686"
+    API_BASE="/lidarr"
+    CHECK_INTERVAL=10
+
+    # SABnzbd API key (must match what's set in SABnzbd setup script)
+    SABNZBD_API_KEY="kubarr-sabnzbd-api-key-12345"
+
+    # Download client configurations
+    # Only clients with their writable directory mounted appear here. Previously saved
+    # unselected clients are left untouched; reconcile them before switching.
+    # Format: NAME|IMPLEMENTATION|HOST|PORT|CHECK_PATH|CATEGORY_FIELD|CATEGORY_VALUE
+    # For SABnzbd, CHECK_PATH includes the API key query param
+    CLIENTS="
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "qbittorrent") }}
+    qBittorrent|QBittorrent|qbittorrent.qbittorrent.svc.cluster.local|8080|/api/v2/app/version|musicCategory|Music
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "transmission") }}
+    Transmission|Transmission|transmission.transmission.svc.cluster.local|9091|/transmission/web/|musicCategory|Music
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "deluge") }}
+    Deluge|Deluge|deluge.deluge.svc.cluster.local|8112|/|musicCategory|music
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "rutorrent") }}
+    ruTorrent|RTorrent|rutorrent.rutorrent.svc.cluster.local|8000|/RPC2|musicCategory|Music
+    {{ end }}
+    {{ if include "kubarr-common.storage.hasDownloadClient" (dict "mounts" .Values.storage.mounts "client" "sabnzbd") }}
+    SABnzbd|Sabnzbd|sabnzbd.sabnzbd.svc.cluster.local|8080|/sabnzbd/api?mode=version&apikey=${SABNZBD_API_KEY}|musicCategory|music
+    {{ end }}
+    "
+
+    get_api_key() {
+      sed -n 's/.*<ApiKey>\([^<]*\)<\/ApiKey>.*/\1/p' "$CONFIG_FILE" 2>/dev/null
+    }
+
+    is_api_ready() {
+      local api_key="$1"
+      curl -s -f -H "X-Api-Key: $api_key" "http://localhost:$API_PORT$API_BASE/api/v1/system/status" > /dev/null 2>&1
+    }
+
+    is_client_available() {
+      local host="$1"
+      local port="$2"
+      local check_path="$3"
+      # For XMLRPC endpoints (like ruTorrent), use POST with a simple call
+      if [ "$check_path" = "/RPC2" ]; then
+        curl -s -f --connect-timeout 3 -X POST \
+          -H "Content-Type: text/xml" \
+          -d '<?xml version="1.0"?><methodCall><methodName>system.listMethods</methodName></methodCall>' \
+          "http://$host:$port$check_path" > /dev/null 2>&1
+      else
+        curl -s -f --connect-timeout 3 "http://$host:$port$check_path" > /dev/null 2>&1
+      fi
+    }
+
+    get_client_id() {
+      local api_key="$1"
+      local implementation="$2"
+      curl -s -H "X-Api-Key: $api_key" "http://localhost:$API_PORT$API_BASE/api/v1/downloadclient" 2>/dev/null | \
+        jq -r ".[] | select(.implementation == \"$implementation\") | .id" | head -1
+    }
+
+{{- $library := "" }}
+{{- range .Values.storage.mounts }}{{- if eq .name "library" }}{{- $library = .target }}{{- end }}{{- end }}
+{{- if $library }}
+    ensure_root_folder() {
+      local api_key="$1"
+      local endpoint="http://localhost:$API_PORT$API_BASE/api/v1/rootfolder"
+      local wanted={{ $library | quote }}
+      local folders quality metadata payload
+
+      # The library mount is this application's own subtree. Register it so the
+      # application is usable without manual configuration, and never replace a
+      # path the operator chose.
+      folders=$(curl -fsS --connect-timeout 3 --max-time 10 \
+        -H "X-Api-Key: $api_key" "$endpoint") || return 1
+      echo "$folders" | jq -e 'type == "array"' > /dev/null || return 1
+      if echo "$folders" | jq -e --arg wanted "$wanted" '
+        any(.[]; (.path // "" | rtrimstr("/")) == $wanted)
+      ' > /dev/null; then
+        return 0
+      fi
+
+      # Unlike Radarr and Sonarr, Lidarr rejects a root folder that carries no
+      # name and no existing default quality and metadata profile, so take the
+      # first of each the instance ships with. A failure here is retried on the
+      # next pass rather than guessed at.
+      quality=$(curl -fsS --connect-timeout 3 --max-time 10 -H "X-Api-Key: $api_key" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/qualityprofile" |
+        jq -e -r 'first(.[].id)') || return 1
+      metadata=$(curl -fsS --connect-timeout 3 --max-time 10 -H "X-Api-Key: $api_key" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/metadataprofile" |
+        jq -e -r 'first(.[].id)') || return 1
+
+      payload=$(jq -nc --arg path "$wanted" --argjson quality "$quality" \
+        --argjson metadata "$metadata" '{
+          name: ($path | split("/") | last),
+          path: $path,
+          defaultQualityProfileId: $quality,
+          defaultMetadataProfileId: $metadata,
+          defaultMonitorOption: "all",
+          defaultNewItemMonitorOption: "all",
+          defaultTags: []
+        }') || return 1
+      curl -fsS --connect-timeout 3 --max-time 10 -X POST \
+        -H "X-Api-Key: $api_key" -H "Content-Type: application/json" \
+        "$endpoint" -d "$payload" > /dev/null || return 1
+      echo "[setup] Registered root folder $wanted"
+    }
+{{- end }}
+
+    ensure_qbittorrent_path_mapping() {
+      local api_key="$1"
+      local host="$2"
+      local endpoint="http://localhost:$API_PORT$API_BASE/api/v1/remotepathmapping"
+      local mappings payload
+
+      # The client reports /downloads, but this app mounts that same NFS
+      # directory at /downloads/qbittorrent. Reconcile on every pass so existing
+      # clients are repaired too, without replacing a user's mapping.
+      mappings=$(curl -fsS --connect-timeout 3 --max-time 10 \
+        -H "X-Api-Key: $api_key" "$endpoint") || return 1
+      echo "$mappings" | jq -e 'type == "array"' > /dev/null || return 1
+      if echo "$mappings" | jq -e --arg host "$host" '
+        any(.[]; ((.host // "" | ascii_downcase) == ($host | ascii_downcase))
+          and ((.remotePath // "" | rtrimstr("/")) == "/downloads"))
+      ' > /dev/null; then
+        return 0
+      fi
+
+      payload=$(jq -nc --arg host "$host" \
+        '{host: $host, remotePath: "/downloads/", localPath: "/downloads/qbittorrent/"}') || return 1
+      curl -fsS --connect-timeout 3 --max-time 10 -X POST \
+        -H "X-Api-Key: $api_key" -H "Content-Type: application/json" \
+        "$endpoint" -d "$payload" > /dev/null || return 1
+      echo "[setup] Configured qBittorrent download path mapping"
+    }
+
+    add_qbittorrent() {
+      local api_key="$1"
+      local host="$2"
+      local port="$3"
+      curl -s -X POST \
+        -H "X-Api-Key: $api_key" \
+        -H "Content-Type: application/json" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/downloadclient" \
+        -d '{
+          "name": "qBittorrent",
+          "implementation": "QBittorrent",
+          "configContract": "QBittorrentSettings",
+          "protocol": "torrent",
+          "enable": true,
+          "priority": 1,
+          "fields": [
+            {"name": "host", "value": "'"$host"'"},
+            {"name": "port", "value": '"$port"'},
+            {"name": "useSsl", "value": false},
+            {"name": "musicCategory", "value": "Music"}
+          ]
+        }'
+    }
+
+    add_transmission() {
+      local api_key="$1"
+      local host="$2"
+      local port="$3"
+      curl -s -X POST \
+        -H "X-Api-Key: $api_key" \
+        -H "Content-Type: application/json" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/downloadclient" \
+        -d '{
+          "name": "Transmission",
+          "implementation": "Transmission",
+          "configContract": "TransmissionSettings",
+          "protocol": "torrent",
+          "enable": true,
+          "priority": 1,
+          "fields": [
+            {"name": "host", "value": "'"$host"'"},
+            {"name": "port", "value": '"$port"'},
+            {"name": "useSsl", "value": false},
+            {"name": "urlBase", "value": "/transmission/"},
+            {"name": "musicCategory", "value": "Music"}
+          ]
+        }'
+    }
+
+    add_deluge() {
+      local api_key="$1"
+      local host="$2"
+      local port="$3"
+      curl -s -X POST \
+        -H "X-Api-Key: $api_key" \
+        -H "Content-Type: application/json" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/downloadclient" \
+        -d '{
+          "name": "Deluge",
+          "implementation": "Deluge",
+          "configContract": "DelugeSettings",
+          "protocol": "torrent",
+          "enable": true,
+          "priority": 1,
+          "fields": [
+            {"name": "host", "value": "'"$host"'"},
+            {"name": "port", "value": '"$port"'},
+            {"name": "useSsl", "value": false}
+          ]
+        }'
+    }
+
+    add_rutorrent() {
+      local api_key="$1"
+      local host="$2"
+      local port="$3"
+      curl -s -X POST \
+        -H "X-Api-Key: $api_key" \
+        -H "Content-Type: application/json" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/downloadclient" \
+        -d '{
+          "name": "ruTorrent",
+          "implementation": "RTorrent",
+          "configContract": "RTorrentSettings",
+          "protocol": "torrent",
+          "enable": true,
+          "priority": 1,
+          "fields": [
+            {"name": "host", "value": "'"$host"'"},
+            {"name": "port", "value": '"$port"'},
+            {"name": "useSsl", "value": false},
+            {"name": "urlBase", "value": "/RPC2"},
+            {"name": "musicCategory", "value": "Music"}
+          ]
+        }'
+    }
+
+    add_sabnzbd() {
+      local api_key="$1"
+      local host="$2"
+      local port="$3"
+      curl -s -X POST \
+        -H "X-Api-Key: $api_key" \
+        -H "Content-Type: application/json" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/downloadclient" \
+        -d '{
+          "name": "SABnzbd",
+          "implementation": "Sabnzbd",
+          "configContract": "SabnzbdSettings",
+          "protocol": "usenet",
+          "enable": true,
+          "priority": 1,
+          "fields": [
+            {"name": "host", "value": "'"$host"'"},
+            {"name": "port", "value": '"$port"'},
+            {"name": "useSsl", "value": false},
+            {"name": "apiKey", "value": "'"$SABNZBD_API_KEY"'"},
+            {"name": "musicCategory", "value": "music"},
+            {"name": "recentMusicPriority", "value": -100},
+            {"name": "olderMusicPriority", "value": -100}
+          ]
+        }'
+    }
+
+    add_client() {
+      local api_key="$1"
+      local name="$2"
+      local host="$3"
+      local port="$4"
+
+      case "$name" in
+        qBittorrent) add_qbittorrent "$api_key" "$host" "$port" ;;
+        Transmission) add_transmission "$api_key" "$host" "$port" ;;
+        Deluge) add_deluge "$api_key" "$host" "$port" ;;
+        ruTorrent) add_rutorrent "$api_key" "$host" "$port" ;;
+        SABnzbd) add_sabnzbd "$api_key" "$host" "$port" ;;
+      esac
+    }
+
+    remove_client() {
+      local api_key="$1"
+      local client_id="$2"
+      curl -s -X DELETE -H "X-Api-Key: $api_key" \
+        "http://localhost:$API_PORT$API_BASE/api/v1/downloadclient/$client_id"
+    }
+
+    echo "[setup] Starting download client manager for Lidarr..."
+
+    # Wait for config file and API key
+    echo "[setup] Waiting for Lidarr to be ready..."
+    while true; do
+      API_KEY=$(get_api_key)
+      if [ -n "$API_KEY" ] && is_api_ready "$API_KEY"; then
+        echo "[setup] Lidarr API is ready"
+        break
+      fi
+      sleep 2
+    done
+
+    # Main loop - continuously monitor download client availability
+    while true; do
+      API_KEY=$(get_api_key)
+
+      if ! is_api_ready "$API_KEY"; then
+        sleep $CHECK_INTERVAL
+        continue
+      fi
+
+{{- if $library }}
+      if ! ensure_root_folder "$API_KEY"; then
+        echo "[setup] Could not register the root folder; retrying next pass"
+      fi
+{{- end }}
+
+      # Process each client
+      echo "$CLIENTS" | while IFS='|' read -r name implementation host port check_path category_field category_value; do
+        # Skip empty lines
+        [ -z "$name" ] && continue
+
+        # Trim whitespace
+        name=$(echo "$name" | tr -d ' ')
+        implementation=$(echo "$implementation" | tr -d ' ')
+        host=$(echo "$host" | tr -d ' ')
+        port=$(echo "$port" | tr -d ' ')
+        check_path=$(echo "$check_path" | tr -d ' ')
+
+        available=$(is_client_available "$host" "$port" "$check_path" && echo "yes" || echo "no")
+        if [ "$name" = "qBittorrent" ] && [ "$available" = "yes" ]; then
+          if ! ensure_qbittorrent_path_mapping "$API_KEY" "$host"; then
+            echo "[setup] Could not configure qBittorrent path mapping; retrying next pass"
+            continue
+          fi
+        fi
+        client_id=$(get_client_id "$API_KEY" "$implementation")
+        exists=$([ -n "$client_id" ] && echo "yes" || echo "no")
+
+        if [ "$available" = "yes" ] && [ "$exists" = "no" ]; then
+          echo "[setup] $name is available, adding as download client..."
+          response=$(add_client "$API_KEY" "$name" "$host" "$port")
+          if echo "$response" | grep -q '"id"'; then
+            echo "[setup] Successfully added $name"
+          else
+            echo "[setup] Failed to add $name"
+          fi
+        elif [ "$available" = "no" ] && [ "$exists" = "yes" ]; then
+          echo "[setup] $name is no longer available, removing..."
+          remove_client "$API_KEY" "$client_id"
+          echo "[setup] Removed $name"
+        fi
+      done
+
+      sleep $CHECK_INTERVAL
+    done

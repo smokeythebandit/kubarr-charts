@@ -1,0 +1,13 @@
+{{/* Named "-routing" rather than "-config": the declarative storage
+     contract already owns the <fullname>-config name for the private state
+     claim mounted at /alertmanager. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}-routing
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+data:
+  alertmanager.yml: |
+    {{- toYaml .Values.alertmanager.config | nindent 4 }}

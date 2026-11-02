@@ -1,0 +1,209 @@
+# Default values for lidarr
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: true
+  name: lidarr
+
+# Lidarr application configuration
+lidarr:
+  replicaCount: 1
+
+  image:
+    repository: linuxserver/lidarr
+    pullPolicy: IfNotPresent
+    tag: "3.1.6"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8686
+    targetPort: 8686
+    annotations: {}
+
+  # Resource limits and requests
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # Environment variables
+  env:
+    PUID: "1000"
+    PGID: "1000"
+    TZ: "Etc/UTC"
+
+  # Base path for reverse proxy (e.g., /lidarr)
+  basePath: "/lidarr"
+
+  # Probes configuration
+  livenessProbe:
+    enabled: true
+    tcpSocket:
+      port: 8686
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    tcpSocket:
+      port: 8686
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Security context
+securityContext:
+  runAsNonRoot: false
+  allowPrivilegeEscalation: true
+  capabilities: {}
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: lidarr
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      main: ["/config", "/custom-services.d/setup-downloadclients"]
+
+storage:
+  mounts:
+    - {name: library, source: media/music, target: /media/music, mode: read-write}
+    - {name: qbittorrent, source: downloads/qbittorrent, target: /downloads/qbittorrent, mode: read-write}
+    - {name: transmission, source: downloads/transmission, target: /downloads/transmission, mode: read-write}
+    - {name: deluge, source: downloads/deluge, target: /downloads/deluge, mode: read-write}
+    - {name: rutorrent, source: downloads/rutorrent, target: /downloads/rutorrent, mode: read-write}
+    - {name: sabnzbd, source: downloads/sabnzbd, target: /downloads/sabnzbd, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
+  media:
+    existingClaim: media-data
+
+# VPN Configuration
+# When enabled, a Gluetun sidecar container is added to route all traffic through VPN
+vpn:
+  enabled: false
+  # Name of the Kubernetes secret containing VPN credentials
+  # Created by Kubarr when you configure VPN in Settings > Networking
+  secretName: ""
+  # Gluetun container image
+  image:
+    repository: qmcgaw/gluetun
+    tag: "v3.41.3"
+    pullPolicy: IfNotPresent
+  # Resource limits for Gluetun container
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Kill switch - block all traffic if VPN disconnects
+  killSwitch: true
+  # Subnets to allow even when VPN is active (for cluster internal communication)
+  firewallOutboundSubnets: ""
+  # Port forwarding via NAT-PMP (supported by ProtonVPN, PIA, AirVPN)
+  portForwarding:
+    enabled: false
+    upCommand: ""
+
+# Network policy configuration
+networkPolicy:
+  enabled: true
+  # Permit only this release's exporter pod to call the app API in this namespace
+  allowExporterIngress: true
+  # Namespaces allowed to send traffic to this app
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+    - victoriametrics  # metrics scraping
+  # Namespaces this app can send traffic to
+  egressTo:
+    - qbittorrent
+    - transmission
+    - deluge
+    - rutorrent
+    - sabnzbd
+    - prowlarr  # indexer manager
+
+# Metrics exporter (exportarr) - auto-scraped by VictoriaMetrics
+# Note: Requires API key from Lidarr (Settings > General > API Key)
+exporter:
+  enabled: true
+  image:
+    repository: ghcr.io/onedr0p/exportarr
+    tag: "v2.3.0"
+    pullPolicy: IfNotPresent
+  # 9707 is Sonarr's and 9708 is Radarr's; keep one port per exporter
+  port: 9709
+  # API key from Lidarr (Settings > General > API Key)
+  # Can be set via secret or directly
+  apiKey: ""
+  # Or reference an existing secret
+  apiKeySecret:
+    name: ""
+    key: "api-key"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

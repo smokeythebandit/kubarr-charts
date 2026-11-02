@@ -1,0 +1,80 @@
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "audiobookshelf.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "audiobookshelf.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.audiobookshelf.replicaCount }}
+  # The private config claim is ReadWriteOnce and holds a SQLite database, so
+  # the old pod must release it before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "audiobookshelf.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "audiobookshelf.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "audiobookshelf.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with $prepare }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: audiobookshelf
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.audiobookshelf.image.repository }}:{{ .Values.audiobookshelf.image.tag }}"
+          imagePullPolicy: {{ .Values.audiobookshelf.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.audiobookshelf.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "audiobookshelf.fullname" . }}-config
+          {{- if .Values.audiobookshelf.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.audiobookshelf.livenessProbe.httpGet.path }}
+              port: {{ .Values.audiobookshelf.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.audiobookshelf.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.audiobookshelf.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.audiobookshelf.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.audiobookshelf.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.audiobookshelf.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.audiobookshelf.readinessProbe.httpGet.path }}
+              port: {{ .Values.audiobookshelf.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.audiobookshelf.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.audiobookshelf.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.audiobookshelf.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.audiobookshelf.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.audiobookshelf.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "audiobookshelf.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

@@ -1,0 +1,103 @@
+{{- include "recyclarr.validate" . -}}
+{{- $cron := .Values.recyclarr.cronJob -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "recyclarr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "recyclarr.labels" . | nindent 4 }}
+spec:
+  schedule: {{ $cron.schedule | quote }}
+  {{- with $cron.timeZone }}
+  # Interpreted by the control plane, independently of the container's TZ.
+  timeZone: {{ . | quote }}
+  {{- end }}
+  suspend: {{ $cron.suspend }}
+  # A second sync while the first is still talking to Radarr/Sonarr would race
+  # it over the same profiles, so a late run is skipped rather than doubled.
+  concurrencyPolicy: {{ $cron.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ $cron.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ $cron.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $cron.failedJobsHistoryLimit }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "recyclarr.labels" . | nindent 8 }}
+    spec:
+      backoffLimit: {{ $cron.backoffLimit }}
+      activeDeadlineSeconds: {{ $cron.activeDeadlineSeconds }}
+      {{- with $cron.ttlSecondsAfterFinished }}
+      ttlSecondsAfterFinished: {{ . }}
+      {{- end }}
+      template:
+        metadata:
+          annotations:
+            checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+          {{- with .Values.podAnnotations }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          labels:
+            {{- include "recyclarr.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: {{ $cron.restartPolicy }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "recyclarr.serviceAccountName" . }}
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: recyclarr
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              image: "{{ .Values.recyclarr.image.repository }}:{{ .Values.recyclarr.image.tag }}"
+              imagePullPolicy: {{ .Values.recyclarr.image.pullPolicy }}
+              # The image entrypoint runs its own cron scheduler when given no
+              # arguments. Arguments make it a one-shot CLI run, which is what
+              # a Kubernetes CronJob is for.
+              args:
+                - sync
+                {{- with .Values.recyclarr.sync.service }}
+                - {{ . }}
+                {{- end }}
+                - --config
+                - {{ .Values.recyclarr.configFile | quote }}
+                {{- range .Values.recyclarr.sync.extraArgs }}
+                - {{ . | quote }}
+                {{- end }}
+              env:
+                {{- range $key, $value := .Values.recyclarr.env }}
+                - name: {{ $key }}
+                  value: {{ $value | quote }}
+                {{- end }}
+                {{- range $service, $instance := .Values.recyclarr.instances }}
+                {{- if eq (include "recyclarr.instanceActive" (dict "instance" $instance)) "true" }}
+                - name: {{ include "recyclarr.apiKeyEnv" (dict "service" $service) }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $instance.apiKeySecret.name | quote }}
+                      key: {{ $instance.apiKeySecret.key | quote }}
+                {{- end }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.recyclarr.resources | nindent 16 }}
+              volumeMounts:
+                {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/config") | nindent 16 }}
+                - name: starter-config
+                  mountPath: {{ .Values.recyclarr.configFile }}
+                  subPath: recyclarr.yml
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            {{- include "kubarr-common.storage.configVolume" (dict "root" . "fullname" (include "recyclarr.fullname" .)) | nindent 12 }}
+            - name: starter-config
+              configMap:
+                name: {{ include "recyclarr.fullname" . }}-config
+            - name: tmp
+              emptyDir:
+                sizeLimit: {{ .Values.recyclarr.tmp.sizeLimit | quote }}
+          {{- include "kubarr-common.scheduling" . | nindent 10 }}

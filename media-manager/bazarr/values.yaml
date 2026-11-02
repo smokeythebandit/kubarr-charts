@@ -1,0 +1,180 @@
+# Default values for bazarr
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: true
+  name: bazarr
+
+# Bazarr application configuration
+bazarr:
+  replicaCount: 1
+
+  image:
+    repository: linuxserver/bazarr
+    pullPolicy: IfNotPresent
+    tag: "1.6.2"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 6767
+    targetPort: 6767
+    annotations: {}
+
+  # Resource limits and requests
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # Environment variables
+  env:
+    PUID: "1000"
+    PGID: "1000"
+    TZ: "Etc/UTC"
+
+  # Base path for reverse proxy (e.g., /bazarr)
+  basePath: "/bazarr"
+
+  # Probes configuration
+  livenessProbe:
+    enabled: true
+    tcpSocket:
+      port: 6767
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    tcpSocket:
+      port: 6767
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Security context
+securityContext:
+  runAsNonRoot: false  # linuxserver images run as root but switch to PUID/PGID
+  allowPrivilegeEscalation: true
+  capabilities: {}
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: bazarr
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      main: ["/config"]
+
+storage:
+  # Bazarr writes subtitle files next to the media it subtitles, so both
+  # libraries are mounted read-write and at the paths Radarr and Sonarr use.
+  mounts:
+    - {name: movies, source: media/movies, target: /media/movies, mode: read-write}
+    - {name: shows, source: media/shows, target: /media/shows, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
+  media:
+    existingClaim: media-data
+
+# VPN Configuration
+# When enabled, a Gluetun sidecar container is added to route all traffic through VPN
+vpn:
+  enabled: false
+  # Name of the Kubernetes secret containing VPN credentials
+  # Created by Kubarr when you configure VPN in Settings > Networking
+  secretName: ""
+  # Gluetun container image
+  image:
+    repository: qmcgaw/gluetun
+    tag: "v3.41.3"
+    pullPolicy: IfNotPresent
+  # Resource limits for Gluetun container
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Kill switch - block all traffic if VPN disconnects
+  killSwitch: true
+  # Subnets to allow even when VPN is active (for cluster internal communication)
+  firewallOutboundSubnets: ""
+  # Port forwarding via NAT-PMP (supported by ProtonVPN, PIA, AirVPN)
+  portForwarding:
+    enabled: false
+    upCommand: ""
+
+# Network policy configuration
+# No exporter ships with this chart, so nothing scrapes it and there is no
+# exporter ingress rule to permit.
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to send traffic to this app
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+  # Namespaces this app can send traffic to. Bazarr reads the series and movie
+  # lists from Sonarr and Radarr; the shared policy already permits egress to
+  # the public internet, which is what the subtitle providers need.
+  egressTo:
+    - radarr
+    - sonarr
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

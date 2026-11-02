@@ -1,0 +1,174 @@
+# Default values for calibre-web-automated
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: false
+  name: calibre-web-automated
+
+# Calibre-Web Automated application configuration
+calibre-web-automated:
+  # The library database and the private config claim take one writer.
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/crocodilestick/calibre-web-automated
+    pullPolicy: IfNotPresent
+    tag: "v4.0.8"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8083
+    targetPort: 8083
+    annotations: {}
+
+  # Resource limits and requests. Conversion and metadata extraction run
+  # in-process, so ingesting a large book needs the headroom in the limits.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+  # Environment variables. CWA_PORT_OVERRIDE is set from service.targetPort.
+  env:
+    PUID: "1000"
+    PGID: "1000"
+    TZ: "Etc/UTC"
+    # The library lives on the shared NFS export, where inotify events are
+    # unreliable and SQLite WAL invites locking errors: this switches the
+    # ingest and metadata watchers to polling and turns WAL off.
+    NETWORK_SHARE_MODE: "true"
+
+  # Optional metadata provider token (https://docs.hardcover.app/api).
+  # Secret key HARDCOVER_TOKEN.
+  hardcover:
+    existingSecret: ""
+    tokenKey: HARDCOVER_TOKEN
+
+  # Base path for reverse proxy (leave empty for root)
+  # Calibre-Web serves its UI at root.
+  basePath: ""
+
+  # Probes configuration. The image's own healthcheck requests the web root,
+  # which answers before the library scan finishes.
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 120
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Security context
+securityContext:
+  runAsNonRoot: false
+  allowPrivilegeEscalation: true
+  capabilities: {}
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: calibre-web-automated
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      # The library holds metadata.db and the book files; every file in the
+      # ingest folder is deleted once processed. Neither may fall back to
+      # the image filesystem, so both are refused when missing.
+      main: ["/calibre-library", "/cwa-book-ingest"]
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # app.db, CWA's own database and the originals of converted books
+      # live in the private claim.
+      main: ["/config"]
+
+storage:
+  # Both shared-storage mounts are writable and must stay separate directories:
+  #   /calibre-library  the Calibre library itself, holding metadata.db and
+  #                     the book files; the ingest service imports into it.
+  #   /cwa-book-ingest  the watched drop folder. Every file placed here is
+  #                     DELETED once it has been processed, so nothing else
+  #                     may use this directory, and downloads must land
+  #                     elsewhere and be moved in complete.
+  mounts:
+    - {name: library, source: media/books, target: /calibre-library, mode: read-write}
+    - {name: ingest, source: media/books-ingest, target: /cwa-book-ingest, mode: read-write}
+  # Private claim for /config: the Calibre-Web database (app.db) with users and
+  # settings, CWA's own database and logs, the originals of converted books
+  # under /config/processed_books, and Calibre's configuration directory.
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 10Gi
+    storageClassName: "" # empty: cluster default StorageClass
+  media:
+    create: true
+    existingClaim: media-data
+    nfs: {}
+
+# Network policy configuration
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+  egressTo: []
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

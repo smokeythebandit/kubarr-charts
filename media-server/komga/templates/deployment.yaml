@@ -1,0 +1,81 @@
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "komga.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "komga.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.komga.replicaCount }}
+  # The private config claim is ReadWriteOnce and holds three SQLite databases
+  # plus a Lucene index, so the old pod must release it before the new one
+  # starts. Two Komga instances on one config directory corrupt both.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "komga.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "komga.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "komga.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with $prepare }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: komga
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.komga.image.repository }}:{{ .Values.komga.image.tag }}"
+          imagePullPolicy: {{ .Values.komga.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.komga.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "komga.fullname" . }}-config
+          {{- if .Values.komga.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ include "komga.healthPath" . | quote }}
+              port: {{ .Values.komga.service.targetPort }}
+            initialDelaySeconds: {{ .Values.komga.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.komga.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.komga.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.komga.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.komga.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ include "komga.healthPath" . | quote }}
+              port: {{ .Values.komga.service.targetPort }}
+            initialDelaySeconds: {{ .Values.komga.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.komga.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.komga.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.komga.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.komga.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "komga.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

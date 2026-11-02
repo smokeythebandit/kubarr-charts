@@ -1,0 +1,20 @@
+{{- $app := index .Values "calibre-web-automated" -}}
+{{- if ne $app.service.type "ClusterIP" -}}
+{{- fail "calibre-web-automated.service.type must be ClusterIP; publish the web UI through Kubarr's gateway" -}}
+{{- end -}}
+{{/* The library holds metadata.db and the book files, and the ingest folder is
+     the watched drop directory: neither may fall back to the image filesystem,
+     and both are rewritten by the ingest service. Both paths come from
+     kubarr.storage.required.main, which the install wizard reads as well. */}}
+{{- $sources := dict -}}
+{{- range $target := .Values.kubarr.storage.required.main -}}{{- $_ := set $sources $target (include "kubarr-common.storage.requiredSource" (dict "root" $ "mounts" $.Values.storage.mounts "target" $target)) -}}{{- end -}}
+{{- $library := index $sources "/calibre-library" -}}
+{{- $ingest := index $sources "/cwa-book-ingest" -}}
+{{/* Everything in the ingest folder is deleted once processed, so it must not
+     be the library, sit inside it, or contain it. */}}
+{{- if or (eq $library $ingest) (hasPrefix (printf "%s/" $library) $ingest) (hasPrefix (printf "%s/" $ingest) $library) -}}
+{{- fail "the /cwa-book-ingest and /calibre-library sources must be separate directories: every file in the ingest folder is deleted after it is processed" -}}
+{{- end -}}
+{{- if and $app.hardcover.existingSecret (not $app.hardcover.tokenKey) -}}
+{{- fail "calibre-web-automated.hardcover.tokenKey is required with hardcover.existingSecret" -}}
+{{- end -}}

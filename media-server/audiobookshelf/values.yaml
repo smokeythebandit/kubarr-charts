@@ -1,0 +1,171 @@
+# Default values for audiobookshelf
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: true
+  name: audiobookshelf
+
+# Audiobookshelf application configuration
+audiobookshelf:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/advplyr/audiobookshelf
+    pullPolicy: IfNotPresent
+    tag: "2.37.2"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 13378
+    targetPort: 13378
+    annotations: {}
+
+  # Resource limits and requests
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+
+  # Environment variables. PORT, METADATA_PATH and ROUTER_BASE_PATH are derived
+  # from the values below, not set here.
+  env:
+    TZ: "Etc/UTC"
+    NODE_ENV: "production"
+    # The image default. Holds absdatabase.sqlite, so it stays on the private
+    # claim; storage.config mounts it here.
+    CONFIG_PATH: "/config"
+
+  # Base path for reverse proxy (e.g., /audiobookshelf)
+  # Audiobookshelf mounts its whole router under ROUTER_BASE_PATH and rewrites
+  # requests that arrive without the prefix, so it answers both at the subpath
+  # and at the root. /audiobookshelf is also the application's own default when
+  # ROUTER_BASE_PATH is unset, so the chart sets it explicitly either way.
+  basePath: "/audiobookshelf"
+
+  # Probes configuration
+  # /healthcheck returns 200 without authentication, at the server root and
+  # under basePath alike (the request rewrite covers both).
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /healthcheck
+      port: 13378
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /healthcheck
+      port: 13378
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: audiobookshelf
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # METADATA_PATH is /config/metadata, inside the private claim, so the
+      # one reserved prefix covers the database and the metadata tree.
+      main: ["/config"]
+
+storage:
+  mounts:
+    # Audiobooks are read-only: writing metadata back into the library folders
+    # is an opt-in server setting that is off by default.
+    - {name: audiobooks, source: media/audiobooks, target: /audiobooks, mode: read}
+    # Podcast libraries are writable because Audiobookshelf downloads episodes
+    # into them; a read-only mount silently breaks every subscription.
+    - {name: podcasts, source: media/podcasts, target: /podcasts, mode: read-write}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    # Holds absdatabase.sqlite and, via METADATA_PATH=/config/metadata, the
+    # cached covers, author images, upload temp files, cached streams and
+    # backups. Both belong to one application state that is backed up and
+    # restored together, and the database must not sit on NFS, so metadata gets
+    # no claim of its own: splitting them would put a restore's two halves on
+    # different storage with no guarantee they agree. Sized for that, not just
+    # for the database.
+    size: 20Gi
+    storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
+  media:
+    existingClaim: media-data
+
+# Network policy configuration
+# Audiobookshelf exposes no Prometheus endpoint, so nothing scrapes it and
+# victoriametrics is not an ingress source here.
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+  egressTo: []
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

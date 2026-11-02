@@ -1,0 +1,86 @@
+{{- $app := .Values.kubeStateMetrics -}}
+{{- if ne (int $app.replicaCount) 1 -}}
+{{- fail "kubeStateMetrics.replicaCount must be 1; a second replica duplicates every series instead of sharing the load" -}}
+{{- end -}}
+{{- if eq (int $app.service.port) (int $app.service.telemetryPort) -}}
+{{- fail "kubeStateMetrics.service.telemetryPort must differ from service.port" -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kubarr-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubarr-common.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "kubarr-common.serviceAccountName" . }}
+      # Watching the API server is this pod's only job, so it is one of the few
+      # here that legitimately carries a token. The ClusterRole it is bound to
+      # is read-only and limited to the collected kinds.
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}
+      containers:
+        - name: kube-state-metrics
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          args:
+            - --port={{ $app.service.targetPort }}
+            - --telemetry-port={{ $app.service.telemetryPort }}
+            # Collect exactly the kinds the ClusterRole grants, and no others.
+            - --resources={{ include "kube-state-metrics.collectors" . }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ $app.service.targetPort }}
+              protocol: TCP
+            - name: telemetry
+              containerPort: {{ $app.service.telemetryPort }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          {{- if $app.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http-metrics
+            initialDelaySeconds: {{ $app.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $app.readinessProbe.enabled }}
+          readinessProbe:
+            # /readyz lives on the telemetry listener: it reports when the
+            # informer caches have synced, which is when the metrics are
+            # complete rather than merely served.
+            httpGet:
+              path: /readyz
+              port: telemetry
+            initialDelaySeconds: {{ $app.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}

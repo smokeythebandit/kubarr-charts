@@ -1,0 +1,224 @@
+# Starter alerting rules for the Kubarr monitoring stack.
+#
+# Every expression below is written against a metric this repository's charts
+# actually expose and VictoriaMetrics actually keeps:
+#   kube_*   monitoring/kube-state-metrics (object state; its collector list
+#            is the --resources flag in that chart's values)
+#   node_*   monitoring/node-exporter (filesystem, meminfo, cpu, loadavg,
+#            mountstats -- note that collector defaults are disabled there, so
+#            nothing outside that set exists)
+#   up       VictoriaMetrics' own per-target scrape health
+#
+# Thresholds and `for:` durations are deliberately slack. A homelab reboots
+# nodes, pulls large images and restarts media apps as a matter of course; a
+# rule that pages during a normal `helm upgrade` gets muted, and a muted rule
+# protects nothing.
+#
+# This file is loaded verbatim (templates/configmap.yaml reads it with
+# .Files.Get), so Prometheus/vmalert annotation templating below is passed
+# through to vmalert untouched.
+groups:
+  - name: kubarr-nodes
+    interval: 1m
+    rules:
+      - alert: NodeNotReady
+        # kubelet renews this condition; when a node becomes unreachable the
+        # condition flips to Unknown, so one rule covers "unhealthy" and
+        # "gone". 15m clears a reboot and a kubelet restart.
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Node {{ $labels.node }} is not Ready'
+          description: >-
+            {{ $labels.node }} has not reported Ready for 15 minutes. Its pods
+            are being rescheduled if other nodes have room; check the node is
+            powered on and that kubelet is running.
+
+      - alert: NodeDiskPressure
+        expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Node {{ $labels.node }} reports disk pressure'
+          description: >-
+            kubelet on {{ $labels.node }} is under disk pressure and will start
+            evicting pods and garbage-collecting images.
+
+  - name: kubarr-workloads
+    interval: 1m
+    rules:
+      - alert: PodCrashLooping
+        # The waiting reason is unambiguous: the container has failed often
+        # enough that kubelet is backing off. A restart-rate threshold would
+        # also catch healthy restarts after an upgrade.
+        expr: kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.namespace }}/{{ $labels.pod }} is crash-looping'
+          description: >-
+            Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }}
+            has been in CrashLoopBackOff for 15 minutes.
+
+      - alert: PodImagePullFailing
+        expr: kube_pod_container_status_waiting_reason{reason=~"ErrImagePull|ImagePullBackOff"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cannot pull the image for {{ $labels.namespace }}/{{ $labels.pod }}'
+          description: >-
+            Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }}
+            has failed to pull its image for 30 minutes. A pinned tag that was
+            never published looks exactly like this.
+
+      - alert: DeploymentReplicasUnavailable
+        # Every rollout passes through this state, so the window has to outlast
+        # a slow image pull on a home connection.
+        expr: kube_deployment_status_replicas_unavailable > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has unavailable replicas'
+          description: >-
+            {{ $value }} replica(s) of {{ $labels.namespace }}/{{ $labels.deployment }}
+            have been unavailable for 30 minutes.
+
+      - alert: DaemonSetPodsMissing
+        expr: kube_daemonset_status_number_unavailable > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} is not running on every node'
+          description: >-
+            {{ $value }} node(s) are missing a pod for
+            {{ $labels.namespace }}/{{ $labels.daemonset }}. Node-level
+            collectors stop reporting for those nodes while this holds.
+
+  - name: kubarr-storage
+    interval: 1m
+    rules:
+      - alert: FilesystemNearlyFull
+        # This stack does not scrape kubelet, so kubelet_volume_stats_* does
+        # not exist here. The fill level of the volumes behind every PV is read
+        # where it is visible instead: node-exporter's view of the node's
+        # filesystems, which includes the NFS export the shared claims are
+        # carved out of. Small, fixed-size filesystems are excluded so boot
+        # partitions do not alert forever.
+        expr: >-
+          100 * node_filesystem_avail_bytes / node_filesystem_size_bytes < 10
+          and node_filesystem_readonly == 0
+          and node_filesystem_size_bytes > 5e9
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.mountpoint }} is over 90% full'
+          description: >-
+            {{ $labels.mountpoint }} on {{ $labels.instance }} has
+            {{ printf "%.1f" $value }}% of its space left. Writes from every
+            claim backed by this filesystem fail once it is full.
+
+      - alert: FilesystemCriticallyFull
+        expr: >-
+          100 * node_filesystem_avail_bytes / node_filesystem_size_bytes < 3
+          and node_filesystem_readonly == 0
+          and node_filesystem_size_bytes > 5e9
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.mountpoint }} is almost out of space'
+          description: >-
+            {{ $labels.mountpoint }} on {{ $labels.instance }} has
+            {{ printf "%.1f" $value }}% of its space left.
+
+      - alert: PersistentVolumeFailed
+        expr: kube_persistentvolume_status_phase{phase="Failed"} == 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'PersistentVolume {{ $labels.persistentvolume }} has failed'
+          description: >-
+            {{ $labels.persistentvolume }} is in the Failed phase; its reclaim
+            could not be completed and the data on it is not being served.
+
+      - alert: PersistentVolumeClaimPending
+        expr: kube_persistentvolumeclaim_status_phase{phase="Pending"} == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is still pending'
+          description: >-
+            Nothing has bound {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}
+            for 30 minutes. Its workload cannot start until it binds; the usual
+            cause is a storage class with no provisioner or an NFS export that
+            is not reachable.
+
+  - name: kubarr-monitoring
+    interval: 1m
+    rules:
+      - alert: ScrapeTargetDown
+        # A target that disappears from service discovery goes stale rather
+        # than reporting up == 0, so this fires for targets that still exist
+        # and are refusing or timing out -- usually a NetworkPolicy that does
+        # not cover a newly installed app.
+        expr: up == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Scrape target {{ $labels.job }}/{{ $labels.instance }} is down'
+          description: >-
+            VictoriaMetrics has failed to scrape {{ $labels.instance }} (job
+            {{ $labels.job }}) for 15 minutes. Every alert that depends on its
+            metrics is blind until it returns.
+
+      - alert: ScrapeTargetSlow
+        expr: scrape_duration_seconds > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Scraping {{ $labels.instance }} takes {{ printf "%.1f" $value }}s'
+          description: >-
+            {{ $labels.instance }} is close to the scrape timeout. It will
+            start failing outright as it grows.
+
+      - alert: AlertRuleEvaluationFailing
+        # vmalert's own health. A rule that cannot be evaluated is silent
+        # rather than failing open, so this is the one rule that watches the
+        # watcher. The `without(id)` drops vmalert's per-rule id label, which
+        # changes whenever the rule file is edited.
+        expr: sum(increase(vmalert_alerting_rules_errors_total[30m])) without(id) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'vmalert cannot evaluate rule {{ $labels.alertname }}'
+          description: >-
+            Evaluation of "{{ $labels.alertname }}" in group "{{ $labels.group }}"
+            is returning errors, so that alert is not being checked at all.
+            vmalert's log carries the query error.
+
+      - alert: AlertDeliveryFailing
+        # Rules that fire but cannot be delivered are the same as no rules.
+        expr: increase(vmalert_alerts_send_errors_total[30m]) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'vmalert cannot reach Alertmanager at {{ $labels.addr }}'
+          description: >-
+            vmalert has failed to post notifications to {{ $labels.addr }}.
+            Firing alerts are not being routed anywhere; check that the
+            alertmanager release is running and that vmalert's egress policy
+            still covers its namespace.

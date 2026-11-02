@@ -1,0 +1,20 @@
+{{/* The starter rules are a plain file rather than a template: alert
+     annotations are themselves Go templates evaluated by vmalert, and keeping
+     them out of Helm's parser means no `{{` in them has to be escaped. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}-rules
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+data:
+  kubarr-alerts.yaml: |
+    {{- .Files.Get "files/kubarr-alerts.yaml" | nindent 4 }}
+  {{- range $name, $contents := .Values.vmalert.extraRuleFiles }}
+  {{- if not (hasSuffix ".yaml" $name) }}
+  {{- fail (printf "vmalert.extraRuleFiles: %s must end in .yaml or the -rule glob will not load it" $name) }}
+  {{- end }}
+  {{ $name }}: |
+    {{- $contents | nindent 4 }}
+  {{- end }}

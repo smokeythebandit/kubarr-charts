@@ -1,0 +1,32 @@
+{{- $app := .Values.tdarr -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tdarr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "tdarr.labels" . | nindent 4 }}
+  {{- if or $app.basePath $app.service.annotations }}
+  annotations:
+    {{- if $app.basePath }}
+    kubarr.io/base-path: {{ $app.basePath | quote }}
+    {{- end }}
+    {{- with $app.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  type: {{ $app.service.type }}
+  ports:
+    - port: {{ $app.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    # Nodes connect here; it is not a web UI and the gateway never proxies it.
+    - port: {{ $app.service.serverPort }}
+      targetPort: server
+      protocol: TCP
+      name: server
+  selector:
+    {{- include "tdarr.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server

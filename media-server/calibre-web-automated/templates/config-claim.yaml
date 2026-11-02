@@ -1,0 +1,2 @@
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "calibre-web-automated.fullname" .) "replicas" (index .Values "calibre-web-automated").replicaCount) -}}
+{{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "calibre-web-automated.fullname" .)) }}

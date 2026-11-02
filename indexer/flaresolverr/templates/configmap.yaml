@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "flaresolverr.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "flaresolverr.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.flaresolverr.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  # HOST and PORT are derived, not configured: the listener has to agree with
+  # the container port the Service and the NetworkPolicy already target.
+  HOST: "0.0.0.0"
+  PORT: {{ .Values.flaresolverr.service.targetPort | quote }}

@@ -17,7 +17,8 @@ from chart_artifacts import ROOT
 from test_declarative_storage import pods, render
 
 
-SCRATCH_CHARTS = {"media-server/jellyfin": "/cache", "media-server/plex": "/transcode"}
+SCRATCH_CHARTS = {"media-server/jellyfin": "/cache", "media-server/plex": "/transcode",
+                  "media-server/tdarr": "/temp"}
 
 
 def container_of(resources, name):

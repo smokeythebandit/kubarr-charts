@@ -1,0 +1,3 @@
+{{- include "recyclarr.validate" . -}}
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "recyclarr.fullname" .) "replicas" 1 "reservedPaths" .Values.kubarr.storage.reserved.main) -}}
+{{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "recyclarr.fullname" .)) }}

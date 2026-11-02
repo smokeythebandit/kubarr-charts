@@ -1,0 +1,122 @@
+{{- include "tdarr.validate" . -}}
+{{- $node := .Values.node -}}
+{{- if and $node.enabled (gt (int $node.replicaCount) 0) -}}
+{{- $app := .Values.tdarr -}}
+{{- $mounts := .Values.storage.workloads.node.mounts -}}
+{{- $label := "storage.workloads.node.mounts" -}}
+{{- $reserved := .Values.kubarr.storage.reserved.node -}}
+{{/* Validate under this workload's own key first: appMounts reports every
+     list as storage.mounts. */}}
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" $mounts "label" $label "reservedPaths" $reserved) -}}
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "mounts" $mounts "uid" $node.env.PUID "gid" $node.env.PGID) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tdarr.fullname" . }}-node
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "tdarr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $node.replicaCount }}
+  {{- if (default (dict) .Values.gpu).enabled }}
+  # A GPU cannot be allocated twice, so the old pod goes before the new one.
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "tdarr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "tdarr.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: node
+    spec:
+      {{- include "kubarr-common.gpu.podSettings" . | nindent 6 }}
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tdarr.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
+      {{- with $prepare }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tdarr-node
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ $node.image.repository }}:{{ $node.image.tag }}"
+          imagePullPolicy: {{ $node.image.pullPolicy }}
+          env:
+            # A Node holds no inbound port; it dials the server and keeps the
+            # connection. serverURL is regenerated from this value every start.
+            - name: serverURL
+              value: {{ include "tdarr.serverURL" . | quote }}
+            - name: nodeName
+              {{- if $node.name }}
+              value: {{ $node.name | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+              {{- end }}
+            - name: inContainer
+              value: "true"
+            - name: ffmpegVersion
+              value: {{ $app.ffmpegVersion | quote }}
+            - name: nodeType
+              value: {{ $node.nodeType | quote }}
+            - name: priority
+              value: {{ $node.priority | quote }}
+            - name: pollInterval
+              value: {{ $node.pollInterval | quote }}
+            - name: startPaused
+              value: {{ $node.startPaused | quote }}
+            - name: maxLogSizeMB
+              value: {{ $app.maxLogSizeMB | quote }}
+            - name: transcodecpuWorkers
+              value: {{ $node.workers.transcodeCpu | quote }}
+            - name: transcodegpuWorkers
+              value: {{ $node.workers.transcodeGpu | quote }}
+            - name: healthcheckcpuWorkers
+              value: {{ $node.workers.healthcheckCpu | quote }}
+            - name: healthcheckgpuWorkers
+              value: {{ $node.workers.healthcheckGpu | quote }}
+            {{- include "tdarr.apiKeyEnv" . | nindent 12 }}
+            {{- range $key, $value := $node.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{/* Same entry as kubarr-common.gpu.env, which cannot be used here
+                 because it emits its own env block and this container already
+                 has one. */}}
+            {{- if and (default (dict) .Values.gpu).enabled (eq (default (dict) .Values.gpu).provider "nvidia") }}
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "video,utility"
+            {{- end }}
+          resources:
+            {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" $node.resources) | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "mounts" $mounts "label" $label "reservedPaths" $reserved) | nindent 12 }}
+            {{- include "kubarr-common.storage.scratchMount" (dict "root" .) | nindent 12 }}
+      {{- $media := or (gt (len $mounts) 0) (eq (include "kubarr-common.storage.scratchBackend" (dict "root" .)) "nfs") }}
+      {{- $scratch := include "kubarr-common.storage.scratchVolume" (dict "root" .) }}
+      {{- if or $media $scratch }}
+      volumes:
+        {{- if $media }}
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+        {{- end }}
+        {{- with $scratch }}{{- . | nindent 8 }}{{- end }}
+      {{- end }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}
+{{- end }}

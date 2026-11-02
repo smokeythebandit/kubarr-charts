@@ -85,3 +85,54 @@ then started Seerr 3.5.1 against the same config volume as UID 1000. Both status
 endpoints reported the expected versions and the migration succeeded.
 
 Reference: <https://docs.seerr.dev/migration-guide/>.
+
+## New applications — 2026-11-01
+
+Thirteen charts added. Each image tag below was verified against its registry
+(Docker Hub tag API, GHCR `tags/list`, or `registry.k8s.io`) before pinning;
+nightly, develop and beta channels were excluded, as everywhere else here.
+
+| Chart | Category | Image | Application version |
+| --- | --- | --- | --- |
+| Prowlarr | indexer | `linuxserver/prowlarr` | 2.7.0 |
+| FlareSolverr | indexer | `ghcr.io/flaresolverr/flaresolverr` | 3.5.2 |
+| Lidarr | media-manager | `linuxserver/lidarr` | 3.1.6 |
+| Bazarr | media-manager | `linuxserver/bazarr` | 1.6.2 |
+| Recyclarr | media-manager | `ghcr.io/recyclarr/recyclarr` | 8.8.1 |
+| Navidrome | media-server | `deluan/navidrome` | 0.64.2 |
+| Audiobookshelf | media-server | `ghcr.io/advplyr/audiobookshelf` | 2.37.2 |
+| Komga | media-server | `gotson/komga` | 1.29.2 |
+| Calibre-Web Automated | media-server | `ghcr.io/crocodilestick/calibre-web-automated` | 4.0.8 |
+| Tdarr | media-server | `ghcr.io/haveagitgat/tdarr` + `tdarr_node` | 3.04.00 |
+| kube-state-metrics | monitoring | `registry.k8s.io/kube-state-metrics/kube-state-metrics` | 2.20.0 |
+| vmalert | monitoring | `victoriametrics/vmalert` | 1.154.1 |
+| Alertmanager | monitoring | `prom/alertmanager` | 0.34.2 |
+
+### Version notes
+
+- **Tdarr** publishes zero-padded tags (`3.04.00`), which is not valid SemVer and
+  which the CI version check does not normalize. The chart is versioned `3.4.0`
+  with the literal tag in `values.yaml`, following the `openresty` precedent
+  (`1.29.2.5` → `1.29.2+5.12`).
+- **vmalert** is pinned to 1.154.1 to match the VictoriaMetrics server's
+  appVersion rather than the newer 1.155.0; the two share the MetricsQL
+  implementation.
+- **Bazarr ships no metrics exporter.** exportarr has a `bazarr` subcommand, but
+  its only key source here is `--config`, an *arr `config.xml` parser. Bazarr
+  keeps a runtime-generated `auth.apikey` in `config.yaml`, so the exporter would
+  fail its own key validation at startup.
+- **Readarr was not added.** Upstream retired it; ebooks are covered by
+  Calibre-Web Automated and audiobooks by Audiobookshelf.
+
+### Platform changes these charts required
+
+- `system/kubarr-worker` gained `batch/cronjobs` in its ClusterRole. Recyclarr is
+  the first chart to ship a CronJob, and Helm reads every resource it owns before
+  upgrading, so without it every Recyclarr upgrade would have failed on its own
+  manifest. `tests/test_worker_can_manage_shipped_kinds.py` now guards the batch
+  and RBAC kinds too, not only the policy kinds.
+- `monitoring/victoriametrics` added `kube-state-metrics`, `vmalert`,
+  `alertmanager`, `prowlarr`, `lidarr` and `navidrome` to
+  `networkPolicy.scrapeNamespaces`, and `vmalert` to `networkPolicy.ingressFrom`.
+  Target discovery is annotation-driven and needed no change; it is VictoriaMetrics'
+  own default-deny egress and ingress allowlist that gate the traffic.

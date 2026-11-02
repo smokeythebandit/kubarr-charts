@@ -1,0 +1,100 @@
+namespace:
+  create: false  # kubarr deployment manager creates the namespace
+  name: kube-state-metrics
+
+kubeStateMetrics:
+  # kube-state-metrics holds the full object cache it reports on, so a second
+  # replica doubles the memory for duplicate series. One replica, no sharding.
+  replicaCount: 1
+
+  image:
+    repository: registry.k8s.io/kube-state-metrics/kube-state-metrics
+    tag: "v2.20.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    # Object metrics. VictoriaMetrics scrapes this port, selected by the
+    # prometheus.io/port annotation on the Service.
+    port: 8080
+    targetPort: 8080
+    # Self-monitoring of the exporter's own request/watch counters. Deliberately
+    # not annotated: a second scraped port on the same Service would double the
+    # target count for metrics no dashboard here reads.
+    telemetryPort: 8081
+    annotations: {}
+
+  # The object kinds this exporter watches. Each entry becomes one
+  # --resources collector AND the matching get/list/watch grant in the
+  # ClusterRole, so the identity can never read a kind that is not collected.
+  #
+  # Unlisted kinds are rejected at render time rather than silently dropped,
+  # and configmaps/secrets are refused outright: their collectors report only
+  # metadata, but the RBAC that feeds them would hand this pod every
+  # credential in the cluster.
+  collectors:
+    - namespaces
+    - nodes
+    - pods
+    - services
+    - endpoints
+    - persistentvolumes
+    - persistentvolumeclaims
+    - resourcequotas
+    - deployments
+    - daemonsets
+    - statefulsets
+    - replicasets
+    - jobs
+    - cronjobs
+    - ingresses
+    - storageclasses
+
+  # Cluster-object cardinality is driven by object count, not by traffic.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# The exporter reads the Kubernetes API, so this chart ships its own
+# read-only ClusterRole and the pod keeps a service account token.
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: kube-state-metrics
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+networkPolicy:
+  enabled: true
+  # Only the collector that scrapes it may reach it.
+  ingressFrom:
+    - victoriametrics
+  # Watching the API is the whole job. On Cilium the apiserver is reached
+  # through the kube-apiserver entity (see templates/apiserver-egress.yaml);
+  # these CIDRs/ports cover every other CNI.
+  apiServerCIDRs: [0.0.0.0/0]
+  apiServerPorts: [443, 6443]

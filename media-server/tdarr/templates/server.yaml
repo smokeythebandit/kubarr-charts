@@ -1,0 +1,126 @@
+{{- include "tdarr.validate" . -}}
+{{- $app := .Values.tdarr -}}
+{{- $reserved := .Values.kubarr.storage.reserved.main -}}
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" $app.env.PUID "gid" $app.env.PGID) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tdarr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "tdarr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  # The server data directory is a ReadWriteOnce claim, and a GPU cannot be
+  # allocated twice, so the old pod goes before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "tdarr.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "tdarr.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      {{- include "kubarr-common.gpu.podSettings" . | nindent 6 }}
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tdarr.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
+      {{- with $prepare }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tdarr
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $app.service.targetPort }}
+              protocol: TCP
+            - name: server
+              containerPort: {{ $app.service.serverPort }}
+              protocol: TCP
+          env:
+            - name: serverIP
+              value: {{ $app.bindIP | quote }}
+            - name: serverPort
+              value: {{ $app.service.serverPort | quote }}
+            - name: webUIPort
+              value: {{ $app.service.targetPort | quote }}
+            - name: internalNode
+              value: {{ $app.internalNode | quote }}
+            - name: nodeName
+              value: {{ $app.internalNodeName | quote }}
+            - name: inContainer
+              value: "true"
+            - name: ffmpegVersion
+              value: {{ $app.ffmpegVersion | quote }}
+            # Nothing in the pod can open a browser.
+            - name: openBrowser
+              value: "false"
+            - name: maxLogSizeMB
+              value: {{ $app.maxLogSizeMB | quote }}
+            - name: auth
+              value: {{ .Values.auth.enabled | quote }}
+            {{- if and .Values.auth.enabled .Values.auth.existingSecret }}
+            - name: seededApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret | quote }}
+                  key: {{ .Values.auth.key | quote }}
+            {{- end }}
+            {{- include "tdarr.apiKeyEnv" . | nindent 12 }}
+            {{- range $key, $value := $app.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{/* Same entry as kubarr-common.gpu.env, which cannot be used here
+                 because it emits its own env block and this container already
+                 has one. */}}
+            {{- if and (default (dict) .Values.gpu).enabled (eq (default (dict) .Values.gpu).provider "nvidia") }}
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "video,utility"
+            {{- end }}
+          {{- if $app.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ $app.livenessProbe.tcpSocket.port }}
+            initialDelaySeconds: {{ $app.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $app.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ $app.readinessProbe.tcpSocket.port }}
+            initialDelaySeconds: {{ $app.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" $app.resources) | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/app/server") | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" $reserved) | nindent 12 }}
+            {{- include "kubarr-common.storage.scratchMount" (dict "root" .) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "tdarr.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

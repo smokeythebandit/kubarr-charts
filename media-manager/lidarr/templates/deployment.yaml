@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lidarr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "lidarr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.lidarr.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "lidarr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/setup: {{ include (print $.Template.BasePath "/setup-configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "lidarr.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "lidarr.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.lidarr.env.PUID "gid" .Values.lidarr.env.PGID) | nindent 8 }}
+        - name: init-config
+          image: busybox:1.38.0
+          securityContext:
+            runAsUser: {{ .Values.lidarr.env.PUID | int }}
+            runAsGroup: {{ .Values.lidarr.env.PGID | int }}
+            runAsNonRoot: {{ ne (int .Values.lidarr.env.PUID) 0 }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /config
+              CONFIG_FILE="/config/config.xml"
+              if [ ! -f "$CONFIG_FILE" ]; then
+                # Create initial config
+                cat > "$CONFIG_FILE" << 'EOF'
+              <Config>
+                <UrlBase>{{ .Values.lidarr.basePath }}</UrlBase>
+                <BindAddress>*</BindAddress>
+                <Port>8686</Port>
+                <EnableSsl>False</EnableSsl>
+                <AuthenticationMethod>External</AuthenticationMethod>
+                <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
+              </Config>
+              EOF
+              else
+                # Update existing config to disable authentication
+                echo "Updating authentication settings in existing config..."
+                # Update AuthenticationMethod to External
+                if grep -q "<AuthenticationMethod>" "$CONFIG_FILE"; then
+                  sed -i 's|<AuthenticationMethod>[^<]*</AuthenticationMethod>|<AuthenticationMethod>External</AuthenticationMethod>|g' "$CONFIG_FILE"
+                else
+                  sed -i 's|</Config>|  <AuthenticationMethod>External</AuthenticationMethod>\n</Config>|' "$CONFIG_FILE"
+                fi
+                # Update AuthenticationRequired
+                if grep -q "<AuthenticationRequired>" "$CONFIG_FILE"; then
+                  sed -i 's|<AuthenticationRequired>[^<]*</AuthenticationRequired>|<AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>|g' "$CONFIG_FILE"
+                else
+                  sed -i 's|</Config>|  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>\n</Config>|' "$CONFIG_FILE"
+                fi
+                {{- if .Values.lidarr.basePath }}
+                # Ensure UrlBase is set
+                if grep -q "<UrlBase>" "$CONFIG_FILE"; then
+                  sed -i 's|<UrlBase>[^<]*</UrlBase>|<UrlBase>{{ .Values.lidarr.basePath }}</UrlBase>|g' "$CONFIG_FILE"
+                else
+                  sed -i 's|</Config>|  <UrlBase>{{ .Values.lidarr.basePath }}</UrlBase>\n</Config>|' "$CONFIG_FILE"
+                fi
+                {{- end }}
+              fi
+              echo "Config file contents:"
+              cat "$CONFIG_FILE"
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/config") | nindent 12 }}
+        {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
+      containers:
+        {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.lidarr.service.targetPort "inputPorts" (ternary (toString .Values.exporter.port) "" .Values.exporter.enabled)) | nindent 8 }}
+        - name: lidarr
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.lidarr.image.repository }}:{{ .Values.lidarr.image.tag }}"
+          imagePullPolicy: {{ .Values.lidarr.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.lidarr.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "lidarr.fullname" . }}-config
+          {{- if .Values.lidarr.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.lidarr.livenessProbe.tcpSocket.port }}
+            initialDelaySeconds: {{ .Values.lidarr.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.lidarr.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.lidarr.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.lidarr.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.lidarr.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.lidarr.readinessProbe.tcpSocket.port }}
+            initialDelaySeconds: {{ .Values.lidarr.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.lidarr.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.lidarr.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.lidarr.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.lidarr.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" .Values.kubarr.storage.reserved.main) | nindent 12 }}
+            - name: setup-scripts
+              mountPath: /custom-services.d/setup-downloadclients
+              subPath: setup-downloadclients.sh
+      volumes:
+        {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "lidarr.fullname" .)) | nindent 8 }}
+        - name: setup-scripts
+          configMap:
+            name: {{ include "lidarr.fullname" . }}-setup
+            defaultMode: 0755
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

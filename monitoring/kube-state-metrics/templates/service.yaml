@@ -1,0 +1,34 @@
+{{- $app := .Values.kubeStateMetrics -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubarr-common.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+  annotations:
+    {{- /* VictoriaMetrics discovers targets from these annotations with its
+           role: service job. The port annotation selects which Service port is
+           scraped, so the telemetry port is left out and never scraped twice. */}}
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ $app.service.port | quote }}
+    prometheus.io/path: "/metrics"
+    {{- with $app.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ $app.service.type }}
+  # No cluster IP is needed for a single scrape target, but the annotated
+  # Service is what VictoriaMetrics discovers, so it stays a normal ClusterIP
+  # Service rather than a headless one.
+  ports:
+    - port: {{ $app.service.port }}
+      targetPort: http-metrics
+      protocol: TCP
+      name: http-metrics
+    - port: {{ $app.service.telemetryPort }}
+      targetPort: telemetry
+      protocol: TCP
+      name: telemetry
+  selector:
+    {{- include "kubarr-common.selectorLabels" . | nindent 4 }}

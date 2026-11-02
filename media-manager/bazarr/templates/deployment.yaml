@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bazarr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "bazarr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.bazarr.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "bazarr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "bazarr.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "bazarr.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.bazarr.env.PUID "gid" .Values.bazarr.env.PGID) | nindent 8 }}
+        - name: init-config
+          image: busybox:1.38.0
+          securityContext:
+            runAsUser: {{ .Values.bazarr.env.PUID | int }}
+            runAsGroup: {{ .Values.bazarr.env.PGID | int }}
+            runAsNonRoot: {{ ne (int .Values.bazarr.env.PUID) 0 }}
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - sh
+            - -c
+            - |
+              # Bazarr keeps a YAML configuration, not the *arr config.xml, and
+              # merges its own defaults into whatever this file holds.
+              mkdir -p /config/config
+              CONFIG_FILE="/config/config/config.yaml"
+              BASE_URL={{ .Values.bazarr.basePath | quote }}
+              BASE_LINE="base_url: \"$BASE_URL\""
+              if [ ! -f "$CONFIG_FILE" ]; then
+                # Create initial config
+                printf 'general:\n  ip: 0.0.0.0\n  port: %s\n  %s\n' \
+                  "6767" "$BASE_LINE" > "$CONFIG_FILE"
+              else
+                # Keep the reverse-proxy prefix pinned, leaving the rest alone
+                echo "Updating the base URL in the existing config..."
+                if grep -qE '^[[:space:]]+base_url:' "$CONFIG_FILE"; then
+                  sed -i "s|^\([[:space:]]*\)base_url:.*|\1$BASE_LINE|" "$CONFIG_FILE"
+                elif grep -q '^general:' "$CONFIG_FILE"; then
+                  sed -i "s|^general:|general:\n  $BASE_LINE|" "$CONFIG_FILE"
+                else
+                  printf 'general:\n  %s\n' "$BASE_LINE" >> "$CONFIG_FILE"
+                fi
+              fi
+              echo "Config file contents:"
+              cat "$CONFIG_FILE"
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/config") | nindent 12 }}
+        {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
+      containers:
+        {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.bazarr.service.targetPort) | nindent 8 }}
+        - name: bazarr
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.bazarr.image.repository }}:{{ .Values.bazarr.image.tag }}"
+          imagePullPolicy: {{ .Values.bazarr.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.bazarr.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "bazarr.fullname" . }}-config
+          {{- if .Values.bazarr.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.bazarr.livenessProbe.tcpSocket.port }}
+            initialDelaySeconds: {{ .Values.bazarr.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.bazarr.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.bazarr.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.bazarr.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.bazarr.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.bazarr.readinessProbe.tcpSocket.port }}
+            initialDelaySeconds: {{ .Values.bazarr.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.bazarr.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.bazarr.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.bazarr.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.bazarr.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" .Values.kubarr.storage.reserved.main) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "bazarr.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

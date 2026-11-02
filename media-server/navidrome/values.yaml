@@ -1,0 +1,170 @@
+# Default values for navidrome
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: true
+  name: navidrome
+
+# Navidrome application configuration
+navidrome:
+  replicaCount: 1
+
+  image:
+    repository: deluan/navidrome
+    pullPolicy: IfNotPresent
+    tag: "0.64.2"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 4533
+    targetPort: 4533
+    annotations: {}
+
+  # Resource limits and requests
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+
+  # Environment variables. ND_DATAFOLDER, ND_CONFIGFILE, ND_BASEURL and the
+  # Prometheus settings are derived from the values below, not set here.
+  env:
+    TZ: "Etc/UTC"
+    ND_PORT: "4533"
+    # The library mount. Navidrome only reads it; keep storage.mounts in sync.
+    ND_MUSICFOLDER: "/music"
+    ND_LOGLEVEL: "info"
+
+  # Base path for reverse proxy (e.g., /navidrome)
+  # Navidrome rewrites its asset and API URLs from ND_BASEURL, so a subpath is
+  # supported. The /ping health endpoint stays at the server root either way:
+  # it is a chi Heartbeat middleware, which is not mounted under the base path.
+  basePath: "/navidrome"
+
+  # Navidrome's own Prometheus endpoint, served on the application port under
+  # basePath. Unauthenticated while ND_PROMETHEUS_PASSWORD is unset, which is
+  # what the in-cluster VictoriaMetrics scrape needs; no exporter sidecar is
+  # involved. The Service carries the prometheus.io annotations it discovers.
+  metrics:
+    enabled: true
+    path: /metrics
+
+  # Probes configuration
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /ping
+      port: 4533
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /ping
+      port: 4533
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: navidrome
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # navidrome.db and the artwork/transcoding caches live in the private
+      # claim, so nothing else may be mounted over it.
+      main: ["/config"]
+
+storage:
+  mounts:
+    # Navidrome reads tags and artwork from the library and writes nothing to
+    # it: playlist export is off by default, so the mount stays read-only.
+    - {name: music, source: media/music, target: /music, mode: read}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    # Holds navidrome.db (SQLite, WAL) plus the artwork and transcoding caches,
+    # which Navidrome keeps under the data folder and caps itself
+    # (ND_IMAGECACHESIZE, ND_TRANSCODINGCACHESIZE). SQLite must not live on the
+    # shared NFS export, so this is a private claim and there is no separate
+    # cache volume to configure.
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
+  media:
+    existingClaim: media-data
+
+# Network policy configuration
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+    - victoriametrics  # scrapes Navidrome's own /metrics on the app port
+  egressTo: []
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

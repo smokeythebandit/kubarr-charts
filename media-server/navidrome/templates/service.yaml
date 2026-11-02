@@ -1,0 +1,14 @@
+{{- /* Navidrome serves its own Prometheus endpoint on the application port,
+under basePath, so the scrape annotations are derived rather than written out
+in values.yaml where a changed port or basePath would leave them stale.
+VictoriaMetrics keeps a Service target only when prometheus.io/port equals the
+exposed Service port. */ -}}
+{{- $app := deepCopy .Values.navidrome -}}
+{{- if $app.metrics.enabled -}}
+{{- $annotations := dict
+      "prometheus.io/scrape" "true"
+      "prometheus.io/port" (toString $app.service.port)
+      "prometheus.io/path" (printf "%s%s" $app.basePath $app.metrics.path) -}}
+{{- $_ := set $app.service "annotations" (merge (default dict $app.service.annotations) $annotations) -}}
+{{- end -}}
+{{ include "kubarr-common.service" (dict "root" . "app" $app) }}

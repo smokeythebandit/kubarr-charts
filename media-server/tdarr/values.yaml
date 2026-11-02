@@ -1,0 +1,275 @@
+# Default values for tdarr
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: false
+  name: tdarr
+
+# Tdarr Server: the database, the web UI, and (by default) one internal Node.
+tdarr:
+  # The server owns the database on a private ReadWriteOnce claim; one replica.
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/haveagitgat/tdarr
+    pullPolicy: IfNotPresent
+    # Server and Node images must be the same release; the chart refuses a mismatch.
+    tag: "3.04.00"
+
+  # Service configuration. http is the web UI; server is the port Nodes
+  # connect outbound to. Nodes never open an inbound port of their own.
+  service:
+    type: ClusterIP
+    port: 8265
+    targetPort: 8265
+    serverPort: 8266
+    annotations: {}
+
+  # Resource limits and requests. The internal Node transcodes in this pod,
+  # so the limits cover encoding work unless internalNode is disabled.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+
+  # Environment variables
+  env:
+    PUID: "1000"
+    PGID: "1000"
+    TZ: "Etc/UTC"
+    UMASK: "002"
+
+  # Run a Node inside the Server container. Leave it on for a single-machine
+  # install; turn it off when all transcoding runs on node.enabled workers.
+  internalNode: true
+  # Name the internal Node registers under.
+  internalNodeName: tdarr-server
+  # FFmpeg major version shipped by the image (6 or 7).
+  ffmpegVersion: "7"
+  # Bind address for the server and web UI inside the pod.
+  bindIP: 0.0.0.0
+  # Maximum size of each log file, in MB.
+  maxLogSizeMB: "10"
+
+  # Base path for reverse proxy (leave empty for root)
+  # Tdarr serves its web UI at root.
+  basePath: ""
+
+  # Probes configuration. The HTTP API requires an API key, so the probes
+  # check that the web UI port accepts connections.
+  livenessProbe:
+    enabled: true
+    tcpSocket:
+      port: 8265
+    initialDelaySeconds: 90
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    tcpSocket:
+      port: 8265
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Authentication. Tdarr 3 enables it by default: the first browser to reach an
+# unclaimed web UI creates the admin account, and every Node needs an API key.
+# Provide a Secret holding a pre-seeded key (it must start with "tapi_", be at
+# least 14 characters, and use only letters, digits and underscores). The
+# server seeds it on startup and also creates an "admin" user with that value
+# as its password, so the install cannot be claimed by someone else; the
+# internal Node and every Node pod authenticate with the same key.
+auth:
+  enabled: true
+  existingSecret: ""
+  key: api-key
+
+# External Tdarr Nodes: stateless workers that mount the same libraries and
+# their own transcode cache, and connect outbound to the server's serverPort.
+# Scale them with replicaCount; 0 replicas or enabled=false ships none.
+node:
+  enabled: false
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/haveagitgat/tdarr_node
+    pullPolicy: IfNotPresent
+    tag: "3.04.00"
+
+  # Name every Node registers under. Empty gives each pod its own name, which
+  # is required for more than one replica. A fixed name needs replicaCount: 1.
+  name: ""
+
+  # mapped: the Node reaches the library itself (this chart mounts it).
+  # unmapped: the Node pulls files from the server over the network instead.
+  nodeType: mapped
+  # -1 is no priority; 0 is highest, then 1, 2 ...
+  priority: -1
+
+  # Workers each Node starts with. The web UI can change them afterwards.
+  # GPU workers need gpu.enabled and a device plugin on the node.
+  workers:
+    transcodeCpu: 2
+    transcodeGpu: 0
+    healthcheckCpu: 1
+    healthcheckGpu: 0
+
+  # How often the Node polls the server, in milliseconds.
+  pollInterval: "2000"
+  startPaused: false
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+
+  env:
+    PUID: "1000"
+    PGID: "1000"
+    TZ: "Etc/UTC"
+    UMASK: "002"
+
+# Security context
+securityContext:
+  runAsNonRoot: false
+  allowPrivilegeEscalation: true
+  capabilities: {}
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Opt-in hardware transcoding; requires a device plugin advertising the selected
+# resource on the node. No host device mounts or privileged access are added.
+# It applies to every workload that transcodes: the server (while it runs the
+# internal Node) and each Node pod. Give the Nodes GPU workers as well, and set
+# tdarr.internalNode=false so the server does not hold a device it never uses.
+gpu:
+  enabled: false
+  provider: intel  # intel, nvidia, or amd
+  # Empty uses gpu.intel.com/i915 (intel) or nvidia.com/gpu (nvidia).
+  # Set gpu.intel.com/xe for Xe, nvidia.com/gpu.shared for NVIDIA time-slicing,
+  # or the resource advertised by your prepared shared DRM plugin for AMD.
+  resourceName: ""
+  runtimeClassName: ""  # Optional, e.g. nvidia; omit if the device plugin needs none
+  supplementalGroups: []  # Optional numeric render/video device group IDs
+
+# Service Account
+serviceAccount:
+  create: true
+  name: tdarr
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: []
+      node: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # /app/server is the private claim: the database, plugins, samples and
+      # backups. The transcode cache is not listed -- the validator reserves
+      # storage.scratch.target on its own, so dropping storage.scratch frees
+      # that path for a shared mount.
+      main: ["/app/server"]
+      # A Node keeps /app/configs and /app/logs in its own container.
+      node: ["/app/configs", "/app/logs"]
+
+storage:
+  # Tdarr rewrites the files it processes, so every library mount is writable.
+  # Both workloads declare their own list; a mapped Node must see the library
+  # at the same path as the server, or it needs pathTranslators instead.
+  mounts:
+    - {name: movies, source: media/movies, target: /media/movies, mode: read-write}
+    - {name: shows, source: media/shows, target: /media/shows, mode: read-write}
+  workloads:
+    node:
+      mounts:
+        - {name: movies, source: media/movies, target: /media/movies, mode: read-write}
+        - {name: shows, source: media/shows, target: /media/shows, mode: read-write}
+  # Transcode cache. Tdarr encodes into this directory at the full output
+  # bitrate and then copies the finished file over the original, so it belongs
+  # on the node, not the shared export: a 4K job can write tens of GB per
+  # worker, and on NFS every byte crosses the network three times (written,
+  # read back, copied into the library).
+  # sizeLimit is mandatory -- an overrun evicts that pod instead of filling the
+  # node. Keep it well under the node's free space and size it for the number
+  # of transcode workers the pod runs concurrently.
+  # Each pod gets its own cache, which is what Tdarr expects: a Node transcodes
+  # into its own cache and copies the result back itself.
+  # On a node too small for a local cache, set backend: nfs with a source
+  # (e.g. cache/tdarr) and sizeLimit: null -- Helm merges values, so the
+  # default cap survives an override that only omits it. Every workload then
+  # shares that one directory.
+  scratch:
+    backend: node
+    target: /temp
+    sizeLimit: 32Gi
+  # Private claim for the server's data directory (/app/server): the database,
+  # plugins, samples and backups. /app/configs and /app/logs stay in the
+  # container, because the settings below are passed as environment variables,
+  # which take precedence over the JSON configuration files.
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 10Gi
+    storageClassName: "" # empty: cluster default StorageClass
+  media:
+    create: true
+    existingClaim: media-data
+    nfs: {}
+
+# Network policy configuration
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+  egressTo: []
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

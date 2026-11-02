@@ -1,0 +1,25 @@
+apiVersion: v2
+name: vmalert
+description: vmalert - evaluates alerting rules against VictoriaMetrics and sends alerts to Alertmanager
+type: application
+version: 1.154.1
+appVersion: "1.154.1"
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+# system: "true" = platform component the Kubarr CLI bootstraps; the backend
+#          refuses a catalog install for it (services/install_options.rs)
+# browseable: "false" = no web UI proxy. vmalert does serve a rules-debugging
+#          page, but it is part of the metrics stack rather than something a
+#          user opens from the dashboard; reach it with a port-forward.
+annotations:
+  kubarr.io/display-name: "vmalert"
+  kubarr.io/icon: "🚨"
+  kubarr.io/category: "monitoring"
+  kubarr.io/system: "true"
+  kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.7.0
+    repository: file://../../system/kubarr-common

@@ -1,0 +1,104 @@
+{{- range $key := list "HOST" "PORT" -}}
+{{- if hasKey $.Values.flaresolverr.env $key -}}
+{{- fail (printf "flaresolverr.env.%s is derived from flaresolverr.service.targetPort; remove it" $key) -}}
+{{- end -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "flaresolverr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "flaresolverr.labels" . | nindent 4 }}
+spec:
+  # One browser host. Challenge solving keeps per-session browser state in the
+  # pod, so a second replica would answer with cookies the caller never saw.
+  replicas: {{ .Values.flaresolverr.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "flaresolverr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "flaresolverr.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "flaresolverr.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: flaresolverr
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.flaresolverr.image.repository }}:{{ .Values.flaresolverr.image.tag }}"
+          imagePullPolicy: {{ .Values.flaresolverr.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.flaresolverr.service.targetPort }}
+              protocol: TCP
+            {{- if eq (toString (default "false" (index .Values.flaresolverr.env "PROMETHEUS_ENABLED"))) "true" }}
+            - name: metrics
+              containerPort: {{ index .Values.flaresolverr.env "PROMETHEUS_PORT" | int }}
+              protocol: TCP
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "flaresolverr.fullname" . }}-config
+          {{- if .Values.flaresolverr.startupProbe.enabled }}
+          # The first request after boot launches Chromium against TEST_URL;
+          # until that returns, the API is up but useless.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: {{ .Values.flaresolverr.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.flaresolverr.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.flaresolverr.startupProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.flaresolverr.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.flaresolverr.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.flaresolverr.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.flaresolverr.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.flaresolverr.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.flaresolverr.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.flaresolverr.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.flaresolverr.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.flaresolverr.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.flaresolverr.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.flaresolverr.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Every challenge builds and discards a browser profile under /tmp.
+        # Upstream recommends keeping that churn off the node's disk; the cap
+        # is what stops a stuck session from consuming the pod's memory budget.
+        - name: tmp
+          emptyDir:
+            {{- with .Values.flaresolverr.tmp.medium }}
+            medium: {{ . | quote }}
+            {{- end }}
+            sizeLimit: {{ .Values.flaresolverr.tmp.sizeLimit | quote }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

@@ -1,0 +1,112 @@
+namespace:
+  create: false  # kubarr deployment manager creates the namespace
+  name: vmalert
+
+vmalert:
+  # Rule evaluation is cheap and stateless, but two replicas evaluate every
+  # rule twice and notify twice; Alertmanager would dedupe, vmalert's own UI
+  # would not. One replica.
+  replicaCount: 1
+
+  image:
+    repository: victoriametrics/vmalert
+    # Kept in step with the VictoriaMetrics server this reads from
+    # (monitoring/victoriametrics appVersion 1.154.1): vmalert and vmselect
+    # share the MetricsQL implementation, so a matching pair is the only
+    # combination upstream tests.
+    tag: "v1.154.1"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8880
+    targetPort: 8880
+    annotations: {}
+
+  # Base path for URL routing, empty to serve from the root.
+  #
+  # Empty is the default because this chart refuses browsing
+  # (kubarr.io/browseable: "false"), so the gateway never proxies it and a
+  # prefix would only get in the way of a port-forward. Setting it both starts
+  # vmalert with a matching -http.pathPrefix and advertises
+  # kubarr.io/base-path to the proxy, so change it together with the
+  # browseable annotation in Chart.yaml -- never on its own.
+  basePath: ""
+
+  # Where the rules are read from. These are the in-cluster addresses of the
+  # charts in this repository, not generic defaults:
+  #   monitoring/victoriametrics -> Service victoriametrics, ns victoriametrics, port 8428
+  #   monitoring/alertmanager    -> Service alertmanager, ns alertmanager, port 9093
+  # The /alertmanager suffix is Alertmanager's --web.route-prefix: its
+  # /api/v2/alerts endpoint lives under that prefix, so the notifier URL must
+  # carry it. Change both together or alerts are posted into a 404.
+  datasourceUrl: "http://victoriametrics.victoriametrics.svc.cluster.local:8428"
+  notifierUrl: "http://alertmanager.alertmanager.svc.cluster.local:9093/alertmanager"
+
+  # Alert state is kept in memory. Writing it back to VictoriaMetrics makes
+  # ALERTS/ALERTS_FOR_STATE queryable from Grafana and lets a restarted vmalert
+  # restore pending alerts instead of resetting every `for:` timer.
+  remoteWrite:
+    enabled: true
+    url: ""  # empty: reuse datasourceUrl
+  remoteRead:
+    enabled: true
+    url: ""  # empty: reuse datasourceUrl
+
+  # Rule evaluation cadence. Slower than the 60s scrape interval would delay
+  # alerts; faster would evaluate the same samples repeatedly.
+  evaluationInterval: "1m"
+  # Alertmanager expires an alert it stops hearing about after ~4 evaluation
+  # intervals; resending well inside that keeps firing alerts alive.
+  resendDelay: "2m"
+
+  # Absolute URL used in alert annotations and Alertmanager's generatorURL.
+  # Set this to the Kubarr dashboard's address to get working links.
+  externalUrl: ""
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 48Mi
+    limits:
+      cpu: 200m
+      memory: 160Mi
+
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Extra rule files, as filename (must end in .yaml) -> file contents. They
+  # are mounted next to the shipped starter rules and picked up by the same
+  # -rule glob.
+  extraRuleFiles: {}
+
+serviceAccount:
+  create: true
+  name: vmalert
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+networkPolicy:
+  enabled: true
+  # No gateway entry: the rule-state page is not proxied (see basePath). Add
+  # openresty here if that changes.
+  ingressFrom:
+    - victoriametrics   # scrapes vmalert's own metrics
+  egressTo:
+    - victoriametrics   # rule evaluation (and alert-state remote write/read)
+    - alertmanager      # notifications

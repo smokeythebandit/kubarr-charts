@@ -1,0 +1,80 @@
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "navidrome.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "navidrome.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.navidrome.replicaCount }}
+  # The private config claim is ReadWriteOnce and holds a SQLite database, so
+  # the old pod must release it before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "navidrome.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "navidrome.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "navidrome.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with $prepare }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: navidrome
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.navidrome.image.repository }}:{{ .Values.navidrome.image.tag }}"
+          imagePullPolicy: {{ .Values.navidrome.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.navidrome.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "navidrome.fullname" . }}-config
+          {{- if .Values.navidrome.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.navidrome.livenessProbe.httpGet.path }}
+              port: {{ .Values.navidrome.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.navidrome.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.navidrome.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.navidrome.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.navidrome.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.navidrome.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.navidrome.readinessProbe.httpGet.path }}
+              port: {{ .Values.navidrome.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.navidrome.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.navidrome.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.navidrome.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.navidrome.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.navidrome.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "navidrome.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

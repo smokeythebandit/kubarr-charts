@@ -1,0 +1,176 @@
+# Default values for flaresolverr
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Namespace configuration
+namespace:
+  create: true
+  name: flaresolverr
+
+# FlareSolverr application configuration
+flaresolverr:
+  # A single browser host; see the Deployment for why this is not scaled out.
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/flaresolverr/flaresolverr
+    pullPolicy: IfNotPresent
+    tag: "v3.5.2"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8191
+    targetPort: 8191
+    annotations: {}
+
+  # Resource limits and requests
+  #
+  # Every challenge starts a real Chromium, not a parser: a single solve holds
+  # a browser, an Xvfb display and a page of JavaScript. Measured idle use is
+  # around 120Mi, a solve peaks several hundred, and the /tmp cap below is
+  # charged to the same budget when it is memory-backed. Sized for one solve at
+  # a time with headroom, which is what a single indexer actually drives.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1536Mi
+
+  # Environment variables the image documents. HOST and PORT are deliberately
+  # absent: they are derived from service.targetPort so the listener cannot
+  # drift from the port the Service and NetworkPolicy target.
+  env:
+    # Verbosity of the logging; "debug" for challenge troubleshooting
+    LOG_LEVEL: "info"
+    # Log every HTML body that passes through (debug only, very noisy)
+    LOG_HTML: "false"
+    # Captcha solving method; "none" or "hcaptcha-solver"
+    CAPTCHA_SOLVER: "none"
+    # Timezone used in the logs and in the browser
+    TZ: "Etc/UTC"
+    # Run the browser with its window hidden behind Xvfb. Only disable for
+    # debugging: a true headless Chromium is detected by Cloudflare.
+    HEADLESS: "true"
+    # Skip images, CSS and media to save bandwidth. Upstream default is false;
+    # some challenge pages need their assets, so leave it off unless bandwidth
+    # is the problem you are solving.
+    DISABLE_MEDIA: "false"
+    # Seconds to wait for the browser to reach an expected page state per
+    # attempt. Raise it on a slow node or for slow sites.
+    BROWSER_WAIT_TIMEOUT: "1"
+    # Requested once on start to prove the browser works
+    TEST_URL: "https://www.google.com"
+    # Prometheus exporter. Enabling it also publishes the metrics container
+    # port; scraping still needs a networkPolicy.ingressFrom entry.
+    PROMETHEUS_ENABLED: "false"
+    PROMETHEUS_PORT: "8192"
+    # Optional upstream proxy for the browser itself
+    # PROXY_URL: ""
+    # PROXY_USERNAME: ""
+    # PROXY_PASSWORD: ""
+    # Browser language, e.g. en_GB
+    # LANG: ""
+
+  # Scratch space for browser profiles. Memory-backed by default, as upstream
+  # recommends, so solve churn never reaches the node's disk. Set medium to ""
+  # for a disk-backed emptyDir on a memory-tight node.
+  tmp:
+    medium: Memory
+    sizeLimit: 256Mi
+
+  # Probes configuration. /health is FlareSolverr's own readiness endpoint.
+  startupProbe:
+    enabled: true
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 60
+
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# No storage block: FlareSolverr keeps no state worth surviving a restart.
+# Sessions live in the browser it owns, and the image's /config volume holds
+# nothing but an optional log file. Nothing is mounted from the shared export.
+
+# Security context. The image's own user is flaresolverr (uid/gid 1000) and it
+# launches Chromium with --no-sandbox and --disable-setuid-sandbox, so no
+# capability and no privilege escalation is required.
+securityContext:
+  allowPrivilegeEscalation: false
+  # undetected-chromedriver patches /app/chromedriver in place on first launch,
+  # so the image filesystem has to stay writable.
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: flaresolverr
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Network policy configuration
+#
+# FlareSolverr must never be reachable from outside the cluster: anything that
+# can POST /v1 can drive a browser at any URL. Ingress is therefore limited to
+# the indexers that call it, and openresty is deliberately not in the list --
+# there is no page to proxy.
+#
+# Egress to the public internet is what the job is: the shared policy already
+# allows every non-RFC1918 destination, which is where challenge pages live.
+# egressTo stays empty because FlareSolverr calls nothing in the cluster.
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - jackett
+    - prowlarr
+  egressTo: []
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

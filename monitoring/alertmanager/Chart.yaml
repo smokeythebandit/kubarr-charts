@@ -1,0 +1,22 @@
+apiVersion: v2
+name: alertmanager
+description: Prometheus Alertmanager - routes, groups, silences and delivers alerts from vmalert
+type: application
+version: 0.34.2+1
+appVersion: "0.34.2"
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+# Alertmanager's web UI is where alerts are read and silenced, so it stays a
+# normal catalog application: no kubarr.io/system (which would make the backend
+# refuse the install path) and no kubarr.io/hidden (which would drop it from the
+# catalog altogether).
+annotations:
+  kubarr.io/display-name: "Alertmanager"
+  kubarr.io/icon: "🔔"
+  kubarr.io/category: "monitoring"
+dependencies:
+  - name: kubarr-common
+    version: 0.7.0
+    repository: file://../../system/kubarr-common
