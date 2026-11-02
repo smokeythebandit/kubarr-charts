@@ -153,6 +153,7 @@ networkPolicy:
     - openresty  # Kubarr gateway proxy
     - sonarr
     - radarr
+    - lidarr
     - victoriametrics
   egressTo: []
 # Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.

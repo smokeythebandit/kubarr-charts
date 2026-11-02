@@ -112,6 +112,7 @@ kubarr:
         - "/custom-services.d/setup-indexers"
         - "/custom-services.d/setup-mediaservers"
         - "/kubarr-secrets/jellyfin"
+        - "/kubarr-secrets/sabnzbd"
 
 storage:
   mounts:
@@ -183,6 +184,13 @@ networkPolicy:
 # the API key it also registers in Jellyfin; Sonarr then adds a Jellyfin
 # connection so imports refresh the library. Empty disables it.
 jellyfinIntegration:
+  secretName: ""
+
+# SABnzbd download client. Kubarr sets secretName to a Secret (key: api-key)
+# holding the API key it also writes into SABnzbd's own configuration, so this
+# service can authenticate to it. Empty means Kubarr supplied no key, and the
+# SABnzbd download client is then left unconfigured.
+sabnzbdIntegration:
   secretName: ""
 
 # Metrics exporter (exportarr) - auto-scraped by VictoriaMetrics

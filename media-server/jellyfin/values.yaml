@@ -124,7 +124,7 @@ kubarr:
       # The node-local transcoding scratch volume is not listed: the
       # validator reserves storage.scratch.target on its own, so dropping
       # storage.scratch frees that path for a shared mount.
-      main: ["/config"]
+      main: ["/config", "/kubarr-secrets/jellyfin"]
 
 storage:
   mounts:

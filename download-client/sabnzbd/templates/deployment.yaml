@@ -80,6 +80,11 @@ spec:
             - name: setup-script
               mountPath: /custom-services.d/setup-apikey
               subPath: setup-apikey.sh
+            {{- if (default dict .Values.sabnzbdIntegration).secretName }}
+            - name: sabnzbd-api-key
+              mountPath: /kubarr-secrets/sabnzbd
+              readOnly: true
+            {{- end }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "sabnzbd.fullname" .)) | nindent 8 }}
@@ -88,4 +93,12 @@ spec:
           configMap:
             name: {{ include "sabnzbd.fullname" . }}-setup
             defaultMode: 0755
+        {{- if (default dict .Values.sabnzbdIntegration).secretName }}
+        - name: sabnzbd-api-key
+          secret:
+            secretName: {{ (default dict .Values.sabnzbdIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

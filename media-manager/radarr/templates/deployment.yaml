@@ -141,6 +141,11 @@ spec:
               mountPath: /kubarr-secrets/jellyfin
               readOnly: true
             {{- end }}
+            {{- if (default dict .Values.sabnzbdIntegration).secretName }}
+            - name: sabnzbd-api-key
+              mountPath: /kubarr-secrets/sabnzbd
+              readOnly: true
+            {{- end }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "radarr.fullname" .)) | nindent 8 }}
@@ -152,6 +157,14 @@ spec:
         - name: jellyfin-api-key
           secret:
             secretName: {{ (default dict .Values.jellyfinIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
+        {{- if (default dict .Values.sabnzbdIntegration).secretName }}
+        - name: sabnzbd-api-key
+          secret:
+            secretName: {{ (default dict .Values.sabnzbdIntegration).secretName }}
             items:
               - key: api-key
                 path: api-key

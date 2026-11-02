@@ -141,7 +141,7 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      main: ["/config", "/custom-services.d/setup-apikey"]
+      main: ["/config", "/custom-services.d/setup-apikey", "/kubarr-secrets/sabnzbd"]
 
 storage:
   mounts:
@@ -155,6 +155,13 @@ storage:
   media:
     existingClaim: media-data
 
+# SABnzbd API key. Kubarr sets secretName to a Secret (key: api-key) holding the
+# API key it also hands to Radarr/Sonarr/Lidarr, and this chart writes it into
+# sabnzbd.ini so those services can authenticate. Empty leaves the key SABnzbd
+# generated for itself in place; there is no default key.
+sabnzbdIntegration:
+  secretName: ""
+
 # Network policy configuration
 networkPolicy:
   enabled: true
@@ -162,6 +169,7 @@ networkPolicy:
     - openresty  # Kubarr gateway proxy
     - sonarr         # arr apps connecting to download client
     - radarr
+    - lidarr
     - victoriametrics  # metrics scraping
   egressTo: []       # download clients mainly need outbound internet
 # Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.

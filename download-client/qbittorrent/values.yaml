@@ -190,6 +190,7 @@ networkPolicy:
     - openresty  # Kubarr gateway proxy
     - sonarr         # arr apps connecting to download client
     - radarr
+    - lidarr
     - victoriametrics  # metrics scraping
   egressTo: []       # download clients mainly need outbound internet
 

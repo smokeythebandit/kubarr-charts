@@ -107,7 +107,7 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      main: ["/config", "/custom-services.d/setup-downloadclients"]
+      main: ["/config", "/custom-services.d/setup-downloadclients", "/kubarr-secrets/sabnzbd"]
 
 storage:
   mounts:
@@ -154,6 +154,13 @@ vpn:
   portForwarding:
     enabled: false
     upCommand: ""
+
+# SABnzbd download client. Kubarr sets secretName to a Secret (key: api-key)
+# holding the API key it also writes into SABnzbd's own configuration, so this
+# service can authenticate to it. Empty means Kubarr supplied no key, and the
+# SABnzbd download client is then left unconfigured.
+sabnzbdIntegration:
+  secretName: ""
 
 # Network policy configuration
 networkPolicy:

@@ -166,6 +166,38 @@ class InstallContractTests(unittest.TestCase):
                         result.returncode, 0,
                         f"{required} is declared required but an empty list rendered")
 
+    def test_a_mounted_managed_key_is_declared_on_both_sides(self):
+        """Kubarr owns some API keys on an application's behalf: it generates
+        the key, writes it into a Secret per namespace and passes only the
+        Secret's name as <link>Integration.secretName. A chart that mounts such
+        a key must therefore declare that value and reserve the mount path, or
+        the key arrives nowhere and a user mount can shadow it."""
+        for chart in charts():
+            values = values_of(chart)
+            for template in sorted((chart / "templates").glob("**/*")):
+                if not template.is_file():
+                    continue
+                for line in template.read_text().splitlines():
+                    marker = "/kubarr-secrets/"
+                    if marker not in line:
+                        continue
+                    link = line.split(marker, 1)[1].split("/")[0].strip('"\' ')
+                    if not link.isalpha():
+                        continue
+                    with self.subTest(chart=str(chart.relative_to(ROOT)), link=link):
+                        integration = values.get(f"{link}Integration")
+                        self.assertIsInstance(
+                            integration, dict,
+                            f"mounts a {link} key but declares no {link}Integration")
+                        self.assertIn("secretName", integration)
+                        self.assertEqual(
+                            integration["secretName"], "",
+                            "the chart must not name a Secret itself; Kubarr sets this")
+                        self.assertIn(
+                            f"{marker}{link}",
+                            declaration(values, "reserved", "main"),
+                            "a mounted key path must be reserved against user mounts")
+
     def test_victorialogs_requirement_tracks_its_storage_path(self):
         # The chart exposes the same path twice: as the wizard's requirement and
         # as the flag it passes to the binary. They must not drift apart.

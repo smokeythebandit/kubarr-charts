@@ -157,6 +157,7 @@ networkPolicy:
     - openresty  # Kubarr gateway proxy
     - sonarr
     - radarr
+    - lidarr
     - victoriametrics
   egressTo: []
 

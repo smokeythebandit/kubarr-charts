@@ -8,12 +8,13 @@ metadata:
 data:
   setup-apikey.sh: |
     #!/bin/bash
-    # Setup script to configure SABnzbd with a known API key
-    # This allows Radarr/Sonarr to auto-discover and connect to SABnzbd
+    # Setup script to configure SABnzbd's API key and network settings.
+    # Kubarr mounts the API key it also hands to Radarr/Sonarr/Lidarr, so those
+    # services can authenticate to SABnzbd. Without a key from Kubarr the key
+    # SABnzbd generated for itself is left alone -- never a built-in default.
 
     CONFIG_FILE="/config/sabnzbd.ini"
-    # Use a stable API key that Radarr/Sonarr can use
-    API_KEY="kubarr-sabnzbd-api-key-12345"
+    KEY_FILE="/kubarr-secrets/sabnzbd/api-key"
 
     echo "[setup] SABnzbd API key setup starting..."
 
@@ -32,35 +33,46 @@ data:
 
     echo "[setup] Config file found, checking settings..."
 
-    # Check if API key is already set to our known value
-    CURRENT_KEY=$(grep -E "^api_key\s*=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d ' ')
-
     # Wait a moment for SABnzbd to finish initial setup
     sleep 10
 
-    # Update or add the API key
-    if [ "$CURRENT_KEY" = "$API_KEY" ]; then
-      echo "[setup] API key already configured correctly"
-    elif grep -q "^api_key" "$CONFIG_FILE" 2>/dev/null; then
-      echo "[setup] Updating existing API key..."
-      sed -i "s/^api_key.*/api_key = $API_KEY/" "$CONFIG_FILE"
+    if [ -s "$KEY_FILE" ]; then
+      API_KEY=$(tr -d ' \t\r\n' < "$KEY_FILE")
     else
-      echo "[setup] Adding API key to config..."
-      # Find the [misc] section and add the api_key there
-      if grep -q "^\[misc\]" "$CONFIG_FILE"; then
-        sed -i "/^\[misc\]/a api_key = $API_KEY" "$CONFIG_FILE"
-      else
-        # If no [misc] section, add it
-        echo -e "\n[misc]\napi_key = $API_KEY" >> "$CONFIG_FILE"
-      fi
+      API_KEY=""
     fi
 
-    # Also set nzb_key for NZB uploads
-    if grep -q "^nzb_key" "$CONFIG_FILE" 2>/dev/null; then
-      sed -i "s/^nzb_key.*/nzb_key = $API_KEY/" "$CONFIG_FILE"
+    if [ -z "$API_KEY" ]; then
+      # No key from Kubarr: leave the key SABnzbd generated for itself in place.
+      echo "[setup] No SABnzbd key from Kubarr; keeping SABnzbd's own API key"
     else
-      if grep -q "^\[misc\]" "$CONFIG_FILE"; then
-        sed -i "/^\[misc\]/a nzb_key = $API_KEY" "$CONFIG_FILE"
+      # Check if API key is already set to the key Kubarr supplied
+      CURRENT_KEY=$(grep -E "^api_key\s*=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d ' ')
+
+      # Update or add the API key
+      if [ "$CURRENT_KEY" = "$API_KEY" ]; then
+        echo "[setup] API key already configured correctly"
+      elif grep -q "^api_key" "$CONFIG_FILE" 2>/dev/null; then
+        echo "[setup] Updating existing API key..."
+        sed -i "s|^api_key.*|api_key = $API_KEY|" "$CONFIG_FILE"
+      else
+        echo "[setup] Adding API key to config..."
+        # Find the [misc] section and add the api_key there
+        if grep -q "^\[misc\]" "$CONFIG_FILE"; then
+          sed -i "/^\[misc\]/a api_key = $API_KEY" "$CONFIG_FILE"
+        else
+          # If no [misc] section, add it
+          printf '\n[misc]\napi_key = %s\n' "$API_KEY" >> "$CONFIG_FILE"
+        fi
+      fi
+
+      # Also set nzb_key for NZB uploads
+      if grep -q "^nzb_key" "$CONFIG_FILE" 2>/dev/null; then
+        sed -i "s|^nzb_key.*|nzb_key = $API_KEY|" "$CONFIG_FILE"
+      else
+        if grep -q "^\[misc\]" "$CONFIG_FILE"; then
+          sed -i "/^\[misc\]/a nzb_key = $API_KEY" "$CONFIG_FILE"
+        fi
       fi
     fi
 
@@ -83,5 +95,5 @@ data:
       fi
     fi
 
-    echo "[setup] SABnzbd API key configured successfully"
+    echo "[setup] SABnzbd settings applied"
     echo "[setup] Note: SABnzbd may need a restart to pick up changes"
