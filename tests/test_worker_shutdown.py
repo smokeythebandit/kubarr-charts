@@ -6,7 +6,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, credential_args
 
 
 CHART = ROOT / "system/kubarr-worker"
@@ -18,6 +18,7 @@ def render(*values):
         "template",
         "worker-shutdown-test",
         str(chart_input(CHART)),
+        *credential_args(CHART),
     ]
     for value in values:
         command.extend(["--set", value])

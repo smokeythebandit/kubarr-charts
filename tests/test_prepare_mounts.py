@@ -8,7 +8,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, credential_args
 
 
 # uid that must own each prepared directory: the identity the application writes as.
@@ -39,7 +39,8 @@ WITHOUT_PREPARATION = ("indexer/jackett", "monitoring/headlamp", "system/kubarr-
 def workloads(chart):
     path = ROOT / chart
     result = subprocess.run(
-        [os.environ.get("HELM", "helm"), "template", path.name, str(chart_input(path))],
+        [os.environ.get("HELM", "helm"), "template", path.name, str(chart_input(path)),
+         *credential_args(path)],
         check=True, capture_output=True, text=True,
     )
     return [doc for doc in yaml.safe_load_all(result.stdout)

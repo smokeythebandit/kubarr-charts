@@ -1,3 +1,4 @@
+{{- include "postgresql.database.validate" . -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -63,7 +64,10 @@ spec:
             - name: POSTGRES_USER
               value: {{ .Values.database.user | quote }}
             - name: POSTGRES_PASSWORD
-              value: {{ .Values.database.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgresql.database.secretName" . }}
+                  key: password
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           livenessProbe:

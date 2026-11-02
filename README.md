@@ -6,6 +6,40 @@ Helm charts for Kubarr and the applications it manages. Charts are grouped under
 chart; use the Kubarr CLI to bootstrap the platform and its storage, database,
 monitoring, gateway, and worker services.
 
+## Database credentials (breaking upgrade)
+
+`system/postgresql`, `system/kubarr-backend` and `system/kubarr-worker` used
+to default to `database.password: kubarr`. These charts are published, so that
+string was the platform database password of every Kubarr installation, and
+that database holds the user table with its password hashes, the JWT signing
+key and the API keys Kubarr manages on an application's behalf. PostgreSQL
+also had no NetworkPolicy, leaving port 5432 reachable from every pod in the
+cluster.
+
+The charts now ship no password at all and refuse to render without one:
+
+```yaml
+database:
+  existingSecret: kubarr-db-app   # Secret with keys "password" and "uri"
+  # or, for a hand-rolled install:
+  password: "<one you generated>"
+```
+
+The Kubarr CLI creates `kubarr-db-app` in each of the three namespaces and
+passes `existingSecret`, so an installation driven by the CLI needs no action.
+
+**Upgrading an existing installation by hand:** supply the password the data
+directory was already initialised with — `kubarr`, for anything installed
+before this change. PostgreSQL ignores `POSTGRES_PASSWORD` for an existing
+`PGDATA`, so a new value here does not rotate anything; it only leaves the
+platform unable to log in to its own database. Rotate deliberately with
+`ALTER USER` afterwards, then update the Secret.
+
+PostgreSQL now also ships a NetworkPolicy admitting TCP 5432 from the
+`kubarr-backend` and `kubarr-worker` namespaces only. The CLI's own SQL runs
+through `kubectl exec` inside the database Pod, which never crosses the pod
+network.
+
 ## Declarative storage (breaking upgrade)
 
 **Read [STORAGE-MIGRATION.md](STORAGE-MIGRATION.md) before upgrading an existing

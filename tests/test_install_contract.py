@@ -21,7 +21,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import DATABASE_CHARTS, ROOT, chart_input
 
 
 # Fluent Bit shape-checks storage.mounts but never passes them to a pod: its
@@ -197,6 +197,28 @@ class InstallContractTests(unittest.TestCase):
                             f"{marker}{link}",
                             declaration(values, "reserved", "main"),
                             "a mounted key path must be reserved against user mounts")
+
+    def test_the_platform_database_ships_no_password(self):
+        """The platform database holds the user table, the password hashes,
+        the JWT signing key and every managed API key. It shipped with
+        `password: kubarr` in a public chart, and the installer never
+        overrode it, so one published string opened every deployment. A chart
+        that cannot render without being given a credential cannot regress to
+        that."""
+        for chart in charts():
+            if chart.name not in DATABASE_CHARTS:
+                continue
+            values = values_of(chart)
+            database = values.get("database") or {}
+            with self.subTest(chart=str(chart.relative_to(ROOT))):
+                self.assertEqual(database.get("password", ""), "",
+                                 "a default password here is a published credential")
+                self.assertEqual(database.get("existingSecret", ""), "")
+                result = render(chart)
+                self.assertNotEqual(result.returncode, 0,
+                                    "rendered with no credential at all")
+                self.assertIn("existingSecret", result.stderr,
+                              "the refusal must say how to supply one")
 
     def test_victorialogs_requirement_tracks_its_storage_path(self):
         # The chart exposes the same path twice: as the wizard's requirement and

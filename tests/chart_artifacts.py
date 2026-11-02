@@ -18,3 +18,18 @@ def chart_input(source):
     if not package.is_file():
         raise FileNotFoundError(f"Required chart package missing: {package}")
     return package
+
+
+# The platform database charts ship no default password: supplying one is the
+# installer's job, and the Kubarr CLI creates the Secret these names refer to.
+# A bare `helm template` of them is therefore expected to fail, so a test that
+# is examining something else has to hand them a credential first.
+DATABASE_CHARTS = ("postgresql", "kubarr-backend", "kubarr-worker")
+
+
+def credential_args(chart):
+    """`--set` arguments a chart needs before it will render at all."""
+    name = chart if isinstance(chart, str) else Path(chart).name
+    if name in DATABASE_CHARTS:
+        return ["--set", "database.existingSecret=kubarr-db-app"]
+    return []

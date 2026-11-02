@@ -8,7 +8,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, credential_args
 
 
 CHART = ROOT / "system/postgresql"
@@ -16,6 +16,7 @@ CHART = ROOT / "system/postgresql"
 
 def render(*values):
     command = [os.environ.get("HELM", "helm"), "template", CHART.name, str(chart_input(CHART))]
+    command.extend(credential_args(CHART))
     for value in values:
         command.extend(["--set", value])
     result = subprocess.run(command, check=True, capture_output=True, text=True)

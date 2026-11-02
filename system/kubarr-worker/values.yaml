@@ -15,7 +15,20 @@ database:
   namespace: kubarr-database
   name: kubarr
   user: kubarr
-  password: kubarr
+  # No default password. These charts are public, so a password committed here
+  # would be the password of every Kubarr install.
+  #
+  # existingSecret: name of a Secret in *this* namespace with keys `password`
+  # and `uri` (postgresql://user:password@host:5432/db), created by the Kubarr
+  # CLI -- a Secret is not readable across namespaces. It must equal
+  # `secretName`, which is where the Deployment reads the URI from. When it is
+  # set this chart renders no Secret of its own.
+  #
+  # Leave it empty only to let the chart template that Secret from
+  # `database.password`, which you must then set. Setting neither fails
+  # rendering rather than falling back to a known password.
+  existingSecret: ""
+  password: ""
   serviceName: kubarr-db-rw
   secretName: kubarr-db-app
 # Storage paths this chart's templates enforce, declared here so there is a

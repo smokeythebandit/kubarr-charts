@@ -7,7 +7,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, credential_args
 
 
 # Headlamp is a Kubernetes UI: it reads the cluster through whatever identity
@@ -17,7 +17,8 @@ NEEDS_API = ("monitoring/headlamp",)
 
 def render(chart):
     result = subprocess.run(
-        [os.environ.get("HELM", "helm"), "template", chart.name, str(chart_input(chart))],
+        [os.environ.get("HELM", "helm"), "template", chart.name, str(chart_input(chart)),
+         *credential_args(chart)],
         capture_output=True, text=True,
     )
     if result.returncode:
@@ -87,7 +88,8 @@ class PodHardeningTests(unittest.TestCase):
             with self.subTest(chart=str(chart.relative_to(ROOT))):
                 rendered = subprocess.run(
                     [os.environ.get("HELM", "helm"), "template", chart.name,
-                     str(chart_input(chart)), "--set", "namespace.create=true"],
+                     str(chart_input(chart)), *credential_args(chart),
+                     "--set", "namespace.create=true"],
                     capture_output=True, text=True)
                 self.assertEqual(rendered.returncode, 0, rendered.stderr)
                 namespaces = [d for d in yaml.safe_load_all(rendered.stdout)

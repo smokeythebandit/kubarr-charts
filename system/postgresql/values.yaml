@@ -10,10 +10,36 @@ image:
 database:
   name: kubarr
   user: kubarr
-  password: kubarr
+  # No default password. These charts are public, so a password committed here
+  # would be the password of every Kubarr install -- and this database holds
+  # the user table, the JWT signing key and the application API keys.
+  #
+  # existingSecret: name of a Secret in this namespace with keys `password`
+  # (the raw password) and `uri` (postgresql://user:password@host:5432/db).
+  # The Kubarr CLI creates `kubarr-db-app` in kubarr-database, kubarr-backend
+  # and kubarr-worker; a Secret is not readable across namespaces. When it is
+  # set this chart renders no Secret of its own and takes POSTGRES_PASSWORD
+  # from that one.
+  #
+  # Leave it empty only to let the chart template the Secret from
+  # `database.password`, which you must then set. Setting neither fails
+  # rendering rather than falling back to a known password.
+  existingSecret: ""
+  password: ""
 
 service:
   port: 5432
+
+# Network policy configuration. Only the platform's own components speak to
+# this database; application pods run third-party indexer and plugin code and
+# have no business reaching port 5432. The Kubarr CLI's own SQL runs through
+# `kubectl exec` inside the database Pod, so it needs no ingress entry here.
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - kubarr-backend  # platform API: users, settings, catalog state
+    - kubarr-worker  # lifecycle reconciler
+  egressTo: []
 
 persistence:
   size: 5Gi

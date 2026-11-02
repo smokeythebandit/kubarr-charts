@@ -8,7 +8,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, credential_args
 
 
 class PackageTests(unittest.TestCase):
@@ -41,6 +41,7 @@ class PackageTests(unittest.TestCase):
                         continue
                     rendered = subprocess.check_output(
                         [helm, "template", "package-test", str(package),
+                         *credential_args(metadata["name"]),
                          "--kube-version", "1.35.8"], text=True,
                     )
                     resources = [r for r in yaml.safe_load_all(rendered) if r]

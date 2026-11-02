@@ -13,7 +13,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, credential_args
 
 
 CILIUM_API_VERSION = "cilium.io/v2"
@@ -39,6 +39,7 @@ def charts():
 
 def render(chart):
     command = [os.environ.get("HELM", "helm"), "template", chart.name, str(chart_input(chart))]
+    command.extend(credential_args(chart))
     command += ["--api-versions", CILIUM_API_VERSION]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:

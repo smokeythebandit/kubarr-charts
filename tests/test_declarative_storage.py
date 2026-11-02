@@ -8,7 +8,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, credential_args
 
 
 PRIVATE_CONFIG = (
@@ -61,6 +61,7 @@ def render(chart, overrides=None, upgrade=False):
         result = subprocess.run(
             [os.environ.get("HELM", "helm"), "template", path.name,
              str(chart_input(path)), "-f", str(values),
+             *credential_args(path),
              *(["--is-upgrade"] if upgrade else [])],
             capture_output=True, text=True,
         )
