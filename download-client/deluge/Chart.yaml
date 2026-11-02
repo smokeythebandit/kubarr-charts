@@ -2,7 +2,7 @@ apiVersion: v2
 name: deluge
 description: Lightweight, cross-platform BitTorrent client with web interface
 type: application
-version: 2.2.0+11
+version: 2.2.0+12
 appVersion: "2.2.0"
 keywords:
   - deluge

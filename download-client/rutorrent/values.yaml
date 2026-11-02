@@ -60,6 +60,22 @@ rutorrent:
     timeoutSeconds: 5
     failureThreshold: 3
 
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: ["/downloads"]
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      main: ["/config", "/var/lib/nginx"]
+
 storage:
   mounts:
     - {name: downloads, source: downloads/rutorrent, target: /downloads, mode: read-write}

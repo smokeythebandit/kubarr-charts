@@ -1,6 +1,6 @@
 {{- if .Values.machineLearning.enabled }}
 {{- if and (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) -}}
-{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.workloads.machineLearning.mounts "label" "storage.workloads.machineLearning.mounts" "reservedPaths" (list "/nfs")) -}}
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.workloads.machineLearning.mounts "label" "storage.workloads.machineLearning.mounts" "reservedPaths" .Values.kubarr.storage.reserved.machineLearning) -}}
 {{- if ne (len .Values.storage.workloads.machineLearning.mounts) 1 }}{{ fail "Immich NFS model cache requires one mount at /cache" }}{{ end -}}
 {{- if or (ne (index .Values.storage.workloads.machineLearning.mounts 0).target "/cache") (ne (index .Values.storage.workloads.machineLearning.mounts 0).mode "read-write") }}{{ fail "Immich model cache requires writable /cache" }}{{ end -}}
 {{- end -}}

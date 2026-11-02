@@ -89,7 +89,7 @@ spec:
             {{- toYaml .Values.rutorrent.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (list "/config" "/var/lib/nginx")) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" .Values.kubarr.storage.reserved.main) | nindent 12 }}
             - name: nginx-state
               mountPath: /var/lib/nginx
       volumes:

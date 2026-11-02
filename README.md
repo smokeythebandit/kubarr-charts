@@ -54,6 +54,36 @@ that default private-config StorageClass. All other chart defaults are in
 their `values.yaml` files; the migration document lists claim and directory
 preservation, first-upgrade and `storage.media.create=false` handoff steps.
 
+## Declared install contract
+
+Two path lists in a chart's `values.yaml` have two readers:
+
+```yaml
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: ["/downloads"]
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      main: ["/config", "/custom-cont-init.d"]
+```
+
+The chart's templates hand these same lists to `kubarr-common`'s storage
+validator, and Kubarr's backend reads them out of `values.yaml`
+(`services/install_options.rs`) to build the install wizard's mount editor.
+`main` is the primary workload; any other key must name a
+`storage.workloads.<name>` entry in the same file. A chart that declares
+nothing gets `[]` required and `["/config"]` reserved, matching the validator's
+own default.
+
+These lists used to live in a table keyed by application name inside the
+backend, where they drifted: Radarr grew two reserved paths the table never
+learned, and Alertmanager's private claim at `/alertmanager` was reserved by
+nothing. `tests/test_install_contract.py` now renders every declared path to
+prove the chart really refuses it, so a declaration cannot become a wish.
+
 ## Local validation
 
 Use Helm 4.3.0 (the CI version), LuaJIT, Python 3, and PyYAML 6.0.3. Install

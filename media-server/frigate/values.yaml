@@ -42,6 +42,25 @@ config: |
             roles:
               - detect
 
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      # Recordings and snapshots; Frigate refuses to start without them.
+      main: ["/media/frigate"]
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # /config is the private claim, /dev/shm and /tmp/cache are the
+      # chart's own in-memory volumes for decoded frames and segments.
+      main: ["/config", "/dev/shm", "/tmp/cache"]
+
 storage:
   mounts:
     - {name: recordings, source: frigate, target: /media/frigate, mode: read-write}

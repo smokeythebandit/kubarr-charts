@@ -106,7 +106,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            {{- include "kubarr-common.storage.appMounts" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" .Values.kubarr.storage.reserved.main) | nindent 12 }}
       volumes:
         {{- if .Values.storage.mounts }}
         {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
