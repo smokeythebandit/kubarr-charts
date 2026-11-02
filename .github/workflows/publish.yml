@@ -50,8 +50,20 @@ jobs:
           shopt -s failglob
           for pkg in "$RUNNER_TEMP/helm-packages/"*.tgz; do
             metadata=$(helm show chart "$pkg")
-            chart_name=$(awk '$1 == "name:" {print $2}' <<< "$metadata")
-            version=$(awk '$1 == "version:" {print $2}' <<< "$metadata")
+            # Anchored to column 0: `helm show chart` prints the chart's
+            # dependencies too, and `$1 == "version:"` matched their indented
+            # lines as well. cert-manager lists its dependency before its own
+            # version, so the check resolved the dependency's v1.21.3, found
+            # the older 1.21.3 in the registry and skipped the push -- leaving
+            # chart sync pulling a version that was never published. App
+            # charts escaped it only because their dependency block sits after
+            # `version:`, which made the value two lines and the check error.
+            chart_name=$(awk '/^name:/ {print $2; exit}' <<< "$metadata")
+            version=$(awk '/^version:/ {print $2; exit}' <<< "$metadata")
+            if [ -z "$chart_name" ] || [ -z "$version" ]; then
+              echo "::error::could not read name/version from $pkg"
+              exit 1
+            fi
             if helm show chart "$OCI_REPO/$chart_name" --version "$version" >/dev/null 2>&1; then
               echo "Skipping $chart_name:$version (already published)"
               echo "- \`${chart_name}:${version}\` already exists" >> "$GITHUB_STEP_SUMMARY"
