@@ -22,6 +22,14 @@ GUARDED = {
     "CiliumNetworkPolicy": ("cilium.io", "ciliumnetworkpolicies"),
     "CiliumClusterwideNetworkPolicy": ("cilium.io", "ciliumclusterwidenetworkpolicies"),
     "NetworkPolicy": ("networking.k8s.io", "networkpolicies"),
+    # Recyclarr ships a CronJob. The worker held batch/jobs but not
+    # batch/cronjobs, so this guard was blind to the same class of break.
+    "CronJob": ("batch", "cronjobs"),
+    "Job": ("batch", "jobs"),
+    "ClusterRole": ("rbac.authorization.k8s.io", "clusterroles"),
+    "ClusterRoleBinding": ("rbac.authorization.k8s.io", "clusterrolebindings"),
+    "Role": ("rbac.authorization.k8s.io", "roles"),
+    "RoleBinding": ("rbac.authorization.k8s.io", "rolebindings"),
 }
 
 

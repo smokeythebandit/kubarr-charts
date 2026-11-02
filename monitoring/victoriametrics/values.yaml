@@ -56,6 +56,22 @@ persistence:
   storageClass: ""
   accessMode: ReadWriteOnce
 
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: ["/victoria-metrics-data"]
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      main: ["/etc/prometheus", "/tmp"]
+
 storage:
   mounts:
     - {name: metrics-data, source: system/victoriametrics, target: /victoria-metrics-data, mode: read-write}
@@ -80,6 +96,7 @@ networkPolicy:
   ingressFrom:
     - grafana  # for queries
     - kubarr-backend  # Kubarr backend for monitoring
+    - vmalert  # rule evaluation queries, plus remote write/read of ALERTS state
   # VictoriaMetrics needs to scrape all app namespaces
   scrapeNamespaces:
     # Cilium's agents export Hubble flow metrics, which is where the network
@@ -105,6 +122,14 @@ networkPolicy:
     - sabnzbd
     - victorialogs
     - fluent-bit
+    # Workload-level metrics: pod restarts, deployment availability, PVC phase.
+    # Without this the alert rules that read kube_* evaluate against nothing.
+    - kube-state-metrics
+    - vmalert
+    - alertmanager
+    - prowlarr
+    - lidarr
+    - navidrome
 # Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
 vpa:
   enabled: false
