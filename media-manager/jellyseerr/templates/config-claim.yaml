@@ -1,2 +1,2 @@
-{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "jellyseerr.fullname" .) "replicas" .Values.jellyseerr.replicaCount "reservedPaths" .Values.kubarr.storage.reserved.main) -}}
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "jellyseerr.fullname" .) "replicas" .Values.jellyseerr.replicaCount "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) -}}
 {{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "jellyseerr.fullname" .)) }}

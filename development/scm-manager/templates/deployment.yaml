@@ -82,7 +82,7 @@ spec:
             {{- toYaml $app.resources | nindent 12 }}
           volumeMounts:
             {{- if and (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) }}
-            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" .Values.kubarr.storage.reserved.main) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) | nindent 12 }}
             {{- else }}
             - {name: home, mountPath: /var/lib/scm}
             {{- end }}

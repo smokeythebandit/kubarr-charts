@@ -4,7 +4,7 @@
 {{- $app := .Values.tdarr -}}
 {{- $mounts := .Values.storage.workloads.node.mounts -}}
 {{- $label := "storage.workloads.node.mounts" -}}
-{{- $reserved := .Values.kubarr.storage.reserved.node -}}
+{{- $reserved := (dig "storage" "reserved" "node" (list) (default dict .Values.kubarr)) -}}
 {{/* Validate under this workload's own key first: appMounts reports every
      list as storage.mounts. */}}
 {{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" $mounts "label" $label "reservedPaths" $reserved) -}}

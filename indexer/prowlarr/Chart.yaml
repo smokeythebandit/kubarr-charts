@@ -2,7 +2,7 @@ apiVersion: v2
 name: prowlarr
 description: Indexer manager and proxy for Usenet and BitTorrent indexers
 type: application
-version: 2.7.0+4
+version: 2.7.0+5
 appVersion: "2.7.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI

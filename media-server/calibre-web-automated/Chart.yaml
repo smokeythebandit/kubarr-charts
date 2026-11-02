@@ -2,7 +2,7 @@ apiVersion: v2
 name: calibre-web-automated
 description: Ebook library server with automatic ingest, conversion and metadata
 type: application
-version: 4.0.8+2
+version: 4.0.8+3
 appVersion: "4.0.8"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI

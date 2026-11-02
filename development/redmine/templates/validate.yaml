@@ -8,7 +8,7 @@
 {{- if and (or (not .Values.database.bundled.enabled) .Values.database.bundled.persistence.existingClaim .Values.database.bundled.persistence.storageClassName) (or .Values.storage.attachments.existingClaim .Values.storage.attachments.storageClassName) -}}{{- include "kubarr-common.storage.assertRetainedMedia" . -}}{{- end -}}
 {{- if and .Values.database.bundled.enabled (ne (int .Values.database.port) 5432) }}{{ fail "Bundled PostgreSQL listens on port 5432" }}{{ end }}
 {{- if and (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) -}}
-{{- range $target := .Values.kubarr.storage.required.main -}}{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" $ "mounts" $.Values.storage.mounts "target" $target "reservedPaths" $.Values.kubarr.storage.reserved.main) -}}{{- end -}}
+{{- range $target := (dig "storage" "required" "main" (list "/usr/src/redmine/files") (default dict $.Values.kubarr)) -}}{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" $ "mounts" $.Values.storage.mounts "target" $target "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict $.Values.kubarr))) -}}{{- end -}}
 {{- end -}}
 {{- if and .Values.database.bundled.enabled (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) -}}
 {{- $_ := include "redmine.dbSubPath" . -}}

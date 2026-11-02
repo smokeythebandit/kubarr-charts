@@ -305,6 +305,29 @@ class InstallContractTests(unittest.TestCase):
                     "bind it: the only workloads here are "
                     f"{sorted(kinds & {'CronJob', 'Job'})}")
 
+    def test_a_chart_renders_without_the_values_it_added_this_release(self):
+        """Kubarr upgrades with `helm upgrade --reuse-values`, which replays
+        the old release's values and does not merge the new chart's defaults.
+        A values key introduced in this release is therefore simply absent on
+        the first upgrade, and a template that walks into it fails:
+
+            at <.Values.kubarr.storage.reserved.main>:
+            nil pointer evaluating interface {}.storage
+
+        That broke the upgrade of every chart that gained the kubarr.storage
+        block. Rendering with the block removed is what an upgrade from the
+        previous release actually looks like."""
+        for chart in charts():
+            if yaml.safe_load((chart / "Chart.yaml").read_text()).get("type") == "library":
+                continue
+            overrides = {"kubarr": None, "database": {"existingSecret": "kubarr-db-app"}}
+            with self.subTest(chart=str(chart.relative_to(ROOT))):
+                result = render(chart, overrides)
+                self.assertEqual(
+                    result.returncode, 0,
+                    "a chart must render when the values it added are absent:\n"
+                    + result.stderr)
+
     def test_victorialogs_requirement_tracks_its_storage_path(self):
         # The chart exposes the same path twice: as the wizard's requirement and
         # as the flag it passes to the binary. They must not drift apart.

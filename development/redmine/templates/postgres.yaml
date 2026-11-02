@@ -68,7 +68,7 @@ spec:
             {{- toYaml .Values.database.bundled.resources | nindent 12 }}
           volumeMounts:
             {{- if and (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) }}
-            {{- include "kubarr-common.storage.appMounts" (dict "root" . "mounts" .Values.storage.workloads.postgres.mounts "reservedPaths" .Values.kubarr.storage.reserved.postgres) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "mounts" .Values.storage.workloads.postgres.mounts "reservedPaths" (dig "storage" "reserved" "postgres" (list) (default dict .Values.kubarr))) | nindent 12 }}
             {{- else }}
             - {name: data, mountPath: /var/lib/postgresql/data}
             {{- end }}

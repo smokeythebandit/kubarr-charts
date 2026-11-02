@@ -1,3 +1,3 @@
-{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "tdarr.fullname" .) "replicas" .Values.tdarr.replicaCount "reservedPaths" .Values.kubarr.storage.reserved.main) -}}
-{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.workloads.node.mounts "label" "storage.workloads.node.mounts" "reservedPaths" .Values.kubarr.storage.reserved.node) -}}
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "tdarr.fullname" .) "replicas" .Values.tdarr.replicaCount "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) -}}
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.workloads.node.mounts "label" "storage.workloads.node.mounts" "reservedPaths" (dig "storage" "reserved" "node" (list) (default dict .Values.kubarr))) -}}
 {{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "tdarr.fullname" .)) }}

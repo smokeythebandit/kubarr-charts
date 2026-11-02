@@ -1,6 +1,6 @@
 {{- include "tdarr.validate" . -}}
 {{- $app := .Values.tdarr -}}
-{{- $reserved := .Values.kubarr.storage.reserved.main -}}
+{{- $reserved := (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr)) -}}
 {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" $app.env.PUID "gid" $app.env.PGID) -}}
 apiVersion: apps/v1
 kind: Deployment

@@ -1,0 +1,140 @@
+name: Install gate
+
+# Rendering tests cannot see a claim nothing binds, a tag that was never
+# published, a pod its own namespace refuses to admit, or an upgrade that
+# breaks where the install works. All four shipped on the same day with the
+# suite green, so every chart that changes is installed, asserted ready and
+# upgraded from its newest published revision in a real kind cluster before
+# publish.yml is allowed to push anything.
+
+on:
+  workflow_call:
+    inputs:
+      charts:
+        description: "'changed', 'all', or a comma-separated list of chart names"
+        type: string
+        default: changed
+      base:
+        description: Git ref or SHA that 'changed' compares against
+        type: string
+        default: origin/main
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      charts:
+        description: "'changed', 'all', or a comma-separated list of chart names"
+        type: string
+        default: all
+      base:
+        description: Git ref or SHA that 'changed' compares against
+        type: string
+        default: origin/main
+  schedule:
+    # Nightly, after the daily dependency bumps have had time to land.
+    - cron: "40 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    # A chart gets a 10 minute budget each for install and upgrade; a forced
+    # full run is 40-odd charts of that, so the ceiling is generous on purpose.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          # 'changed' needs history on both sides of the comparison.
+          fetch-depth: 0
+
+      - name: Choose the targets
+        id: targets
+        env:
+          # A pull request compares against main. A push to main compares
+          # against the commit it is replacing, because against origin/main it
+          # would compare HEAD with itself and install nothing. Schedules and
+          # manual runs cover everything.
+          EVENT: ${{ github.event_name }}
+          INPUT_CHARTS: ${{ inputs.charts }}
+          INPUT_BASE: ${{ inputs.base }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          charts="${INPUT_CHARTS:-}"
+          base="${INPUT_BASE:-}"
+          case "$EVENT" in
+            schedule) charts="${charts:-all}" ;;
+            pull_request) charts="${charts:-changed}"; base="${base:-origin/main}" ;;
+          esac
+          charts="${charts:-changed}"
+          base="${base:-origin/main}"
+          if [ "$base" = "origin/main" ]; then
+            git fetch --no-tags origin main
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$base" = "$PUSH_BEFORE" ]; then
+            # The replaced commit can be outside a shallow fetch on a force push.
+            git fetch --no-tags origin "$PUSH_BEFORE" || base="origin/main"
+          fi
+          echo "charts=$charts" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Selecting '$charts' against '$base'" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2
+        with:
+          version: v4.3.0
+
+      - name: Install kind and kubectl
+        env:
+          KIND_VERSION: v0.33.0
+          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+          # Matches the kind node image the harness pins.
+          KUBECTL_VERSION: v1.35.8
+          KUBECTL_SHA256: 874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf
+        run: |
+          set -euo pipefail
+          curl -fsSLo /tmp/kind \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  /tmp/kind" | sha256sum -c -
+          curl -fsSLo /tmp/kubectl \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          echo "${KUBECTL_SHA256}  /tmp/kubectl" | sha256sum -c -
+          sudo install -m 0755 /tmp/kind /usr/local/bin/kind
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+          kind version
+          kubectl version --client=true
+
+      - name: Enable the host NFS server
+        # The shared media export is a privileged nfs-server-alpine container
+        # using the runner's own kernel, as the installer acceptance run does.
+        run: |
+          set -euo pipefail
+          sudo modprobe nfs
+          sudo modprobe nfsd
+          grep -E '^nodev[[:space:]]+(nfs|nfsd)$' /proc/filesystems
+
+      - name: Install harness dependencies
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/gate"
+          "$RUNNER_TEMP/gate/bin/python" -m pip install --quiet PyYAML==6.0.3
+
+      - name: Install, assert ready and upgrade every selected chart
+        run: |
+          "$RUNNER_TEMP/gate/bin/python" -u tests/e2e/install_gate.py \
+            --charts "${{ steps.targets.outputs.charts }}" \
+            --base "${{ steps.targets.outputs.base }}" \
+            --artifacts "$RUNNER_TEMP/gate-artifacts"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: install-gate-diagnostics
+          path: ${{ runner.temp }}/gate-artifacts
+          if-no-files-found: ignore
+          retention-days: 7

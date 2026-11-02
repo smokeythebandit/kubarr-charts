@@ -13,8 +13,20 @@ jobs:
     permissions:
       contents: read
 
-  charts:
+  # Linting proves a chart renders; this proves it installs, reaches ready and
+  # upgrades from what is already published. Four charts were published broken
+  # on a green `validate`, so nothing is pushed until both gates pass.
+  install-gate:
     needs: validate
+    uses: ./.github/workflows/install-gate.yml
+    permissions:
+      contents: read
+    with:
+      charts: changed
+      base: ${{ github.event.before }}
+
+  charts:
+    needs: [validate, install-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: read

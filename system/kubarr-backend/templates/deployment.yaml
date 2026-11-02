@@ -52,7 +52,7 @@ spec:
               value: {{ (index .Values.storage.mounts 0).target | quote }}
             {{- end }}
           volumeMounts:
-            {{- include "kubarr-common.storage.appMounts" (dict "root" . "allowRoot" true "reservedPaths" .Values.kubarr.storage.reserved.main) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "allowRoot" true "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) | nindent 12 }}
             - name: tmp
               mountPath: /tmp
           livenessProbe:

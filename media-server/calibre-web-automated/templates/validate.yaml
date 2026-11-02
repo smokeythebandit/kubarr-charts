@@ -7,7 +7,7 @@
      and both are rewritten by the ingest service. Both paths come from
      kubarr.storage.required.main, which the install wizard reads as well. */}}
 {{- $sources := dict -}}
-{{- range $target := .Values.kubarr.storage.required.main -}}{{- $_ := set $sources $target (include "kubarr-common.storage.requiredSource" (dict "root" $ "mounts" $.Values.storage.mounts "target" $target)) -}}{{- end -}}
+{{- range $target := (dig "storage" "required" "main" (list "/calibre-library" "/cwa-book-ingest") (default dict $.Values.kubarr)) -}}{{- $_ := set $sources $target (include "kubarr-common.storage.requiredSource" (dict "root" $ "mounts" $.Values.storage.mounts "target" $target)) -}}{{- end -}}
 {{- $library := index $sources "/calibre-library" -}}
 {{- $ingest := index $sources "/cwa-book-ingest" -}}
 {{/* Everything in the ingest folder is deleted once processed, so it must not

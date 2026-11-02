@@ -1,9 +1,9 @@
 {{- include "recyclarr.validate" . -}}
 {{- if include "recyclarr.configPersistent" . -}}
-{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "recyclarr.fullname" .) "replicas" 1 "reservedPaths" .Values.kubarr.storage.reserved.main) -}}
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "recyclarr.fullname" .) "replicas" 1 "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) -}}
 {{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "recyclarr.fullname" .)) }}
 {{- else -}}
 {{- /* validateConfig is what enforces the reserved paths, so an ephemeral
        /config must still validate the user's mounts against them. */ -}}
-{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.mounts "reservedPaths" .Values.kubarr.storage.reserved.main) -}}
+{{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.mounts "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) -}}
 {{- end -}}

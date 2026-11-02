@@ -1,4 +1,4 @@
 {{- include "kubarr-common.storage.validateMounts" (dict "root" . "mounts" .Values.storage.mounts) -}}
 {{- if ne (len .Values.storage.mounts) 1 }}{{ fail "system PostgreSQL requires one explicit persistent NFS data mount" }}{{ end -}}
-{{- if or (ne (index .Values.storage.mounts 0).target (first .Values.kubarr.storage.required.main)) (ne (index .Values.storage.mounts 0).mode "read-write") }}{{ fail (printf "system PostgreSQL requires a writable %s mount" (first .Values.kubarr.storage.required.main)) }}{{ end -}}
+{{- if or (ne (index .Values.storage.mounts 0).target (first (dig "storage" "required" "main" (list "/var/lib/postgresql/data") (default dict .Values.kubarr)))) (ne (index .Values.storage.mounts 0).mode "read-write") }}{{ fail (printf "system PostgreSQL requires a writable %s mount" (first (dig "storage" "required" "main" (list "/var/lib/postgresql/data") (default dict .Values.kubarr)))) }}{{ end -}}
 {{- include "kubarr-common.storage.mediaClaim" (dict "root" .) }}

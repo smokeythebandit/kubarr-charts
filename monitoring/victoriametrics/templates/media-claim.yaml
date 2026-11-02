@@ -1,2 +1,2 @@
-{{- range $target := .Values.kubarr.storage.required.main -}}{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" $ "mounts" $.Values.storage.mounts "target" $target "reservedPaths" $.Values.kubarr.storage.reserved.main) -}}{{- end -}}
+{{- range $target := (dig "storage" "required" "main" (list "/victoria-metrics-data") (default dict $.Values.kubarr)) -}}{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" $ "mounts" $.Values.storage.mounts "target" $target "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict $.Values.kubarr))) -}}{{- end -}}
 {{- include "kubarr-common.storage.mediaClaim" (dict "root" .) }}
