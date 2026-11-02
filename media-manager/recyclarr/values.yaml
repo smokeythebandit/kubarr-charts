@@ -149,14 +149,22 @@ storage:
   # Pending with nothing to consume it, and the install waits on a bind that
   # cannot happen until it times out and rolls back.
   #
-  # Set create: true with a storageClassName whose binding mode is Immediate,
-  # or point existingClaim at a bound claim, to keep the cache across runs.
-  config:
-    migrationConfirmed: false
-    create: false
-    existingClaim: ""
-    size: 2Gi
-    storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
+  # The key is absent rather than present-and-disabled, because Kubarr's
+  # install wizard reads these defaults and rejects a private config that
+  # neither creates a claim nor names an existing one ("Select a distinct
+  # existing private config claim"). No key at all means this chart simply has
+  # no private config for the wizard to offer.
+  #
+  # To keep the cache across runs, add the block back with create: true and a
+  # storageClassName whose binding mode is Immediate, or point existingClaim
+  # at a claim that is already bound:
+  #
+  #   config:
+  #     migrationConfirmed: false
+  #     create: true
+  #     existingClaim: ""
+  #     size: 2Gi
+  #     storageClassName: kubarr-nfs
   media:
     # Not mounted anywhere by this chart; named only so the shared storage
     # validator can prove the private config claim is a different claim.

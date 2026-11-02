@@ -31,8 +31,17 @@ PRIVATE_CONFIG_ONLY = (
 # suspended CronJob, so a WaitForFirstConsumer claim would never bind and the
 # install would wait for it until it timed out.
 CLAIM_OPT_IN = {
+    # The whole block is absent from the chart's values, so opting in supplies
+    # every key the claim contract needs.
     "media-manager/recyclarr": {
-        "storage": {"config": {"create": True, "storageClassName": "kubarr-nfs"}}
+        "storage": {
+            "config": {
+                "create": True,
+                "existingClaim": "",
+                "size": "2Gi",
+                "storageClassName": "kubarr-nfs",
+            }
+        }
     },
 }
 # Where a chart's private claim lands when it is not /config, because the

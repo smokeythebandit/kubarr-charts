@@ -97,6 +97,6 @@ bind at install time because this chart's only workload is a CronJob that
 creates no pod while suspended.
 */}}
 {{- define "recyclarr.configPersistent" -}}
-{{- $config := .Values.storage.config -}}
+{{- $config := default dict .Values.storage.config -}}
 {{- if or $config.create (ne (default "" $config.existingClaim) "") -}}true{{- end -}}
 {{- end -}}
