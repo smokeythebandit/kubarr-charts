@@ -5,7 +5,31 @@ cert-manager:
   replicaCount: 1
   prometheus:
     enabled: false
+  # Upstream ships no requests or limits for any of the three workloads, which
+  # leaves three unbounded pods on the cluster. These are sized for a homelab
+  # issuing a handful of certificates, not for a public CA.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
   webhook:
     replicaCount: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
   cainjector:
     replicaCount: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi

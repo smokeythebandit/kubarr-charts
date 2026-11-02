@@ -9,4 +9,12 @@ replicaCount: 1
 service:
   port: 443
   targetPort: 6443
-resources: {}
+# The webhook answers DNS-01 solver calls from cert-manager: short, rare and
+# tiny. Bounded so an unbounded system pod cannot crowd a node.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

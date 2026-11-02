@@ -220,6 +220,29 @@ class InstallContractTests(unittest.TestCase):
                 self.assertIn("existingSecret", result.stderr,
                               "the refusal must say how to supply one")
 
+    def test_every_shipped_container_is_bounded(self):
+        """An unbounded pod competes with the applications for the node it
+        shares. cert-manager's three workloads and the DNS webhook shipped
+        with neither requests nor limits."""
+        for chart in charts():
+            if yaml.safe_load((chart / "Chart.yaml").read_text()).get("type") == "library":
+                continue
+            result = render(chart, {"database": {"existingSecret": "kubarr-db-app"}})
+            if result.returncode:
+                continue
+            for doc in yaml.safe_load_all(result.stdout):
+                if not doc or doc.get("kind") not in (
+                        "Deployment", "StatefulSet", "DaemonSet", "CronJob"):
+                    continue
+                spec = (doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+                        if doc["kind"] == "CronJob" else doc["spec"]["template"]["spec"])
+                for container in spec["containers"]:
+                    with self.subTest(chart=str(chart.relative_to(ROOT)),
+                                      container=container["name"]):
+                        resources = container.get("resources") or {}
+                        self.assertTrue(resources.get("requests"), "no requests")
+                        self.assertTrue(resources.get("limits"), "no limits")
+
     def test_victorialogs_requirement_tracks_its_storage_path(self):
         # The chart exposes the same path twice: as the wizard's requirement and
         # as the flag it passes to the binary. They must not drift apart.
