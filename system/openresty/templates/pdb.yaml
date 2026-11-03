@@ -1,0 +1,6 @@
+{{- if .Values.enabled }}
+{{- $replicas := int (include "kubarr-common.ha.replicas" (dict "root" . "max" 3)) }}
+{{- with include "kubarr-common.ha.pdb" (dict "root" . "replicas" $replicas "name" (include "openresty.fullname" .) "namespace" .Values.namespace.name "selector" (include "openresty.haSelector" . | fromYaml)) }}
+{{ . }}
+{{- end }}
+{{- end }}

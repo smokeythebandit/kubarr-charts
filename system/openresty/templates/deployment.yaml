@@ -1,4 +1,5 @@
 {{- if .Values.enabled }}
+{{- $replicas := int (include "kubarr-common.ha.replicas" (dict "root" . "max" 3)) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +9,7 @@ metadata:
     {{- include "openresty.labels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ $replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: kubarr-gateway
@@ -21,6 +22,9 @@ spec:
         app.kubernetes.io/name: kubarr-gateway
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      {{- with include "kubarr-common.ha.spread" (dict "root" . "replicas" $replicas "selector" (include "openresty.haSelector" . | fromYaml)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}

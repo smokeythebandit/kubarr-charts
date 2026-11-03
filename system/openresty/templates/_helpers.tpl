@@ -9,3 +9,11 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/name: kubarr-gateway
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Pod selector labels shared by the Deployment, its spread constraints and its PDB.
+*/}}
+{{- define "openresty.haSelector" -}}
+app.kubernetes.io/name: kubarr-gateway
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}

@@ -2,7 +2,6 @@ enabled: true
 namespace:
   create: true
   name: openresty
-replicaCount: 1
 image:
   repository: openresty/openresty
   pullPolicy: IfNotPresent

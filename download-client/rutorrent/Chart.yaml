@@ -25,5 +25,5 @@ annotations:
   kubarr.io/category: "download-client"
 dependencies:
   - name: kubarr-common
-    version: 0.7.0
+    version: 0.8.0
     repository: file://../../system/kubarr-common

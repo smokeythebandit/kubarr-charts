@@ -1,0 +1,4 @@
+{{- $replicas := int (include "kubarr-common.ha.replicas" (dict "root" . "max" 2)) }}
+{{- with include "kubarr-common.ha.pdb" (dict "root" . "replicas" $replicas "name" (include "kubarr-frontend.fullname" .) "namespace" .Values.namespace.name "selector" (include "kubarr-frontend.haSelector" . | fromYaml)) }}
+{{ . }}
+{{- end }}

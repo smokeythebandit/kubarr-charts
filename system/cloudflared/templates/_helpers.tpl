@@ -16,7 +16,7 @@ Create a default fully qualified app name.
 Common labels
 */}}
 {{- define "cloudflared.labels" -}}
-helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 app.kubernetes.io/name: {{ include "cloudflared.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
@@ -42,3 +42,10 @@ Service account name
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Pod selector labels shared by the Deployment, its spread constraints and its PDB.
+*/}}
+{{- define "cloudflared.haSelector" -}}
+{{ include "cloudflared.selectorLabels" . }}
+{{- end -}}

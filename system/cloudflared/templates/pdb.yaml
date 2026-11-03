@@ -1,0 +1,4 @@
+{{- $replicas := int .Values.replicaCount }}
+{{- with include "kubarr-common.ha.pdb" (dict "root" . "replicas" $replicas "name" (include "cloudflared.fullname" .) "namespace" .Release.Namespace "selector" (include "cloudflared.haSelector" . | fromYaml)) }}
+{{ . }}
+{{- end }}

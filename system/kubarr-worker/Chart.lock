@@ -1,6 +1,6 @@
 dependencies:
 - name: kubarr-common
   repository: file://../kubarr-common
-  version: 0.7.0
-digest: sha256:ac47243b8a7077bdc7d8511ca681f31320a2284879849b58655484017f021cef
-generated: "2026-10-31T15:14:22.808813666+01:00"
+  version: 0.8.0
+digest: sha256:4005015513e6b958695dd78fd4bd7a51ae3ce0bffd6ed122a8cebf781b06758f
+generated: "2026-11-03T20:57:59.612002479+01:00"

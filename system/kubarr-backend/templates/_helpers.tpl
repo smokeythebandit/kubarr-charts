@@ -31,3 +31,11 @@ operator supplies, or taken from a Secret the Kubarr CLI owns.
 {{- fail "kubarr-backend: database.existingSecret and database.secretName must name the same Secret; the Deployment reads the connection URI from database.secretName." -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+Pod selector labels shared by the Deployment, its spread constraints and its PDB.
+*/}}
+{{- define "kubarr-backend.haSelector" -}}
+app.kubernetes.io/name: kubarr-backend
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}

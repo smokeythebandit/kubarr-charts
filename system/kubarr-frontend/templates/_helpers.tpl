@@ -9,3 +9,11 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/name: kubarr-frontend
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Pod selector labels shared by the Deployment, its spread constraints and its PDB.
+*/}}
+{{- define "kubarr-frontend.haSelector" -}}
+app.kubernetes.io/name: kubarr-frontend
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}

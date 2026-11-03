@@ -5,7 +5,6 @@ image:
   tag: "0.3.4"
   pullPolicy: IfNotPresent
 groupName: dns.kubarr.local
-replicaCount: 1
 service:
   port: 443
   targetPort: 6443

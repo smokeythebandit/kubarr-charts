@@ -28,11 +28,14 @@ def render(*values):
 
 
 class WorkerShutdownTests(unittest.TestCase):
-    def test_worker_is_singleton_with_recreate_strategy(self):
+    def test_worker_is_singleton_with_surge_free_rollout(self):
         deployment = render()
 
         self.assertEqual(deployment["spec"]["replicas"], 1)
-        self.assertEqual(deployment["spec"]["strategy"], {"type": "Recreate"})
+        self.assertEqual(
+            deployment["spec"]["strategy"],
+            {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}},
+        )
 
     def test_default_termination_grace_period_allows_drain(self):
         deployment = render()
