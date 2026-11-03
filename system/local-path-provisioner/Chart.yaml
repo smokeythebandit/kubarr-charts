@@ -1,0 +1,13 @@
+apiVersion: v2
+name: local-path-provisioner
+description: Talos-safe local-path provisioner for node-local Kubarr storage
+type: application
+version: 0.1.0
+appVersion: "v0.0.37"
+annotations:
+  kubarr.io/display-name: "Local Path Provisioner"
+  kubarr.io/icon: "💾"
+  kubarr.io/category: "system"
+  kubarr.io/system: "true"
+  kubarr.io/hidden: "true"
+  kubarr.io/browseable: "false"
