@@ -88,6 +88,14 @@ jobs:
         with:
           version: v4.3.0
 
+      - name: Add upstream chart repositories
+        # Wrapper charts depend on upstream charts by repository URL, and
+        # `helm dependency build` refuses a URL it has no repository entry for.
+        run: |
+          set -euo pipefail
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add cnpg https://cloudnative-pg.github.io/charts
+
       - name: Install kind and kubectl
         env:
           KIND_VERSION: v0.33.0
