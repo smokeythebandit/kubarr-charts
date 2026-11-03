@@ -11,3 +11,7 @@ annotations:
   kubarr.io/system: "true"
   kubarr.io/hidden: "true"
   kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.8.0
+    repository: file://../kubarr-common
