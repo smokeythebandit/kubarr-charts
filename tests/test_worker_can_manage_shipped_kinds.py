@@ -85,6 +85,24 @@ class WorkerCanManageEveryShippedKind(unittest.TestCase):
                         f"{resource}.{group} or its Helm upgrades fail",
                     )
 
+    def test_worker_has_full_crud_on_ha_kinds(self):
+        # Releases now render PodDisruptionBudgets, CNPG Clusters and batch
+        # workloads; the worker creates and rolls them, not just reads them.
+        rules = worker_rules()
+        verbs = {"get", "list", "watch", "create", "update", "patch", "delete"}
+        for group, resource in (
+            ("policy", "poddisruptionbudgets"),
+            ("postgresql.cnpg.io", "clusters"),
+            ("batch", "cronjobs"),
+            ("batch", "jobs"),
+        ):
+            granted = set()
+            for rule in rules:
+                if group in rule.get("apiGroups", []) and resource in rule.get("resources", []):
+                    granted |= set(rule["verbs"])
+            with self.subTest(resource=f"{resource}.{group}"):
+                self.assertTrue(verbs <= granted, f"missing {sorted(verbs - granted)}")
+
 
 if __name__ == "__main__":
     unittest.main()
