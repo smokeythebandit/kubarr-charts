@@ -1,10 +1,1 @@
-{{- if .Values.namespace.create }}
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ .Values.namespace.name }}
-  labels:
-    pod-security.kubernetes.io/enforce: privileged
-    pod-security.kubernetes.io/audit: privileged
-    pod-security.kubernetes.io/warn: privileged
-{{- end }}
+{{- include "kubarr-common.namespace" (dict "root" . "level" "privileged" "reason" "The helper pods create and remove volume directories through hostPath mounts.") }}

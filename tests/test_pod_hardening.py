@@ -121,11 +121,14 @@ class PodHardeningTests(unittest.TestCase):
                         #                      NFS client byte counters
                         #   kubarr-flow-exporter  Cilium's conntrack map, through
                         #                      the host BPF filesystem
+                        #   local-path-provisioner  its helper pods create and remove
+                        #                      volume directories via hostPath
                         self.assertIn(str(chart.relative_to(ROOT)),
                                       ("monitoring/fluent-bit",
                                        "system/managed-nfs",
                                        "monitoring/node-exporter",
-                                       "system/kubarr-flow-exporter"))
+                                       "system/kubarr-flow-exporter",
+                                       "system/local-path-provisioner"))
 
 
 if __name__ == "__main__":
