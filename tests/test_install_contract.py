@@ -301,7 +301,12 @@ class InstallContractTests(unittest.TestCase):
         but a suspended CronJob to consume it: no pod was ever created, the
         claim never bound, and `helm --wait` timed out and rolled the release
         back. A chart whose only workload is a CronJob must therefore not
-        create a claim by default."""
+        create a claim by default.
+
+        A claim pre-bound to a PersistentVolume through `volumeName` (the
+        shared NFS media claim) is exempt: it binds at once, with no
+        provisioner and no wait for a consumer, so a CronJob-only chart such
+        as the database's nightly dump may carry one."""
         for chart in charts():
             if yaml.safe_load((chart / "Chart.yaml").read_text()).get("type") == "library":
                 continue

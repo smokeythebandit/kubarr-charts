@@ -73,6 +73,13 @@ class ClusterShapeTests(unittest.TestCase):
         self.assertEqual(affinity["podAntiAffinityType"], "required")
         self.assertEqual(affinity["topologyKey"], "kubernetes.io/hostname")
 
+    def test_disruption_budget_only_with_a_replica_to_fail_over_to(self):
+        # A PDB over a lone primary blocks every node drain on a single node.
+        self.assertIs(self.cluster()["spec"]["enablePDB"], False)
+        self.assertIs(self.cluster(nodes(1))["spec"]["enablePDB"], False)
+        self.assertIs(self.cluster(nodes(2))["spec"]["enablePDB"], True)
+        self.assertIs(self.cluster(nodes(3))["spec"]["enablePDB"], True)
+
     def test_bootstrap_uses_the_cli_secret(self):
         initdb = self.cluster()["spec"]["bootstrap"]["initdb"]
         self.assertEqual(initdb["database"], "kubarr")
@@ -150,6 +157,13 @@ class BackupTests(unittest.TestCase):
         container = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
         self.assertEqual({e["name"]: e.get("value") for e in container["env"]}["RETAIN"], "3")
 
+    def test_retention_below_one_refuses_to_render(self):
+        for retain in (0, -1):
+            with self.subTest(retain=retain):
+                result, _ = render(overrides={"backup": {"retain": retain}})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("backup.retain", result.stderr)
+
     def test_disabled_backup_renders_no_job_and_no_claim(self):
         result, docs = render(overrides={"backup": {"enabled": False}})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -176,7 +190,8 @@ class BackupTests(unittest.TestCase):
             # Nine older dumps, a stray file the job does not own, and a
             # partial left by an earlier interrupted run.
             old = [f"kubarr-2026010{day}T031700Z.dump" for day in range(1, 10)]
-            for name in old + ["notes.txt"]:
+            stale = ".kubarr-20260101T031700Z.dump.partial"
+            for name in old + ["notes.txt", stale]:
                 (backups / name).write_text("old")
             fake = bin_dir / "pg_dump"
             # Records its arguments and writes to the --file it was handed,
@@ -204,6 +219,7 @@ class BackupTests(unittest.TestCase):
             self.assertEqual((backups / new[0]).read_text(), "dump\n")
             self.assertEqual(dumps[:6], old[-6:])
             self.assertTrue((backups / "notes.txt").exists())
+            self.assertFalse((backups / stale).exists())
             self.assertEqual([p.name for p in backups.iterdir()
                               if not p.name.startswith("kubarr-") and p.name != "notes.txt"], [])
 

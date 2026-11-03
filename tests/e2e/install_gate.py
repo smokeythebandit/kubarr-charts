@@ -90,10 +90,23 @@ SKIPS = {
 
 # Charts that need another chart installed first. The gate installs these
 # prerequisites once per run and leaves them up for the charts that need them.
+# Installed in the order listed, and not recursively, so a chart lists its
+# prerequisites' own prerequisites first.
 PREREQUISITES = {
-    "kubarr-backend": ["postgresql"],
-    "kubarr-worker": ["postgresql"],
+    # The database is a CloudNativePG Cluster: the operator's CRDs and webhook
+    # have to be serving before the chart can be applied at all.
+    "postgresql": ["cloudnative-pg"],
+    "kubarr-backend": ["cloudnative-pg", "postgresql"],
+    "kubarr-worker": ["cloudnative-pg", "postgresql"],
 }
+
+# The platform database, as the Kubarr CLI lays it out: the chart bootstraps
+# its owner from a basic-auth Secret the CLI writes into the namespace first.
+DATABASE_RELEASE = "postgresql"
+DATABASE_SECRET = "kubarr-db-app"
+DATABASE_USER = "kubarr"
+DATABASE_NAME = "kubarr"
+DATABASE_CLUSTER = "cluster.postgresql.cnpg.io/kubarr-db"
 
 # Per-chart budget overrides, in seconds, for charts whose images are large or
 # whose first start does real work. Everything else uses --budget.
@@ -486,7 +499,11 @@ class Gate:
             args += ["--set", f"storage.media.nfs.server={self.nfs_ip}",
                      "--set", "storage.media.nfs.path=/",
                      "--set", "storage.media.nfs.size=8Gi"]
-        if name in DATABASE_CHARTS:
+        if name == DATABASE_RELEASE:
+            # The chart takes no password, only the name of the Secret that
+            # ensure_database_secret wrote; the password never reaches Helm.
+            args += ["--set", f"database.existingSecret={DATABASE_SECRET}"]
+        elif name in DATABASE_CHARTS:
             args += ["--set", f"database.password={self.db_password}"]
         if upgrade and isinstance(storage.get("config"), dict):
             # Not a failure to work around: the charts refuse a private-config
@@ -516,8 +533,36 @@ class Gate:
 
     # ---- the gate ---------------------------------------------------------
 
+    def ensure_database_secret(self, namespace):
+        """Write the database credential before the database chart installs.
+
+        The same document the CLI applies: the namespace carries Helm's
+        ownership metadata, so the chart's own Namespace adopts it instead of
+        refusing to install over it, and the Secret is basic-auth because the
+        Cluster's initdb bootstrap requires one. Its password is the one the
+        backend and worker charts are handed, so their URIs log in. Applied
+        from stdin so the password never appears in an argument list.
+        """
+        uri = (f"postgresql://{DATABASE_USER}:{self.db_password}@kubarr-db-rw."
+               f"{namespace}.svc.cluster.local:5432/{DATABASE_NAME}")
+        documents = [
+            {"apiVersion": "v1", "kind": "Namespace",
+             "metadata": {"name": namespace,
+                          "labels": {"app.kubernetes.io/managed-by": "Helm"},
+                          "annotations": {"meta.helm.sh/release-name": DATABASE_RELEASE,
+                                          "meta.helm.sh/release-namespace": namespace}}},
+            {"apiVersion": "v1", "kind": "Secret", "type": "kubernetes.io/basic-auth",
+             "metadata": {"name": DATABASE_SECRET, "namespace": namespace},
+             "stringData": {"username": DATABASE_USER, "password": self.db_password,
+                            "uri": uri}},
+        ]
+        self.kube("apply", "-f", "-", stdin=yaml.safe_dump_all(documents))
+
     def install(self, name, chart, namespace, budget, label, upgrade=False, wait=True,
                 scope=None):
+        if name == DATABASE_RELEASE:
+            # Every phase starts from a namespace the previous one deleted.
+            self.ensure_database_secret(namespace)
         action = "upgrade" if upgrade else "install"
         command = ["helm", action, name, str(chart), "-n", namespace,
                    *self.chart_args(name, upgrade=upgrade)]
@@ -637,6 +682,20 @@ class Gate:
         """
         docs = self.rendered(name, upgrade=upgrade)
         checked = []
+        # helm --wait knows neither of these. A CRD must be served before a
+        # dependent chart applies its kind, and the database Cluster must be
+        # Ready before its backup job or any client can connect, so both are
+        # settled before the workloads below are judged.
+        for doc in docs:
+            kind, meta = doc["kind"], doc["metadata"]
+            if kind == "CustomResourceDefinition":
+                self.assert_condition(f"crd/{meta['name']}", "Established", None, budget)
+                checked.append(f"CustomResourceDefinition/{meta['name']}")
+            elif kind == "Cluster" and doc["apiVersion"].startswith("postgresql.cnpg.io/"):
+                target = meta.get("namespace") or namespace
+                self.assert_condition(f"cluster.postgresql.cnpg.io/{meta['name']}", "Ready",
+                                      target, budget, scope)
+                checked.append(f"Cluster/{meta['name']}")
         for doc in docs:
             kind, meta = doc["kind"], doc["metadata"]
             target = meta.get("namespace") or namespace
@@ -672,6 +731,27 @@ class Gate:
         if not checked:
             raise GateFailure(f"{name} rendered nothing at all")
         print(f"[gate] ready: {', '.join(checked)}", flush=True)
+
+    def assert_condition(self, resource, condition, namespace, budget, scope=None):
+        """Wait for a status condition, failing early on a pod that cannot start."""
+        where = ("-n", namespace) if namespace else ()
+        deadline = time.monotonic() + budget
+        while True:
+            remaining = int(deadline - time.monotonic())
+            if remaining <= 0:
+                raise GateFailure(f"{resource} never reached {condition} within {budget}s")
+            try:
+                self.kube(*where, "wait", f"--for=condition={condition}", resource,
+                          f"--timeout={min(remaining, 30)}s", timeout=min(remaining, 30) + 30)
+                return
+            except (RuntimeError, subprocess.TimeoutExpired):
+                # Also what `kubectl wait` says while the object does not exist
+                # yet (the operator creates nothing before its webhook serves).
+                time.sleep(5)
+            if namespace:
+                verdict = self.terminal_failure(namespace, scope)
+                if verdict:
+                    raise GateFailure(f"{resource} in {namespace}: {verdict}")
 
     def assert_rollout(self, kind, workload, namespace, budget):
         try:

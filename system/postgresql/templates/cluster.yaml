@@ -1,5 +1,6 @@
 {{- $database := default dict .Values.database -}}
 {{- $persistence := default dict .Values.persistence -}}
+{{- $instances := include "kubarr-common.ha.replicas" (dict "root" . "max" 3) -}}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -10,7 +11,11 @@ metadata:
 spec:
   # One instance per node, up to three. The operator creates kubarr-db-rw
   # (the primary), kubarr-db-ro and kubarr-db-r, and fails over on its own.
-  instances: {{ include "kubarr-common.ha.replicas" (dict "root" . "max" 3) }}
+  instances: {{ $instances }}
+  # The operator's PDB keeps the primary up. With a single instance that would
+  # block every node drain, so it only applies once there is a replica to
+  # fail over to.
+  enablePDB: {{ gt (int $instances) 1 }}
   imageName: {{ .Values.imageName | quote }}
   bootstrap:
     initdb:

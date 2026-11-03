@@ -22,9 +22,10 @@ database:
   # Rendering fails while it is empty.
   existingSecret: ""
 
-# One instance per node, up to three, from kubarr.ha.nodeCount (absent or 1:
-# a single instance). The operator keeps the instances on separate nodes.
 kubarr:
+  # ha.nodeCount (set by the Kubarr CLI, absent here) sizes the Cluster: one
+  # instance per node, up to three; absent or 1 means a single instance. The
+  # operator keeps the instances on separate nodes.
   # Storage paths this chart's templates enforce, declared here so there is a
   # single source of truth: the templates hand these same lists to
   # kubarr-common's storage validator, and the backend's install wizard
@@ -64,7 +65,6 @@ networkPolicy:
   ingressFrom:
     - kubarr-backend  # platform API: users, settings, catalog state
     - kubarr-worker  # lifecycle reconciler
-  egressTo: []
   # Where the CloudNativePG operator runs; it polls each instance's status
   # endpoint on 8000.
   operatorNamespace: cnpg-system

@@ -1,5 +1,9 @@
 {{- $backup := default dict .Values.backup -}}
 {{- if $backup.enabled }}
+{{- $retain := int (default 7 $backup.retain) -}}
+{{- if and (hasKey $backup "retain") (lt (int $backup.retain) 1) -}}
+{{- fail "postgresql: backup.retain must be at least 1; it counts the dumps kept, including the one just written" -}}
+{{- end -}}
 {{- $target := include "postgresql.backup.target" . -}}
 {{- $reserved := dig "storage" "reserved" "main" (list) (default dict .Values.kubarr) -}}
 {{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" $target "reservedPaths" $reserved) -}}
@@ -63,13 +67,13 @@ spec:
                 - name: BACKUP_DIR
                   value: {{ $target | quote }}
                 - name: RETAIN
-                  value: {{ int (default 7 $backup.retain) | toString | quote }}
+                  value: {{ $retain | toString | quote }}
                 - name: DATABASE_URI
                   valueFrom:
                     secretKeyRef:
                       name: {{ include "postgresql.database.secretName" . | quote }}
                       key: uri
-              # Dump to a hidden partial name and rename only once pg_dump
+              # Clear stale partials, dump to a hidden partial name and rename only once pg_dump
               # succeeded, so a kubarr-*.dump is always complete; then keep the
               # newest RETAIN. The timestamped names sort chronologically.
               command:
@@ -77,6 +81,9 @@ spec:
                 - -ec
                 - |
                   umask 0002
+                  # Partials an interrupted run left behind. No other run can
+                  # be writing one: concurrencyPolicy is Forbid.
+                  find "$BACKUP_DIR" -maxdepth 1 -type f -name '.kubarr-*.dump.partial' -exec rm -f -- {} +
                   stamp=$(date -u +%Y%m%dT%H%M%SZ)
                   partial="$BACKUP_DIR/.kubarr-$stamp.dump.partial"
                   trap 'rm -f "$partial"' EXIT
