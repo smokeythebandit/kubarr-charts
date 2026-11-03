@@ -293,7 +293,7 @@ class OperatorChartTests(unittest.TestCase):
         self.assertEqual(annotations["kubarr.io/system"], "true")
         self.assertEqual(annotations["kubarr.io/hidden"], "true")
         self.assertEqual(annotations["kubarr.io/browseable"], "false")
-        self.assertEqual(metadata["version"], "0.1.0")
+        self.assertEqual(metadata["version"], "1.30.1+1")
         dependency = next(d for d in metadata["dependencies"] if d["name"] == "cloudnative-pg")
         self.assertEqual(dependency["repository"], "https://cloudnative-pg.github.io/charts")
         self.assertRegex(dependency["version"], r"^\d+\.\d+\.\d+$")

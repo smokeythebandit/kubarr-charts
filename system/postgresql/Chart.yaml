@@ -2,7 +2,7 @@ apiVersion: v2
 name: postgresql
 description: Kubarr platform database, run by the CloudNativePG operator
 type: application
-version: 17.0.0
+version: 16.15.0+17
 appVersion: "16.15"
 annotations:
   kubarr.io/display-name: "PostgreSQL"

@@ -30,7 +30,7 @@ def one(docs, kind):
 class LocalPathTests(unittest.TestCase):
     def test_chart_metadata(self):
         meta = yaml.safe_load((CHART / "Chart.yaml").read_text())
-        self.assertEqual(meta["version"], "0.1.1")
+        self.assertEqual(meta["version"], "0.0.37+1")
         self.assertEqual(meta["annotations"]["kubarr.io/system"], "true")
         self.assertEqual(meta["annotations"]["kubarr.io/hidden"], "true")
 
