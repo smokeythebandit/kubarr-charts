@@ -28,6 +28,8 @@ Pod spread across nodes; empty unless replicas > 1.
 nodeTaintsPolicy Honor keeps tainted nodes (control planes, unreachable nodes)
 out of the skew count: as empty domains they would pin the minimum at 0 and
 hold a rolling update's surge pod Pending forever.
+matchLabelKeys pod-template-hash scopes the count to the pod's own ReplicaSet,
+so old pods about to be deleted during a rollout do not skew placement.
 Usage: include "kubarr-common.ha.spread" (dict "root" . "replicas" $r "selector" $matchLabels)
 */}}
 {{- define "kubarr-common.ha.spread" -}}
@@ -37,6 +39,8 @@ topologySpreadConstraints:
     topologyKey: kubernetes.io/hostname
     whenUnsatisfiable: DoNotSchedule
     nodeTaintsPolicy: Honor
+    matchLabelKeys:
+      - pod-template-hash
     labelSelector:
       matchLabels:
         {{- toYaml .selector | nindent 8 }}

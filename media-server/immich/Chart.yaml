@@ -10,5 +10,5 @@ annotations:
   kubarr.io/category: "media-server"
 dependencies:
   - name: kubarr-common
-    version: 0.8.1
+    version: 0.8.2
     repository: file://../../system/kubarr-common

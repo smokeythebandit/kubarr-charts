@@ -46,6 +46,9 @@ def assert_spread(case, dep):
             # Tainted nodes (control planes, unreachable) are not spread
             # domains, so a rollout's surge pod is never held at skew 2 - 0.
             "nodeTaintsPolicy": "Honor",
+            # Count only pods of the same ReplicaSet, not the old ones a
+            # rolling update is about to delete.
+            "matchLabelKeys": ["pod-template-hash"],
             "labelSelector": {"matchLabels": dep["spec"]["selector"]["matchLabels"]},
         }],
     )
