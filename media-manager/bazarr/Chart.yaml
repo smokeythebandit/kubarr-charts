@@ -2,7 +2,7 @@ apiVersion: v2
 name: bazarr
 description: Subtitle manager for the Sonarr and Radarr libraries
 type: application
-version: 1.6.2+3
+version: 1.6.2+4
 appVersion: "1.6.2"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI

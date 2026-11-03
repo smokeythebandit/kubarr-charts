@@ -2,7 +2,7 @@ apiVersion: v2
 name: flaresolverr
 description: Proxy that solves Cloudflare and DDoS-GUARD challenges for indexers
 type: application
-version: 3.5.2
+version: 3.5.2+1
 appVersion: "3.5.2"
 keywords:
   - flaresolverr
