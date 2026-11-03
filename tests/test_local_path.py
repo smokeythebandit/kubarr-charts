@@ -1,4 +1,4 @@
-"""The local-path provisioner must work on Talos, whose root is read-only."""
+"""The bundled local-path provisioner for clusters without a local default class."""
 
 import json
 import os
@@ -30,7 +30,7 @@ def one(docs, kind):
 class LocalPathTests(unittest.TestCase):
     def test_chart_metadata(self):
         meta = yaml.safe_load((CHART / "Chart.yaml").read_text())
-        self.assertEqual(meta["version"], "0.1.0")
+        self.assertEqual(meta["version"], "0.1.1")
         self.assertEqual(meta["annotations"]["kubarr.io/system"], "true")
         self.assertEqual(meta["annotations"]["kubarr.io/hidden"], "true")
 
@@ -42,12 +42,16 @@ class LocalPathTests(unittest.TestCase):
                 ns["metadata"]["labels"][f"pod-security.kubernetes.io/{mode}"],
                 "privileged")
 
-    def test_data_path_is_writable_on_talos(self):
+    def test_data_path_defaults_under_var(self):
         (cm,) = one(render(), "ConfigMap")
         config = json.loads(cm["data"]["config.json"])
-        paths = config["nodePathMap"][0]["paths"]
-        self.assertEqual(paths, ["/var/local-path-provisioner"])
-        self.assertTrue(all(p.startswith("/var/") for p in paths))
+        self.assertEqual(config["nodePathMap"][0]["paths"], ["/var/local-path-provisioner"])
+
+    def test_data_path_is_a_value(self):
+        (cm,) = one(render("dataPath=/var/mnt/local-path-provisioner"), "ConfigMap")
+        config = json.loads(cm["data"]["config.json"])
+        self.assertEqual(config["nodePathMap"][0]["paths"],
+                         ["/var/mnt/local-path-provisioner"])
 
     def test_helper_pod_image_is_pinned(self):
         (cm,) = one(render(), "ConfigMap")

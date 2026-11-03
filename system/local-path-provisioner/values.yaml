@@ -1,8 +1,13 @@
 # Vendored from rancher/local-path-provisioner v0.0.37
 # (deploy/local-path-storage.yaml). The only functional changes are the data
-# path and the namespace's Pod Security level: Talos mounts / read-only, so
-# /opt is unusable, and the helper pods mount hostPath volumes, which the
-# default `baseline`/`restricted` levels reject.
+# path (a value, below) and the namespace's Pod Security level: the helper
+# pods mount hostPath volumes, which the default `baseline`/`restricted`
+# levels reject.
+#
+# Not for Talos as-is: kubelet there needs the host directory on a Talos
+# UserVolume (mounted under /var/mnt) or an rshared kubelet extraMount, so the
+# Kubarr CLI refuses to install this chart on Talos and points the user at
+# Talos's local storage guide instead.
 namespace:
   create: true
   name: local-path-storage
@@ -17,8 +22,8 @@ helperImage:
   repository: docker.io/library/busybox
   tag: "1.37.0"
 
-# Directory on each node under which volumes are created. Must be writable on
-# Talos, i.e. under /var.
+# Directory on each node under which volumes are created. Override it to put
+# volumes on a dedicated disk or mount.
 dataPath: /var/local-path-provisioner
 
 storageClass:
