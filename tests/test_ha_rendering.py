@@ -43,6 +43,9 @@ def assert_spread(case, dep):
             "maxSkew": 1,
             "topologyKey": "kubernetes.io/hostname",
             "whenUnsatisfiable": "DoNotSchedule",
+            # Tainted nodes (control planes, unreachable) are not spread
+            # domains, so a rollout's surge pod is never held at skew 2 - 0.
+            "nodeTaintsPolicy": "Honor",
             "labelSelector": {"matchLabels": dep["spec"]["selector"]["matchLabels"]},
         }],
     )

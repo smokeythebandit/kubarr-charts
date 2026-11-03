@@ -16,5 +16,5 @@ dependencies:
     version: 0.29.1
     repository: https://cloudnative-pg.github.io/charts
   - name: kubarr-common
-    version: 0.8.0
+    version: 0.8.1
     repository: file://../kubarr-common

@@ -11,5 +11,5 @@ annotations:
   kubarr.io/optional: "true"
 dependencies:
   - name: kubarr-common
-    version: 0.8.0
+    version: 0.8.1
     repository: file://../../system/kubarr-common

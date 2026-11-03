@@ -2,9 +2,9 @@ apiVersion: v2
 name: kubarr-dns-webhook
 description: Kubarr cert-manager DNS01 webhook solvers
 type: application
-version: 0.3.4+2
+version: 0.3.4+3
 appVersion: "0.3.4"
 dependencies:
   - name: kubarr-common
-    version: 0.8.0
+    version: 0.8.1
     repository: file://../kubarr-common

@@ -18,5 +18,5 @@ annotations:
   kubarr.io/hidden: "true"
 dependencies:
   - name: kubarr-common
-    version: 0.8.0
+    version: 0.8.1
     repository: file://../../system/kubarr-common
