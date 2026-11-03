@@ -24,23 +24,30 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Name of the Secret holding the database credentials (keys: password, uri).
-
-`database.existingSecret` names a Secret the Kubarr CLI owns and created in
-this namespace; empty means this chart templates its own from
-`database.password`. Either way the StatefulSet reads the password from a
-Secret, never from a literal in the Pod template.
+The label that admits a pod to the database as a dump/restore client. The
+nightly backup job carries it, and so does the pod `kubarr db restore` runs:
+the NetworkPolicy selects on this label alone so both are admitted.
 */}}
-{{- define "postgresql.database.secretName" -}}
-{{- default "kubarr-db-app" .Values.database.existingSecret -}}
+{{- define "postgresql.backupSelectorLabels" -}}
+app.kubernetes.io/component: database-backup
 {{- end }}
 
 {{/*
-Refuse to render without a password. This chart ships no default: a password
-committed to a public repository is the password of every install that uses it.
+Name of the CLI-owned Secret holding the database credentials (basic-auth:
+username, password; plus uri). Refuses to render without one: this chart ships
+no default password, because a password committed to a public repository is
+the password of every install that uses it.
 */}}
-{{- define "postgresql.database.validate" -}}
-{{- if and (not .Values.database.existingSecret) (not .Values.database.password) -}}
-{{- fail "postgresql: no database password. This chart ships no default password. Set database.existingSecret to the name of a Secret in this namespace holding keys \"password\" and \"uri\" (the Kubarr CLI creates \"kubarr-db-app\"), or set database.password to a password you generate yourself." -}}
+{{- define "postgresql.database.secretName" -}}
+{{- $database := default dict .Values.database -}}
+{{- $name := default "" $database.existingSecret -}}
+{{- if not $name -}}
+{{- fail "postgresql: no database credential. This chart ships no default password. Set database.existingSecret to the name of a kubernetes.io/basic-auth Secret in this namespace holding keys \"username\", \"password\" and \"uri\" (the Kubarr CLI creates \"kubarr-db-app\")." -}}
 {{- end -}}
+{{- $name -}}
+{{- end }}
+
+{{/* Writable backup destination on the shared export, from the declared requirement. */}}
+{{- define "postgresql.backup.target" -}}
+{{- first (dig "storage" "required" "main" (list "/backups") (default dict .Values.kubarr)) -}}
 {{- end }}

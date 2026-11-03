@@ -1,5 +1,5 @@
-{{- include "postgresql.database.validate" . -}}
-{{- if .Values.networkPolicy.enabled }}
+{{- $policy := default dict .Values.networkPolicy -}}
+{{- if $policy.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -8,14 +8,17 @@ metadata:
   labels:
     {{- include "postgresql.labels" . | nindent 4 }}
 spec:
+  # Every instance the operator runs for this Cluster, primary and replicas.
   podSelector:
     matchLabels:
-      {{- include "postgresql.selectorLabels" . | nindent 6 }}
+      cnpg.io/cluster: kubarr-db
+  # Ingress only. An instance's manager talks to the Kubernetes API (which a
+  # NetworkPolicy cannot select: the apiserver is host-network) and streams
+  # from the primary, so restricting egress here would stop failover.
   policyTypes:
     - Ingress
-    - Egress
   ingress:
-    {{- range .Values.networkPolicy.ingressFrom }}
+    {{- range $policy.ingressFrom }}
     - from:
         - namespaceSelector:
             matchLabels:
@@ -24,25 +27,30 @@ spec:
         - protocol: TCP
           port: 5432
     {{- end }}
-  egress:
-    # DNS only. The database answers queries; it calls nothing, and it has no
-    # business reaching the internet or any other namespace.
-    - to:
-        - namespaceSelector: {}
-          podSelector:
+    # The nightly pg_dump and `kubarr db restore`, in this namespace.
+    - from:
+        - podSelector:
             matchLabels:
-              k8s-app: kube-dns
+              {{- include "postgresql.backupSelectorLabels" . | nindent 14 }}
       ports:
-        - protocol: UDP
-          port: 53
         - protocol: TCP
-          port: 53
-    {{- range .Values.networkPolicy.egressTo }}
-    - to:
+          port: 5432
+    # Streaming replication and the instance status endpoint between peers.
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: kubarr-db
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+    # The operator polls each instance's status endpoint.
+    - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ . }}
+              kubernetes.io/metadata.name: {{ default "cnpg-system" $policy.operatorNamespace }}
       ports:
         - protocol: TCP
-    {{- end }}
+          port: 8000
 {{- end }}

@@ -310,7 +310,10 @@ class InstallContractTests(unittest.TestCase):
                 continue
             docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
             kinds = {doc.get("kind") for doc in docs}
-            claims = [doc for doc in docs if doc.get("kind") == "PersistentVolumeClaim"]
+            # A claim pre-bound to a PersistentVolume by volumeName binds at
+            # once; only a dynamically provisioned one waits for a consumer.
+            claims = [doc for doc in docs if doc.get("kind") == "PersistentVolumeClaim"
+                      and not doc["spec"].get("volumeName")]
             if not claims or kinds & {"Deployment", "StatefulSet", "DaemonSet"}:
                 continue
             with self.subTest(chart=str(chart.relative_to(ROOT))):

@@ -120,7 +120,7 @@ class DeclarativeStorageTests(unittest.TestCase):
             "media-server/frigate": "/media/frigate",
             "monitoring/victoriametrics": "/victoria-metrics-data",
             "monitoring/victorialogs": "/data",
-            "system/postgresql": "/var/lib/postgresql/data",
+            "system/postgresql": "/backups",
             **{f"download-client/{client}": "/downloads" for client in (
                 "deluge", "qbittorrent", "rutorrent", "sabnzbd", "transmission")},
         }
@@ -217,7 +217,8 @@ class DeclarativeStorageTests(unittest.TestCase):
                 defaults = yaml.safe_load((ROOT / chart / "values.yaml").read_text())["storage"]
                 result, resources = render(chart)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                main_name = {"system/kubarr-backend": "backend", "system/kubarr-worker": "worker"}.get(
+                main_name = {"system/kubarr-backend": "backend", "system/kubarr-worker": "worker",
+                             "system/postgresql": "backup"}.get(
                     chart, chart.split("/")[-1])
                 expected = {main_name: defaults["mounts"]}
                 if chart == "media-server/immich":

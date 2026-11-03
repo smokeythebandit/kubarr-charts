@@ -1,0 +1,25 @@
+# The operator's own namespace. The Kubarr CLI installs this release with
+# namespace.name=cnpg-system and namespace.create=true; the release record
+# itself lives in the CLI's bootstrap namespace. cloudnative-pg.namespaceOverride
+# below must name the same namespace (rendering fails otherwise): a parent
+# chart cannot template its dependency's values.
+namespace:
+  create: true
+  name: cnpg-system
+
+cloudnative-pg:
+  namespaceOverride: cnpg-system
+  # The CLI waits on `deployment/cloudnative-pg -n cnpg-system`; pin the name
+  # so a different release name cannot move it.
+  fullnameOverride: cloudnative-pg
+  crds:
+    create: true
+  # Upstream ships no requests or limits. One small operator reconciling a
+  # single database cluster.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

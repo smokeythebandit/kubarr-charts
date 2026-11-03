@@ -1,4 +1,9 @@
-"""The system database must start on a root-squashed NFS export."""
+"""The system database's dumps must land on a root-squashed NFS export.
+
+The database itself now lives on node-local volumes owned by CloudNativePG; the
+shared export only receives the nightly dump. That job still has to create its
+directory without root, which a normal export squashes.
+"""
 
 import os
 from pathlib import Path
@@ -23,25 +28,26 @@ def render(*values):
     return [resource for resource in yaml.safe_load_all(result.stdout) if resource]
 
 
-def statefulset(resources):
-    return next(resource for resource in resources if resource["kind"] == "StatefulSet")
+def backup_pod(resources):
+    cronjob = next(resource for resource in resources if resource["kind"] == "CronJob")
+    return cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
 
 
-class SystemDatabaseStartupTests(unittest.TestCase):
+class SystemDatabaseBackupStorageTests(unittest.TestCase):
     def pod(self, *values):
-        return statefulset(render(*values))["spec"]["template"]["spec"]
+        return backup_pod(render(*values))
 
-    def test_data_subpath_is_prepared_without_relying_on_squashed_root(self):
+    def test_dump_subpath_is_prepared_without_relying_on_squashed_root(self):
         # Kubelet creates subPath directories as root. A normal export squashes
-        # root, so the database never starts unless the chart prepares its own
+        # root, so the dump never lands unless the chart prepares its own
         # directory as the media group.
         pod = self.pod()
         prepare, = pod["initContainers"]
         self.assertEqual(prepare["name"], "prepare-media-directories")
-        self.assertEqual(prepare["args"], ["/nfs/system/postgresql"])
+        self.assertEqual(prepare["args"], ["/nfs/system/postgresql-backups"])
         self.assertEqual(prepare["volumeMounts"], [{"name": "media", "mountPath": "/nfs"}])
         context = prepare["securityContext"]
-        self.assertEqual(context["runAsUser"], 999)
+        self.assertEqual(context["runAsUser"], 1000)
         self.assertEqual(context["runAsGroup"], 1000)
         self.assertTrue(context["runAsNonRoot"])
         self.assertFalse(context["allowPrivilegeEscalation"])
@@ -51,15 +57,15 @@ class SystemDatabaseStartupTests(unittest.TestCase):
     def test_preparation_is_idempotent_and_leaves_the_media_group_writable(self):
         prepare, = self.pod()["initContainers"]
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "system" / "postgresql"
+            target = Path(directory) / "system" / "postgresql-backups"
             for _ in range(2):
                 subprocess.run([*prepare["command"], str(target)],
                                check=True, capture_output=True, text=True)
             self.assertTrue(target.is_dir())
             self.assertEqual(target.stat().st_mode & 0o777, 0o775)
 
-    def test_chart_refuses_a_data_mount_it_could_not_prepare(self):
-        # Preparation only covers writable mounts, and the database contract
+    def test_chart_refuses_a_dump_mount_it_could_not_prepare(self):
+        # Preparation only covers writable mounts, and the backup contract
         # already rejects anything else, so no unprepared mount can reach a Pod.
         with self.assertRaises(subprocess.CalledProcessError):
             render("storage.mounts[0].mode=read")

@@ -40,6 +40,28 @@ PostgreSQL now also ships a NetworkPolicy admitting TCP 5432 from the
 through `kubectl exec` inside the database Pod, which never crosses the pod
 network.
 
+## PostgreSQL on CloudNativePG (breaking upgrade, chart 17.0.0)
+
+`system/postgresql` no longer runs a StatefulSet on the NFS export. It renders
+a CloudNativePG `Cluster` named `kubarr-db`, managed by the operator in
+`system/cloudnative-pg` (namespace `cnpg-system`), which must be installed
+first. Clients are unchanged: `kubarr-db-rw.kubarr-database.svc:5432` and the
+`uri` key of `kubarr-db-app`.
+
+- `database.existingSecret` is required and must name a
+  `kubernetes.io/basic-auth` Secret (`username`, `password`, `uri`); the chart
+  no longer templates a Secret from `database.password`.
+- Instances follow `kubarr.ha.nodeCount` (one per node, at most three), with
+  required anti-affinity across nodes.
+- Data lives on the cluster's default StorageClass (`persistence.size`,
+  default 5Gi, `persistence.storageClassName` to choose another).
+- A nightly CronJob writes `pg_dump -Fc` archives to
+  `system/postgresql-backups/kubarr-<UTC timestamp>.dump` on the export and
+  keeps the newest `backup.retain` (7).
+
+The new Cluster starts empty. Moving an existing database across is a dump and
+restore (`kubarr db restore`), not a chart upgrade.
+
 ## Declarative storage (breaking upgrade)
 
 **Read [STORAGE-MIGRATION.md](STORAGE-MIGRATION.md) before upgrading an existing

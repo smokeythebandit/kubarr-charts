@@ -1,0 +1,42 @@
+{{- $database := default dict .Values.database -}}
+{{- $persistence := default dict .Values.persistence -}}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: kubarr-db
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+spec:
+  # One instance per node, up to three. The operator creates kubarr-db-rw
+  # (the primary), kubarr-db-ro and kubarr-db-r, and fails over on its own.
+  instances: {{ include "kubarr-common.ha.replicas" (dict "root" . "max" 3) }}
+  imageName: {{ .Values.imageName | quote }}
+  bootstrap:
+    initdb:
+      database: {{ default "kubarr" $database.name | quote }}
+      owner: {{ default "kubarr" $database.owner | quote }}
+      secret:
+        name: {{ include "postgresql.database.secretName" . | quote }}
+  storage:
+    size: {{ default "5Gi" $persistence.size | quote }}
+    {{- with $persistence.storageClassName }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+  affinity:
+    # Two instances on one node survive nothing that node does.
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    {{- with .Values.nodeSelector }}
+    nodeSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+    tolerations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- with .Values.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}

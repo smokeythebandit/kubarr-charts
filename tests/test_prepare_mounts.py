@@ -30,7 +30,7 @@ UIDS = {
     "media-server/plex": 1000,
     "monitoring/victorialogs": 1000,
     "monitoring/victoriametrics": 65534,
-    "system/postgresql": 999,
+    "system/postgresql": 1000,  # the nightly dump CronJob
 }
 # Consumers with no writable subPath to prepare: no init container may appear.
 WITHOUT_PREPARATION = ("indexer/jackett", "monitoring/headlamp", "system/kubarr-backend")
@@ -44,7 +44,13 @@ def workloads(chart):
         check=True, capture_output=True, text=True,
     )
     return [doc for doc in yaml.safe_load_all(result.stdout)
-            if doc and doc.get("kind") in ("Deployment", "StatefulSet", "DaemonSet")]
+            if doc and doc.get("kind") in ("Deployment", "StatefulSet", "DaemonSet", "CronJob")]
+
+
+def pod_spec(workload):
+    if workload["kind"] == "CronJob":
+        return workload["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    return workload["spec"]["template"]["spec"]
 
 
 def prepared_sources(pod):
@@ -63,7 +69,7 @@ class PrepareMountsTests(unittest.TestCase):
     def test_every_writable_subpath_is_prepared_exactly_once(self):
         for chart, uid in UIDS.items():
             for workload in workloads(chart):
-                pod = workload["spec"]["template"]["spec"]
+                pod = pod_spec(workload)
                 sources = prepared_sources(pod)
                 name = workload["metadata"]["name"]
                 with self.subTest(chart=chart, workload=name):
@@ -90,7 +96,7 @@ class PrepareMountsTests(unittest.TestCase):
         fixing up its own in-Pod directories is unaffected by root squashing."""
         for chart in list(UIDS) + list(WITHOUT_PREPARATION):
             for workload in workloads(chart):
-                pod = workload["spec"]["template"]["spec"]
+                pod = pod_spec(workload)
                 for container in pod.get("initContainers", []):
                     if not any(mount["name"] == "media"
                                for mount in container.get("volumeMounts", [])):
@@ -104,18 +110,18 @@ class PrepareMountsTests(unittest.TestCase):
     def test_consumers_without_writable_subpaths_prepare_nothing(self):
         for chart in WITHOUT_PREPARATION:
             for workload in workloads(chart):
-                pod = workload["spec"]["template"]["spec"]
+                pod = pod_spec(workload)
                 with self.subTest(chart=chart):
                     self.assertEqual(
                         [c for c in pod.get("initContainers", [])
                          if c["name"] == "prepare-media-directories"], [])
 
     def test_rendered_command_is_idempotent_and_group_writable(self):
-        pod = workloads("system/postgresql")[0]["spec"]["template"]["spec"]
+        pod = pod_spec(workloads("system/postgresql")[0])
         prepare, = [c for c in pod["initContainers"]
                     if c["name"] == "prepare-media-directories"]
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "system" / "postgresql"
+            target = Path(directory) / "system" / "postgresql-backups"
             for _ in range(2):
                 subprocess.run([*prepare["command"], str(target)],
                                check=True, capture_output=True, text=True)

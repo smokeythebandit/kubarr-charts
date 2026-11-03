@@ -1,0 +1,5 @@
+{{- $operator := index .Values "cloudnative-pg" | default dict -}}
+{{- if ne .Values.namespace.name (default .Release.Namespace $operator.namespaceOverride) -}}
+{{- fail (printf "cloudnative-pg: namespace.name (%s) and cloudnative-pg.namespaceOverride (%s) must name the same namespace" .Values.namespace.name (default .Release.Namespace $operator.namespaceOverride)) -}}
+{{- end -}}
+{{- include "kubarr-common.namespace" (dict "root" . "level" "restricted") }}

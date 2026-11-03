@@ -1,0 +1,99 @@
+{{- $backup := default dict .Values.backup -}}
+{{- if $backup.enabled }}
+{{- $target := include "postgresql.backup.target" . -}}
+{{- $reserved := dig "storage" "reserved" "main" (list) (default dict .Values.kubarr) -}}
+{{- $_ := include "kubarr-common.storage.requiredSource" (dict "root" . "mounts" .Values.storage.mounts "target" $target "reservedPaths" $reserved) -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubarr-db-backup
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database-backup
+spec:
+  schedule: {{ default "17 3 * * *" $backup.schedule | quote }}
+  timeZone: Etc/UTC
+  # A dump still running when the next is due finishes first.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "postgresql.backupSelectorLabels" . | nindent 12 }}
+            app.kubernetes.io/name: {{ include "postgresql.name" . }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            # The media identity, as for `kubarr db restore`: the shared
+            # export is writable by the media group.
+            runAsUser: 1000
+            runAsGroup: 1000
+            {{- include "kubarr-common.storage.mediaGroup" . | nindent 12 }}
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" 1000) | nindent 12 }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: backup
+              image: {{ default "postgres:16.15-alpine" $backup.image | quote }}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: BACKUP_DIR
+                  value: {{ $target | quote }}
+                - name: RETAIN
+                  value: {{ int (default 7 $backup.retain) | toString | quote }}
+                - name: DATABASE_URI
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "postgresql.database.secretName" . | quote }}
+                      key: uri
+              # Dump to a hidden partial name and rename only once pg_dump
+              # succeeded, so a kubarr-*.dump is always complete; then keep the
+              # newest RETAIN. The timestamped names sort chronologically.
+              command:
+                - sh
+                - -ec
+                - |
+                  umask 0002
+                  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+                  partial="$BACKUP_DIR/.kubarr-$stamp.dump.partial"
+                  trap 'rm -f "$partial"' EXIT
+                  pg_dump -Fc --dbname="$DATABASE_URI" --file="$partial"
+                  mv "$partial" "$BACKUP_DIR/kubarr-$stamp.dump"
+                  echo "wrote kubarr-$stamp.dump"
+                  ls -1 "$BACKUP_DIR" | grep -E '^kubarr-[0-9]{8}T[0-9]{6}Z\.dump$' | sort -r \
+                    | tail -n +$((RETAIN + 1)) | while read -r old; do
+                      rm -f -- "$BACKUP_DIR/$old"
+                      echo "removed $old"
+                    done
+              {{- with $backup.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              volumeMounts:
+                {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" $reserved) | trim | nindent 16 }}
+          volumes:
+            {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 12 }}
+{{- end }}

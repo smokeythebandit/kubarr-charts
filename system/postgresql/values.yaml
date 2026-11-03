@@ -2,70 +2,49 @@ namespace:
   create: true
   name: kubarr-database
 
-image:
-  repository: postgres
-  tag: "16.15-alpine"
-  pullPolicy: IfNotPresent
+# The CloudNativePG operand. Keep the major version in step with
+# backup.image: pg_dump refuses a server newer than itself.
+imageName: ghcr.io/cloudnative-pg/postgresql:16.15-standard-trixie
 
 database:
   name: kubarr
-  user: kubarr
+  owner: kubarr
   # No default password. These charts are public, so a password committed here
   # would be the password of every Kubarr install -- and this database holds
   # the user table, the JWT signing key and the application API keys.
   #
-  # existingSecret: name of a Secret in this namespace with keys `password`
-  # (the raw password) and `uri` (postgresql://user:password@host:5432/db).
-  # The Kubarr CLI creates `kubarr-db-app` in kubarr-database, kubarr-backend
-  # and kubarr-worker; a Secret is not readable across namespaces. When it is
-  # set this chart renders no Secret of its own and takes POSTGRES_PASSWORD
-  # from that one.
-  #
-  # Leave it empty only to let the chart template the Secret from
-  # `database.password`, which you must then set. Setting neither fails
-  # rendering rather than falling back to a known password.
+  # existingSecret (required): name of a `kubernetes.io/basic-auth` Secret in
+  # this namespace with keys `username` (the owner above), `password` and `uri`
+  # (postgresql://user:password@kubarr-db-rw...:5432/db). The Kubarr CLI
+  # creates `kubarr-db-app` in kubarr-database, kubarr-backend and
+  # kubarr-worker; a Secret is not readable across namespaces. The operator
+  # bootstraps the owner from it, and the backup job connects with its `uri`.
+  # Rendering fails while it is empty.
   existingSecret: ""
-  password: ""
 
-service:
-  port: 5432
-
-# Network policy configuration. Only the platform's own components speak to
-# this database; application pods run third-party indexer and plugin code and
-# have no business reaching port 5432. The Kubarr CLI's own SQL runs through
-# `kubectl exec` inside the database Pod, so it needs no ingress entry here.
-networkPolicy:
-  enabled: true
-  ingressFrom:
-    - kubarr-backend  # platform API: users, settings, catalog state
-    - kubarr-worker  # lifecycle reconciler
-  egressTo: []
-
-persistence:
-  size: 5Gi
-  storageClassName: ""
-
-# Storage paths this chart's templates enforce, declared here so there is a
-# single source of truth: the templates hand these same lists to
-# kubarr-common's storage validator, and the backend's install wizard
-# (api/src/services/install_options.rs) reads them out of this file to
-# validate and pre-fill the mounts it offers. `main` is the primary workload;
-# any other key must match a storage.workloads.<name> key in this file.
+# One instance per node, up to three, from kubarr.ha.nodeCount (absent or 1:
+# a single instance). The operator keeps the instances on separate nodes.
 kubarr:
+  # Storage paths this chart's templates enforce, declared here so there is a
+  # single source of truth: the templates hand these same lists to
+  # kubarr-common's storage validator, and the backend's install wizard
+  # (api/src/services/install_options.rs) reads them out of this file to
+  # validate and pre-fill the mounts it offers. `main` is the nightly backup
+  # job: the database itself lives on node-local volumes, not the export.
   storage:
-    # Writable persistent mounts the application cannot start without.
+    # Writable persistent mounts the backup cannot run without.
     required:
-      main: ["/var/lib/postgresql/data"]
+      main: ["/backups"]
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
       main: ["/config"]
 
-storage:
-  mounts:
-    - {name: postgres-data, source: system/postgresql, target: /var/lib/postgresql/data, mode: read-write}
-  media:
-    existingClaim: media-data
+# Each instance's data volume. Empty storageClassName means the cluster's
+# default StorageClass; the data is no longer on NFS.
+persistence:
+  size: 5Gi
+  storageClassName: ""
 
 resources:
   limits:
@@ -75,34 +54,43 @@ resources:
     cpu: 100m
     memory: 256Mi
 
-startupProbe:
-  failureThreshold: 60
-  periodSeconds: 5
-  timeoutSeconds: 1
+# Network policy for the database instances. Only the platform's own
+# components speak to this database; application pods run third-party indexer
+# and plugin code and have no business reaching port 5432. The Kubarr CLI's
+# own SQL runs through `kubectl exec` inside the primary, so it needs no
+# ingress entry here.
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - kubarr-backend  # platform API: users, settings, catalog state
+    - kubarr-worker  # lifecycle reconciler
+  egressTo: []
+  # Where the CloudNativePG operator runs; it polls each instance's status
+  # endpoint on 8000.
+  operatorNamespace: cnpg-system
 
-livenessProbe:
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 1
-  failureThreshold: 3
+# Nightly logical dump to the shared export, so the data that left NFS still
+# has a copy there. Each run writes kubarr-<UTC timestamp>.dump (pg_dump -Fc;
+# restore with pg_restore) and keeps the newest `retain`.
+backup:
+  enabled: true
+  schedule: "17 3 * * *"
+  retain: 7
+  # Same major version as imageName.
+  image: postgres:16.15-alpine
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
 
-readinessProbe:
-  initialDelaySeconds: 5
-  periodSeconds: 5
-  timeoutSeconds: 1
-  failureThreshold: 3
+storage:
+  mounts:
+    - {name: backups, source: system/postgresql-backups, target: /backups, mode: read-write}
+  media:
+    existingClaim: media-data
 
 nodeSelector: {}
 tolerations: []
-affinity: {}
-# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
-vpa:
-  enabled: false
-  targetKind: StatefulSet
-  updateMode: Auto
-  containerName: "*"
-  controlledResources:
-    - cpu
-    - memory
-  minAllowed: {}
-  maxAllowed: {}
