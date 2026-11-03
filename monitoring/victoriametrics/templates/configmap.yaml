@@ -121,7 +121,7 @@ data:
         # machine_* for node totals, container_last_seen for pod/container counts)
         metric_relabel_configs:
           - source_labels: [__name__]
-            regex: '(container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|network_receive_bytes_total|network_transmit_bytes_total|fs_usage_bytes|fs_limit_bytes|last_seen)|machine_(cpu_cores|memory_bytes))'
+            regex: '(container_(cpu_usage_seconds_total|memory_working_set_bytes|memory_usage_bytes|network_(receive|transmit)_(bytes|packets|errors|packets_dropped)_total|fs_usage_bytes|fs_limit_bytes|last_seen)|machine_(cpu_cores|memory_bytes))'
             action: keep
 
       # Kubernetes API server - disabled, not needed for app monitoring
