@@ -38,6 +38,14 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+          # nginx exits when an upstream does not resolve; without this a pod
+          # counted as ready in the moment between starting and crashing.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
           env:
             {{- toYaml .Values.env | nindent 12 }}
           volumeMounts:
