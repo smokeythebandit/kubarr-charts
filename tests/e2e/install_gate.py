@@ -108,6 +108,21 @@ DATABASE_USER = "kubarr"
 DATABASE_NAME = "kubarr"
 DATABASE_CLUSTER = "cluster.postgresql.cnpg.io/kubarr-db"
 
+# Values a chart must be given to run beside kind's own storage. kind already
+# runs upstream's local-path provisioner (namespace local-path-storage,
+# provisioner rancher.io/local-path, default class `standard`), which every
+# other chart's claims depend on. The bundled chart is installed beside it
+# under names of its own: in upstream's namespace it would fail to adopt
+# kind's Namespace, and the cleanup that followed deleted that namespace and
+# with it the provisioner, leaving every later claim in the run Pending.
+CHART_VALUES = {
+    "local-path-provisioner": {
+        "namespace.name": "kubarr-gate-local-path",
+        "provisionerName": "kubarr.dev/gate-local-path",
+        "storageClass.name": "kubarr-gate-local-path",
+    },
+}
+
 # Per-chart budget overrides, in seconds, for charts whose images are large or
 # whose first start does real work. Everything else uses --budget.
 BUDGETS = {
@@ -130,7 +145,9 @@ TERMINAL_WAITING = {
 }
 WORKLOAD_KINDS = ("Deployment", "StatefulSet", "DaemonSet")
 # Namespaces the gate cleans resources out of but never deletes.
-PROTECTED_NAMESPACES = ("default", "kube-system", "kube-public", "kube-node-lease")
+# local-path-storage holds kind's provisioner behind the default StorageClass.
+PROTECTED_NAMESPACES = ("default", "kube-system", "kube-public", "kube-node-lease",
+                        "local-path-storage")
 
 
 class GateFailure(Exception):
@@ -505,6 +522,8 @@ class Gate:
             args += ["--set", f"database.existingSecret={DATABASE_SECRET}"]
         elif name in DATABASE_CHARTS:
             args += ["--set", f"database.password={self.db_password}"]
+        for key, value in CHART_VALUES.get(name, {}).items():
+            args += ["--set", f"{key}={value}"]
         if upgrade and isinstance(storage.get("config"), dict):
             # Not a failure to work around: the charts refuse a private-config
             # upgrade until the operator confirms the data was migrated.
@@ -516,6 +535,8 @@ class Gate:
         return args
 
     def chart_namespace(self, name):
+        if "namespace.name" in CHART_VALUES.get(name, {}):
+            return CHART_VALUES[name]["namespace.name"]
         values = values_of(self.tree_charts[name])
         return ((values.get("namespace") or {}).get("name")) or name
 
