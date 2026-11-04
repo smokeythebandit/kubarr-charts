@@ -29,6 +29,7 @@ shared claim, so the harness only has to point them at that fixture
 
 Usage:
     tests/e2e/install_gate.py                      # charts changed vs origin/main
+    tests/e2e/install_gate.py --charts unpublished # versions not yet in the registry
     tests/e2e/install_gate.py --charts all
     tests/e2e/install_gate.py --charts recyclarr,sonarr
     tests/e2e/install_gate.py --charts changed --base origin/main
@@ -43,6 +44,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import os
+import urllib.error
+import urllib.request
 from pathlib import Path
 import re
 import secrets
@@ -98,6 +101,11 @@ PREREQUISITES = {
     "postgresql": ["cloudnative-pg"],
     "kubarr-backend": ["cloudnative-pg", "postgresql"],
     "kubarr-worker": ["cloudnative-pg", "postgresql"],
+    # nginx resolves its `upstream` servers when it starts, so without the
+    # kubarr-backend and kubarr-frontend Services the gateway dies with "host
+    # not found in upstream" -- and before it had a readiness probe, --wait
+    # passed on the moment it was Running. The real charts, not stand-ins.
+    "openresty": ["cloudnative-pg", "postgresql", "kubarr-backend", "kubarr-frontend"],
 }
 
 # The platform database, as the Kubarr CLI lays it out: the chart bootstraps
@@ -218,6 +226,103 @@ def changed_charts(base):
             if metadata.get("type") == "library":
                 selected.update(dependents_of(library))
     return sorted(selected)
+
+
+def chart_metadata(chart):
+    return yaml.safe_load((chart / "Chart.yaml").read_text()) or {}
+
+
+def registry_has(name, version, attempts=3):
+    """True if `name` `version` is already in the registry.
+
+    The same question publish.yml's push step asks before it pushes, asked the
+    same way, so the gate and the push agree on what is new. A transport
+    failure is not an answer: after retries the version counts as unpublished,
+    which costs a gate run rather than letting a chart publish ungated.
+    """
+    error = ""
+    for attempt in range(attempts):
+        result = subprocess.run(["helm", "show", "chart", f"{REGISTRY}/{name}",
+                                 "--version", version],
+                                capture_output=True, text=True, timeout=180)
+        if result.returncode == 0:
+            return True
+        error = (result.stderr or result.stdout).strip()
+        if "not found" in error or "manifest unknown" in error.lower():
+            return False
+        time.sleep(2 * (attempt + 1))
+    print(f"[gate] cannot tell whether {name} {version} is published ({error}); "
+          "gating it as unpublished", flush=True)
+    return False
+
+
+def unpublished_charts(published=registry_has):
+    """Application charts whose Chart.yaml version is not in the registry yet.
+
+    This is exactly the set publish.yml's push step will push, so a gate over
+    it is a gate over everything that ships -- unlike "changed since the
+    previous commit", which let a CI-only commit wave through charts an
+    earlier, failed publish had left unpushed. Library charts are not
+    installable and are exercised through their consumers; a library bump
+    alone selects nothing, because a consumer that does not bump its own
+    version is not republished either. `published(name, version)` is the
+    registry lookup, injectable so the rule can be tested without a network.
+    """
+    candidates = []
+    for chart in chart_directories():
+        metadata = chart_metadata(chart)
+        if metadata.get("type") == "library":
+            continue
+        candidates.append((chart.name, str(metadata.get("version", ""))))
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        answers = list(pool.map(lambda item: published(*item), candidates))
+    return sorted(name for (name, _), known in zip(candidates, answers) if not known)
+
+
+_BUILD = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:[+_]([0-9A-Za-z.]+))?$")
+
+
+def version_key(version):
+    """Order chart versions including their build metadata.
+
+    SemVer ignores build metadata, and so does Helm: asked for the newest
+    revision it resolved 1.29.2+5 rather than 1.29.2+5.14, and the gate
+    upgraded deluge from 2.2.0+1 when 2.2.0+14 was out. Here the build is
+    compared numerically after the core. None for anything that is not a
+    version (signature or attestation tags).
+    """
+    match = _BUILD.match(version)
+    if not match:
+        return None
+    major, minor, patch, pre, build = match.groups()
+    parts = tuple(int(part) if part.isdigit() else -1 for part in (build or "").split(".") if part)
+    return (int(major), int(minor), int(patch), 0 if pre else 1, pre or "", parts)
+
+
+def newest_version(tags):
+    """The newest chart version among registry tags, as a Helm version string."""
+    versions = [(version_key(tag), tag) for tag in tags]
+    versions = [item for item in versions if item[0] is not None]
+    if not versions:
+        return None
+    return max(versions)[1].replace("_", "+")
+
+
+def registry_tags(name):
+    """Every tag of a chart in the registry, through the anonymous OCI API."""
+    path = REGISTRY.removeprefix("oci://").partition("/")[2] + f"/{name}"
+    with urllib.request.urlopen(
+            f"https://ghcr.io/token?scope=repository:{path}:pull", timeout=30) as response:
+        token = json.load(response)["token"]
+    tags, url = [], f"https://ghcr.io/v2/{path}/tags/list?n=1000"
+    while url:
+        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            tags += json.load(response).get("tags") or []
+            link = response.headers.get("Link", "")
+        match = re.search(r"<([^>]+)>", link)
+        url = f"https://ghcr.io{match.group(1)}" if match else None
+    return tags
 
 
 def container_images(value):
@@ -840,6 +945,13 @@ class Gate:
     def published_version(self, name):
         """The newest revision in the registry: the one a user is upgrading from."""
         try:
+            newest = newest_version(registry_tags(name))
+        except (urllib.error.URLError, OSError, ValueError, KeyError) as error:
+            print(f"[gate] cannot list the tags of {name} ({error}); asking helm", flush=True)
+            newest = None
+        if newest:
+            return newest
+        try:
             shown = self.helm("show", "chart", f"{REGISTRY}/{name}", timeout=180)
         except (RuntimeError, subprocess.TimeoutExpired) as error:
             print(f"[gate] no published revision of {name}: {error}", flush=True)
@@ -1097,6 +1209,8 @@ def resolve_targets(args):
         selected = sorted(charts)
     elif args.charts == "changed":
         selected = changed_charts(args.base)
+    elif args.charts == "unpublished":
+        selected = unpublished_charts()
     else:
         selected = [name.strip() for name in args.charts.split(",") if name.strip()]
         unknown = [name for name in selected if name not in charts]
@@ -1110,7 +1224,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--charts", default="changed",
-                        help="'changed' (default), 'all', or a comma-separated list")
+                        help="'changed' (default), 'unpublished', 'all', or a comma-separated list")
     parser.add_argument("--base", default="origin/main",
                         help="Git ref that 'changed' compares against")
     parser.add_argument("--budget", type=int, default=600,
@@ -1134,11 +1248,12 @@ def main():
     for name, reason in sorted(skipped.items()):
         print(f"[gate] skipping {name}: {reason}", flush=True)
     if not targets:
-        print("[gate] nothing to install; no chart directory changed", flush=True)
+        print(f"[gate] nothing to install; no chart selected by '{args.charts}'", flush=True)
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if step_summary:
             with open(step_summary, "a") as handle:
-                handle.write("## Chart install gate\n\nNo chart changed; nothing installed.\n"
+                handle.write(f"## Chart install gate\n\nNo chart selected by `{args.charts}`; "
+                             "nothing installed.\n"
                              + "".join(f"\n- skipped by name: `{name}` - {reason}"
                                        for name, reason in sorted(skipped.items())) + "\n")
         return 0

@@ -16,14 +16,20 @@ jobs:
   # Linting proves a chart renders; this proves it installs, reaches ready and
   # upgrades from what is already published. Four charts were published broken
   # on a green `validate`, so nothing is pushed until both gates pass.
+  #
+  # The gate selects every application chart whose version is not in the
+  # registry yet -- the same lookup the push step below makes, so what is
+  # gated is what is pushed. Selecting "changed since the previous commit"
+  # let a CI-only commit push five charts an earlier failed publish had left
+  # behind, none of them installed. Library charts and the charts the gate
+  # skips by name (its job summary lists them) are pushed without an install.
   install-gate:
     needs: validate
     uses: ./.github/workflows/install-gate.yml
     permissions:
       contents: read
     with:
-      charts: changed
-      base: ${{ github.event.before }}
+      charts: unpublished
 
   charts:
     needs: [validate, install-gate]
@@ -76,6 +82,8 @@ jobs:
               echo "::error::could not read name/version from $pkg"
               exit 1
             fi
+            # The install gate selected exactly the versions this finds
+            # missing, so everything pushed here was installed and upgraded.
             if helm show chart "$OCI_REPO/$chart_name" --version "$version" >/dev/null 2>&1; then
               echo "Skipping $chart_name:$version (already published)"
               echo "- \`${chart_name}:${version}\` already exists" >> "$GITHUB_STEP_SUMMARY"

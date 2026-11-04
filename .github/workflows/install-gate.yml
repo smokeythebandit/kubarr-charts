@@ -5,13 +5,14 @@ name: Install gate
 # breaks where the install works. All four shipped on the same day with the
 # suite green, so every chart that changes is installed, asserted ready and
 # upgraded from its newest published revision in a real kind cluster before
-# publish.yml is allowed to push anything.
+# publish.yml is allowed to push anything. publish.yml selects 'unpublished':
+# every chart whose version is not in the registry yet, which is what it pushes.
 
 on:
   workflow_call:
     inputs:
       charts:
-        description: "'changed', 'all', or a comma-separated list of chart names"
+        description: "'changed', 'unpublished', 'all', or a comma-separated list of chart names"
         type: string
         default: changed
       base:
@@ -23,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       charts:
-        description: "'changed', 'all', or a comma-separated list of chart names"
+        description: "'changed', 'unpublished', 'all', or a comma-separated list of chart names"
         type: string
         default: all
       base:
