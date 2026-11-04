@@ -30,7 +30,7 @@ def one(docs, kind):
 class LocalPathTests(unittest.TestCase):
     def test_chart_metadata(self):
         meta = yaml.safe_load((CHART / "Chart.yaml").read_text())
-        self.assertEqual(meta["version"], "0.0.37+1")
+        self.assertEqual(meta["version"], "0.0.37+2")
         self.assertEqual(meta["annotations"]["kubarr.io/system"], "true")
         self.assertEqual(meta["annotations"]["kubarr.io/hidden"], "true")
 
@@ -78,6 +78,36 @@ class LocalPathTests(unittest.TestCase):
         self.assertEqual(
             sc["metadata"]["annotations"]["storageclass.kubernetes.io/is-default-class"],
             "true")
+
+    def test_cluster_scoped_names_do_not_collide_with_upstream(self):
+        """kind and k3s already run upstream's manifest, which owns these names.
+
+        A chart that reuses them cannot install beside it, and the install gate
+        that tried deleted kind's own provisioner namespace on the way out.
+        """
+        upstream = {"local-path-provisioner-role", "local-path-provisioner-bind"}
+        for namespace in ("local-path-storage", "kubarr-gate-local-path"):
+            docs = render(f"namespace.name={namespace}")
+            (role,) = one(docs, "ClusterRole")
+            (binding,) = one(docs, "ClusterRoleBinding")
+            with self.subTest(namespace=namespace):
+                self.assertNotIn(role["metadata"]["name"], upstream)
+                self.assertIn(namespace, role["metadata"]["name"])
+                self.assertEqual(binding["metadata"]["name"], role["metadata"]["name"])
+                self.assertEqual(binding["roleRef"]["name"], role["metadata"]["name"])
+                self.assertEqual(binding["subjects"][0]["namespace"], namespace)
+
+    def test_provisioner_name_is_one_value(self):
+        for sets, expected in (((), "rancher.io/local-path"),
+                               (("provisionerName=kubarr.dev/gate-local-path",),
+                                "kubarr.dev/gate-local-path")):
+            docs = render(*sets)
+            (sc,) = one(docs, "StorageClass")
+            (dep,) = one(docs, "Deployment")
+            command = dep["spec"]["template"]["spec"]["containers"][0]["command"]
+            with self.subTest(expected=expected):
+                self.assertEqual(sc["provisioner"], expected)
+                self.assertEqual(command[command.index("--provisioner-name") + 1], expected)
 
 
 if __name__ == "__main__":

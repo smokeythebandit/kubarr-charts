@@ -24,6 +24,8 @@ spec:
             - start
             - --config
             - /etc/config/config.json
+            - --provisioner-name
+            - {{ .Values.provisionerName | quote }}
           ports:
             - name: health
               containerPort: 8080

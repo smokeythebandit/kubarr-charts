@@ -6,6 +6,6 @@ metadata:
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
   {{- end }}
-provisioner: rancher.io/local-path
+provisioner: {{ .Values.provisionerName | quote }}
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Delete

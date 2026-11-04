@@ -22,6 +22,12 @@ helperImage:
   repository: docker.io/library/busybox
   tag: "1.37.0"
 
+# The provisioner name the StorageClass hands claims to. Upstream's default, so
+# volumes stay compatible with the Kubarr CLI's detection; give a second
+# instance on a cluster that already runs upstream's provisioner its own name,
+# or both controllers would race for the same claims.
+provisionerName: rancher.io/local-path
+
 # Directory on each node under which volumes are created. Override it to put
 # volumes on a dedicated disk or mount.
 dataPath: /var/local-path-provisioner
