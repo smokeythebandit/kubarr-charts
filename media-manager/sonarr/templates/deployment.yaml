@@ -146,6 +146,22 @@ spec:
               mountPath: /kubarr-secrets/sabnzbd
               readOnly: true
             {{- end }}
+            - name: setup-scripts
+              mountPath: /custom-services.d/setup-prowlarr
+              subPath: setup-prowlarr.sh
+            {{- if (default dict .Values.prowlarrIntegration).secretName }}
+            - name: prowlarr-api-key
+              mountPath: /kubarr-secrets/prowlarr
+              readOnly: true
+            {{- end }}
+            - name: setup-scripts
+              mountPath: /custom-services.d/setup-bazarr
+              subPath: setup-bazarr.sh
+            {{- if (default dict .Values.bazarrIntegration).secretName }}
+            - name: bazarr-api-key
+              mountPath: /kubarr-secrets/bazarr
+              readOnly: true
+            {{- end }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "sonarr.fullname" .)) | nindent 8 }}
@@ -165,6 +181,22 @@ spec:
         - name: sabnzbd-api-key
           secret:
             secretName: {{ (default dict .Values.sabnzbdIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
+        {{- if (default dict .Values.prowlarrIntegration).secretName }}
+        - name: prowlarr-api-key
+          secret:
+            secretName: {{ (default dict .Values.prowlarrIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
+        {{- if (default dict .Values.bazarrIntegration).secretName }}
+        - name: bazarr-api-key
+          secret:
+            secretName: {{ (default dict .Values.bazarrIntegration).secretName }}
             items:
               - key: api-key
                 path: api-key

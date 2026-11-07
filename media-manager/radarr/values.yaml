@@ -111,8 +111,12 @@ kubarr:
         - "/custom-services.d/setup-downloadclients"
         - "/custom-services.d/setup-indexers"
         - "/custom-services.d/setup-mediaservers"
+        - "/custom-services.d/setup-prowlarr"
+        - "/custom-services.d/setup-bazarr"
         - "/kubarr-secrets/jellyfin"
         - "/kubarr-secrets/sabnzbd"
+        - "/kubarr-secrets/prowlarr"
+        - "/kubarr-secrets/bazarr"
 
 storage:
   mounts:
@@ -180,6 +184,7 @@ networkPolicy:
     - sabnzbd
     - jackett
     - prowlarr  # indexer manager syncs indexer definitions in
+    - bazarr  # switches itself on in the subtitle manager
 
 # Jellyfin connection. Kubarr sets secretName to a Secret (key: api-key) holding
 # the API key it also registers in Jellyfin; Radarr then adds a Jellyfin
@@ -192,6 +197,20 @@ jellyfinIntegration:
 # service can authenticate to it. Empty means Kubarr supplied no key, and the
 # SABnzbd download client is then left unconfigured.
 sabnzbdIntegration:
+  secretName: ""
+
+# Prowlarr link. Kubarr sets secretName to a Secret (key: api-key) holding the
+# API key it also writes into Prowlarr's configuration; Radarr then registers
+# itself in Prowlarr as an application, and Prowlarr pushes its indexers here.
+# Empty leaves the registration off.
+prowlarrIntegration:
+  secretName: ""
+
+# Bazarr link. Kubarr sets secretName to a Secret (key: api-key) holding the
+# API key it also writes into Bazarr's configuration; Radarr then switches
+# itself on in Bazarr, so Bazarr fetches subtitles for its library. Empty
+# leaves the connection off.
+bazarrIntegration:
   secretName: ""
 
 # Metrics exporter (exportarr) - auto-scraped by VictoriaMetrics

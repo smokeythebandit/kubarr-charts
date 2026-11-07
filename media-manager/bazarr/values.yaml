@@ -107,7 +107,7 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      main: ["/config"]
+      main: ["/config", "/kubarr-secrets/bazarr"]
 
 storage:
   # Bazarr writes subtitle files next to the media it subtitles, so both
@@ -123,6 +123,13 @@ storage:
     storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
   media:
     existingClaim: media-data
+
+# Bazarr link. Kubarr sets secretName to a Secret (key: api-key) holding the
+# API key it also gives Sonarr and Radarr; init-config writes it into
+# config.yaml so they can switch themselves on here. Empty keeps the key
+# Bazarr generates for itself.
+bazarrIntegration:
+  secretName: ""
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN
@@ -161,6 +168,8 @@ networkPolicy:
   # Namespaces allowed to send traffic to this app
   ingressFrom:
     - openresty  # Kubarr gateway proxy
+    - sonarr  # managers switch themselves on through the settings API
+    - radarr
   # Namespaces this app can send traffic to. Bazarr reads the series and movie
   # lists from Sonarr and Radarr; the shared policy already permits egress to
   # the public internet, which is what the subtitle providers need.

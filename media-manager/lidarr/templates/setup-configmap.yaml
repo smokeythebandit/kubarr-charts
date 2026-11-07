@@ -379,3 +379,112 @@ data:
 
       sleep $CHECK_INTERVAL
     done
+  setup-prowlarr.sh: |
+    #!/bin/bash
+    # Register Lidarr with Prowlarr as an application, so Prowlarr pushes its
+    # indexers here and keeps them in sync. Kubarr mounts Prowlarr's API key
+    # from the same Secret it writes into Prowlarr's own configuration; with
+    # no key there is nothing to register with and the script stays idle.
+    # An application already pointing at this Lidarr is kept, whoever added it.
+
+    CONFIG_FILE="/config/config.xml"
+    APP="Lidarr"
+    API_PORT="8686"
+    API_BASE="/lidarr"
+    API_VERSION="v1"
+    SELF_URL="http://lidarr.lidarr.svc.cluster.local:8686/lidarr"
+    PROWLARR_URL="http://prowlarr.prowlarr.svc.cluster.local:9696/prowlarr"
+    KEY_FILE="/kubarr-secrets/prowlarr/api-key"
+    CHECK_INTERVAL=60
+
+    if [ ! -s "$KEY_FILE" ]; then
+      echo "[prowlarr-link] No Prowlarr API key from Kubarr; not registering"
+      exec sleep infinity
+    fi
+    PROWLARR_KEY=$(tr -d '[:space:]' < "$KEY_FILE")
+
+    get_api_key() {
+      sed -n 's/.*<ApiKey>\([^<]*\)<\/ApiKey>.*/\1/p' "$CONFIG_FILE" 2>/dev/null
+    }
+
+    is_api_ready() {
+      curl -s -f -H "X-Api-Key: $1" "http://localhost:$API_PORT$API_BASE/api/$API_VERSION/system/status" > /dev/null 2>&1
+    }
+
+    prowlarr_get() {
+      curl -s -f --connect-timeout 5 -H "X-Api-Key: $PROWLARR_KEY" "$PROWLARR_URL/api/v1$1"
+    }
+
+    prowlarr_send() {
+      curl -s --connect-timeout 5 -X "$1" -H "X-Api-Key: $PROWLARR_KEY" \
+        -H "Content-Type: application/json" "$PROWLARR_URL/api/v1$2" -d "$3"
+    }
+
+    sync_app() {
+      local own_key="$1" apps existing schema body response id current
+      apps=$(prowlarr_get /applications) || return 0
+
+      existing=$(echo "$apps" | jq -c --arg url "$SELF_URL" \
+        'first(.[] | select(any(.fields[]; .name == "baseUrl" and ((.value // "") | rtrimstr("/")) == $url))) // empty')
+
+      if [ -z "$existing" ]; then
+        schema=$(prowlarr_get /applications/schema) || return 0
+        body=$(echo "$schema" | jq -c --arg app "$APP" --arg purl "$PROWLARR_URL" \
+          --arg url "$SELF_URL" --arg key "$own_key" '
+          first(.[] | select(.implementation == $app))
+          | .name = $app
+          | .syncLevel = "fullSync"
+          | .fields |= map(
+              if .name == "prowlarrUrl" then .value = $purl
+              elif .name == "baseUrl" then .value = $url
+              elif .name == "apiKey" then .value = $key
+              else . end)')
+        if [ -z "$body" ]; then
+          echo "[prowlarr-link] Prowlarr offers no $APP application type"
+          return 0
+        fi
+        echo "[prowlarr-link] Registering $APP with Prowlarr..."
+        response=$(prowlarr_send POST /applications "$body")
+        if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
+          echo "[prowlarr-link] Registered $APP with Prowlarr"
+        else
+          echo "[prowlarr-link] Prowlarr refused $APP: $(echo "$response" | tr -s '[:space:]' ' ' | head -c 300)"
+        fi
+        return 0
+      fi
+
+      # Keep the stored key current, e.g. after this app's config was reset.
+      # Prowlarr 2.x returns the key masked as ********, which cannot be
+      # compared, so this only acts on versions that return it in clear.
+      current=$(echo "$existing" | jq -r '.fields[] | select(.name == "apiKey") | .value // ""')
+      if [ -n "$current" ] && [ "$current" != "$own_key" ] && ! echo "$current" | grep -q '^\*\+$'; then
+        id=$(echo "$existing" | jq -r '.id')
+        body=$(echo "$existing" | jq -c --arg key "$own_key" \
+          '.fields |= map(if .name == "apiKey" then .value = $key else . end)')
+        echo "[prowlarr-link] Updating $APP's API key in Prowlarr..."
+        response=$(prowlarr_send PUT "/applications/$id" "$body")
+        if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
+          echo "[prowlarr-link] Updated $APP's API key in Prowlarr"
+        else
+          echo "[prowlarr-link] Prowlarr refused the update: $(echo "$response" | tr -s '[:space:]' ' ' | head -c 300)"
+        fi
+      fi
+    }
+
+    echo "[prowlarr-link] Starting Prowlarr registration..."
+    while true; do
+      API_KEY=$(get_api_key)
+      if [ -n "$API_KEY" ] && is_api_ready "$API_KEY"; then
+        break
+      fi
+      sleep 2
+    done
+    echo "[prowlarr-link] API is ready"
+
+    while true; do
+      API_KEY=$(get_api_key)
+      if [ -n "$API_KEY" ] && prowlarr_get /system/status > /dev/null; then
+        sync_app "$API_KEY"
+      fi
+      sleep $CHECK_INTERVAL
+    done

@@ -1,0 +1,94 @@
+{{- with include "jackett.flaresolverrUrl" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "jackett.fullname" $ }}-setup
+  namespace: {{ $.Values.namespace.name }}
+  labels:
+    {{- include "jackett.labels" $ | nindent 4 }}
+data:
+  setup-flaresolverr.sh: |
+    #!/bin/bash
+    # Keep Jackett's FlareSolverr URL in sync with the in-cluster FlareSolverr:
+    # set it while FlareSolverr answers and no URL is set, clear it once
+    # FlareSolverr has been gone for a few checks. A different URL, entered in
+    # Jackett's UI, is never touched. Changes go through Jackett's own API, so
+    # they apply without a restart.
+
+    JACKETT="http://localhost:9117/jackett"
+    FLARESOLVERR_URL="{{ . | trimSuffix "/" }}"
+    COOKIES="/tmp/flaresolverr-link.cookies"
+    CHECK_INTERVAL=60
+    # Consecutive failed checks before the URL is cleared, so a FlareSolverr
+    # restart does not flap the setting.
+    GONE_AFTER=3
+    misses=0
+
+    # Jackett without an admin password accepts an empty one; with a password
+    # set, the dashboard is the user's to manage and this stays out of it.
+    login() {
+      rm -f "$COOKIES"
+      curl -s -o /dev/null -c "$COOKIES" -b "$COOKIES" -X POST \
+        "$JACKETT/UI/Dashboard" --data-urlencode "password="
+      config > /dev/null
+    }
+
+    # A lapsed session (every settings change restarts Jackett's web host)
+    # gets a redirect to the login page, not an error, so a call only counts
+    # when Jackett answers with its configuration.
+    is_config() {
+      jq -e 'type == "object" and (has("port") or has("Port"))' > /dev/null 2>&1
+    }
+
+    config() {
+      local out
+      out=$(curl -s -b "$COOKIES" "$JACKETT/api/v2.0/server/config")
+      echo "$out" | is_config && echo "$out"
+    }
+
+    set_url() {
+      local current="$1" url="$2" body
+      body=$(echo "$current" | jq -c --arg url "$url" '.flaresolverrurl = $url')
+      curl -s -b "$COOKIES" -X POST -H "Content-Type: application/json" \
+        "$JACKETT/api/v2.0/server/config" -d "$body" | is_config
+    }
+
+    sync() {
+      local current url
+      current=$(config) || { login && current=$(config); } || return 1
+      url=$(echo "$current" | jq -r '.flaresolverrurl // "" | rtrimstr("/")')
+
+      if curl -s -f --connect-timeout 5 -o /dev/null "$FLARESOLVERR_URL/"; then
+        misses=0
+        if [ -z "$url" ]; then
+          if set_url "$current" "$FLARESOLVERR_URL"; then
+            echo "[flaresolverr-link] Jackett now uses FlareSolverr at $FLARESOLVERR_URL"
+          else
+            echo "[flaresolverr-link] Jackett refused the FlareSolverr URL"
+          fi
+        fi
+      else
+        misses=$((misses + 1))
+        if [ "$url" = "$FLARESOLVERR_URL" ] && [ "$misses" -ge "$GONE_AFTER" ]; then
+          if set_url "$current" ""; then
+            echo "[flaresolverr-link] FlareSolverr is gone; cleared Jackett's URL"
+          fi
+        fi
+      fi
+    }
+
+    echo "[flaresolverr-link] Waiting for Jackett..."
+    until curl -s -o /dev/null "$JACKETT/UI/Login"; do
+      sleep 2
+    done
+    if ! login; then
+      echo "[flaresolverr-link] Jackett has an admin password; leaving FlareSolverr to the dashboard"
+      exec sleep infinity
+    fi
+    echo "[flaresolverr-link] Syncing FlareSolverr into Jackett"
+
+    while true; do
+      sync
+      sleep $CHECK_INTERVAL
+    done
+{{- end }}

@@ -1,0 +1,115 @@
+{{- with include "prowlarr.flaresolverrUrl" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "prowlarr.fullname" $ }}-setup
+  namespace: {{ $.Values.namespace.name }}
+  labels:
+    {{- include "prowlarr.labels" $ | nindent 4 }}
+data:
+  setup-flaresolverr.sh: |
+    #!/bin/bash
+    # Keep a FlareSolverr indexer proxy in Prowlarr in sync with the in-cluster
+    # FlareSolverr: add it while FlareSolverr answers, remove it once
+    # FlareSolverr has been gone for a few checks. Prowlarr only routes
+    # indexers carrying the proxy's tag through it; the tag outlives the proxy
+    # so tagged indexers pick it up again. A FlareSolverr proxy added by hand
+    # is never touched.
+
+    CONFIG_FILE="/config/config.xml"
+    API="http://localhost:9696/prowlarr/api/v1"
+    FLARESOLVERR_URL="{{ . | trimSuffix "/" }}/"
+    TAG="flaresolverr"
+    CHECK_INTERVAL=60
+    # Consecutive failed checks before the proxy is removed, so a FlareSolverr
+    # restart does not flap it.
+    GONE_AFTER=3
+    misses=0
+
+    get_api_key() {
+      sed -n 's/.*<ApiKey>\([^<]*\)<\/ApiKey>.*/\1/p' "$CONFIG_FILE" 2>/dev/null
+    }
+
+    api_get() {
+      curl -s -f -H "X-Api-Key: $API_KEY" "$API$1"
+    }
+
+    api_post() {
+      curl -s -X POST -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" "$API$1" -d "$2"
+    }
+
+    tag_id() {
+      local id
+      id=$(api_get /tag | jq -r --arg t "$TAG" 'first(.[] | select(.label == $t) | .id) // empty')
+      if [ -z "$id" ]; then
+        id=$(api_post /tag "$(jq -cn --arg t "$TAG" '{label: $t}')" | jq -r '.id // empty')
+      fi
+      echo "$id"
+    }
+
+    # The proxy this service made: our URL and our tag. One added by hand is
+    # left alone even when it points at the same FlareSolverr.
+    ours() {
+      local tag
+      tag=$(api_get /tag | jq -r --arg t "$TAG" 'first(.[] | select(.label == $t) | .id) // empty')
+      [ -z "$tag" ] && return 0
+      echo "$1" | jq -r --arg url "$FLARESOLVERR_URL" --argjson tag "$tag" '
+        first(.[] | select(.implementation == "FlareSolverr"
+          and (.tags | index($tag))
+          and any(.fields[]; .name == "host" and ((.value // "") | rtrimstr("/")) == ($url | rtrimstr("/"))))
+          | .id) // empty'
+    }
+
+    sync_proxy() {
+      local proxies id tag body response
+      proxies=$(api_get /indexerProxy) || return 0
+      if ! curl -s -f --connect-timeout 5 -o /dev/null "${FLARESOLVERR_URL}"; then
+        misses=$((misses + 1))
+        id=$(ours "$proxies")
+        if [ -n "$id" ] && [ "$misses" -ge "$GONE_AFTER" ]; then
+          curl -s -f -o /dev/null -X DELETE -H "X-Api-Key: $API_KEY" "$API/indexerProxy/$id" &&
+            echo "[flaresolverr-link] FlareSolverr is gone; removed the proxy"
+        fi
+        return 0
+      fi
+      misses=0
+      if echo "$proxies" | jq -e 'any(.[]; .implementation == "FlareSolverr")' > /dev/null; then
+        return 0
+      fi
+      tag=$(tag_id)
+      if [ -z "$tag" ]; then
+        echo "[flaresolverr-link] Could not create the $TAG tag"
+        return 0
+      fi
+      body=$(api_get /indexerProxy/schema | jq -c --arg url "$FLARESOLVERR_URL" --argjson tag "$tag" '
+        first(.[] | select(.implementation == "FlareSolverr"))
+        | .name = "FlareSolverr"
+        | .tags = [$tag]
+        | .fields |= map(if .name == "host" then .value = $url else . end)')
+      if [ -z "$body" ]; then
+        echo "[flaresolverr-link] Prowlarr offers no FlareSolverr proxy type"
+        return 0
+      fi
+      response=$(api_post /indexerProxy "$body")
+      if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
+        echo "[flaresolverr-link] Added FlareSolverr proxy; tag indexers with '$TAG' to use it"
+      else
+        echo "[flaresolverr-link] Prowlarr refused the proxy: $(echo "$response" | tr -s '[:space:]' ' ' | head -c 300)"
+      fi
+    }
+
+    echo "[flaresolverr-link] Waiting for Prowlarr..."
+    while true; do
+      API_KEY=$(get_api_key)
+      if [ -n "$API_KEY" ] && api_get /system/status > /dev/null; then
+        break
+      fi
+      sleep 2
+    done
+
+    while true; do
+      API_KEY=$(get_api_key)
+      sync_proxy
+      sleep $CHECK_INTERVAL
+    done
+{{- end }}

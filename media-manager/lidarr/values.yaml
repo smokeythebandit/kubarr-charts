@@ -107,7 +107,7 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      main: ["/config", "/custom-services.d/setup-downloadclients", "/kubarr-secrets/sabnzbd"]
+      main: ["/config", "/custom-services.d/setup-downloadclients", "/custom-services.d/setup-prowlarr", "/kubarr-secrets/sabnzbd", "/kubarr-secrets/prowlarr"]
 
 storage:
   mounts:
@@ -160,6 +160,13 @@ vpn:
 # service can authenticate to it. Empty means Kubarr supplied no key, and the
 # SABnzbd download client is then left unconfigured.
 sabnzbdIntegration:
+  secretName: ""
+
+# Prowlarr link. Kubarr sets secretName to a Secret (key: api-key) holding the
+# API key it also writes into Prowlarr's configuration; Lidarr then registers
+# itself in Prowlarr as an application, and Prowlarr pushes its indexers here.
+# Empty leaves the registration off.
+prowlarrIntegration:
   secretName: ""
 
 # Network policy configuration

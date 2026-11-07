@@ -83,7 +83,7 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      main: ["/config"]
+      main: ["/config", "/custom-services.d/setup-flaresolverr"]
 
 storage:
   mounts: []
@@ -129,6 +129,13 @@ podAnnotations: {}
 
 # Image pull secrets
 imagePullSecrets: []
+
+# FlareSolverr solves Cloudflare challenges for protected indexers.
+# setup-flaresolverr sets Jackett's FlareSolverr URL to this while FlareSolverr
+# answers and clears it once FlareSolverr is gone; a URL entered in Jackett's
+# UI is kept. Empty leaves Jackett's setting alone.
+flaresolverr:
+  url: "http://flaresolverr.flaresolverr.svc.cluster.local:8191"
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN

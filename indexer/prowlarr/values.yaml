@@ -107,7 +107,7 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      main: ["/config"]
+      main: ["/config", "/custom-services.d/setup-flaresolverr", "/kubarr-secrets/prowlarr"]
 
 storage:
   # Prowlarr stores only its own database and indexer definitions; it never
@@ -121,6 +121,20 @@ storage:
     storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
   media:
     existingClaim: media-data
+
+# Prowlarr link. Kubarr sets secretName to a Secret (key: api-key) holding the
+# API key it also gives Sonarr, Radarr and Lidarr; init-config writes it into
+# config.xml so those apps can register here and receive the indexers. Empty
+# keeps the key Prowlarr generates for itself.
+prowlarrIntegration:
+  secretName: ""
+
+# FlareSolverr solves Cloudflare challenges for protected indexers. While it
+# answers at this URL, setup-flaresolverr keeps an indexer proxy tagged
+# "flaresolverr" in Prowlarr, and removes it once FlareSolverr is gone; tag an
+# indexer to route it through. Empty disables this.
+flaresolverr:
+  url: "http://flaresolverr.flaresolverr.svc.cluster.local:8191"
 
 # VPN Configuration
 # When enabled, a Gluetun sidecar container is added to route all traffic through VPN

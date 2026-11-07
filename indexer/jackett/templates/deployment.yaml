@@ -16,6 +16,9 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if include "jackett.flaresolverrUrl" . }}
+        checksum/setup: {{ include (print $.Template.BasePath "/setup-configmap.yaml") . | sha256sum }}
+        {{- end }}
       {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -102,7 +105,18 @@ spec:
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
             {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) | nindent 12 }}
+            {{- if include "jackett.flaresolverrUrl" . }}
+            - name: setup-scripts
+              mountPath: /custom-services.d/setup-flaresolverr
+              subPath: setup-flaresolverr.sh
+            {{- end }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "jackett.fullname" .)) | nindent 8 }}
+        {{- if include "jackett.flaresolverrUrl" . }}
+        - name: setup-scripts
+          configMap:
+            name: {{ include "jackett.fullname" . }}-setup
+            defaultMode: 0755
+        {{- end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

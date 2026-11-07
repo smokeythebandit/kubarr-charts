@@ -16,6 +16,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        kubarr.io/bazarr-link: {{ (default dict .Values.bazarrIntegration).secretName | quote }}
       {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -57,20 +58,47 @@ spec:
                 printf 'general:\n  ip: 0.0.0.0\n  port: %s\n  %s\n' \
                   "6767" "$BASE_LINE" > "$CONFIG_FILE"
               else
-                # Keep the reverse-proxy prefix pinned, leaving the rest alone
+                # Keep the reverse-proxy prefix pinned, leaving the rest alone.
+                # Only general.base_url: the sonarr and radarr sections carry
+                # their own base_url, the prefix Bazarr uses to reach them.
                 echo "Updating the base URL in the existing config..."
-                if grep -qE '^[[:space:]]+base_url:' "$CONFIG_FILE"; then
-                  sed -i "s|^\([[:space:]]*\)base_url:.*|\1$BASE_LINE|" "$CONFIG_FILE"
-                elif grep -q '^general:' "$CONFIG_FILE"; then
-                  sed -i "s|^general:|general:\n  $BASE_LINE|" "$CONFIG_FILE"
+                if grep -q '^general:' "$CONFIG_FILE"; then
+                  awk -v line="$BASE_LINE" '
+                    /^general:/ { print; ingeneral = 1; next }
+                    ingeneral && /^[^ ]/ { if (!done) print "  " line; ingeneral = 0; done = 1 }
+                    ingeneral && /^  base_url:/ { print "  " line; done = 1; next }
+                    { print }
+                    END { if (ingeneral && !done) print "  " line }
+                  ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
                 else
                   printf 'general:\n  %s\n' "$BASE_LINE" >> "$CONFIG_FILE"
                 fi
               fi
+              {{- if (default dict .Values.bazarrIntegration).secretName }}
+              # Kubarr's key, shared with Sonarr and Radarr so they can switch
+              # themselves on here before Bazarr ever generated a key.
+              KEY=$(tr -d '[:space:]' < /kubarr-secrets/bazarr/api-key)
+              if grep -q '^auth:' "$CONFIG_FILE"; then
+                awk -v key="$KEY" '
+                  /^auth:/ { print; inauth = 1; next }
+                  inauth && /^[^ ]/ { if (!done) print "  apikey: " key; inauth = 0; done = 1 }
+                  inauth && /^  apikey:/ { print "  apikey: " key; done = 1; next }
+                  { print }
+                  END { if (inauth && !done) print "  apikey: " key }
+                ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+              else
+                printf 'auth:\n  apikey: %s\n' "$KEY" >> "$CONFIG_FILE"
+              fi
+              {{- end }}
               echo "Config file contents:"
-              cat "$CONFIG_FILE"
+              sed 's|^\([[:space:]]*apikey:\).*|\1 (hidden)|' "$CONFIG_FILE"
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/config") | nindent 12 }}
+            {{- if (default dict .Values.bazarrIntegration).secretName }}
+            - name: bazarr-api-key
+              mountPath: /kubarr-secrets/bazarr
+              readOnly: true
+            {{- end }}
         {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.bazarr.service.targetPort) | nindent 8 }}
@@ -112,4 +140,12 @@ spec:
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "bazarr.fullname" .)) | nindent 8 }}
+        {{- if (default dict .Values.bazarrIntegration).secretName }}
+        - name: bazarr-api-key
+          secret:
+            secretName: {{ (default dict .Values.bazarrIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}
