@@ -6,7 +6,7 @@ The VPN init container helper takes the same "p2p" key and also emits the picker
 */}}
 
 {{/*
-Server picker settings, read with defaults so releases upgraded with
+Server picker settings (the picker is only enabled with vpn.killSwitch: a reconnect without the firewall would leak app traffic), read with defaults so releases upgraded with
 --reuse-values (which drops new chart defaults, leaving vpn.picker absent) still
 render a working picker. Emits JSON; decode with fromJson.
 */}}
@@ -14,7 +14,7 @@ render a working picker. Emits JSON; decode with fromJson.
 {{- $p := default dict .vpn.picker -}}
 {{- $image := default dict (get $p "image") -}}
 {{- dict
-  "enabled" (dig "enabled" true $p)
+  "enabled" (and (dig "enabled" true $p) (default false .vpn.killSwitch))
   "shortlist" (dig "shortlist" 5 $p)
   "sample" (dig "sample" 40 $p)
   "initBudget" (dig "initBudget" "60s" $p)
@@ -45,9 +45,17 @@ key by key (never envFrom) so the WireGuard private key stays out of the picker.
   imagePullPolicy: {{ $s.pullPolicy }}
   args: [{{ .mode | quote }}]
   securityContext:
+    {{- if $init }}
+    # Raw ICMP needs an effective NET_RAW, which a non-root user never gets,
+    # so only the init container runs as root (all other capabilities dropped).
+    runAsUser: 0
+    runAsGroup: 0
+    runAsNonRoot: false
+    {{- else }}
     runAsUser: 1000
     runAsGroup: 1000
     runAsNonRoot: true
+    {{- end }}
     readOnlyRootFilesystem: true
     allowPrivilegeEscalation: false
     capabilities:

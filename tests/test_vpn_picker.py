@@ -57,6 +57,12 @@ class PickerTests(unittest.TestCase):
         self.assertEqual(init["args"], ["init"])
         self.assertEqual(init["securityContext"]["capabilities"]["add"], ["NET_RAW"])
         self.assertEqual(init["securityContext"]["capabilities"]["drop"], ["ALL"])
+        # Raw ICMP needs effective NET_RAW, which a non-root user never gets.
+        isc = init["securityContext"]
+        self.assertEqual((isc["runAsUser"], isc["runAsGroup"]), (0, 0))
+        self.assertFalse(isc["runAsNonRoot"])
+        self.assertTrue(isc["readOnlyRootFilesystem"])
+        self.assertFalse(isc["allowPrivilegeEscalation"])
         self.assertEqual(init["image"], "ghcr.io/smokeythebandit/kubarr-vpn-picker:main")
         self.assertIn({"name": "picker", "mountPath": "/picker"}, init["volumeMounts"])
         names = [c["name"] for c in self.spec["initContainers"]]
@@ -74,8 +80,8 @@ class PickerTests(unittest.TestCase):
         self.assertEqual((sc["runAsUser"], sc["runAsGroup"]), (1000, 1000))
         self.assertIn({"name": "picker", "mountPath": "/picker"}, sidecar["volumeMounts"])
         init_sc = by_name(self.spec["initContainers"], "vpn-picker-init")["securityContext"]
-        self.assertEqual((init_sc["runAsUser"], init_sc["runAsGroup"]), (1000, 1000))
-        self.assertTrue(init_sc["runAsNonRoot"] and init_sc["readOnlyRootFilesystem"])
+        self.assertEqual((init_sc["runAsUser"], init_sc["runAsGroup"]), (0, 0))
+        self.assertTrue(init_sc["readOnlyRootFilesystem"])
 
     def test_shared_volume(self):
         self.assertEqual(by_name(self.spec["volumes"], "picker")["emptyDir"], {})
@@ -141,6 +147,11 @@ class PickerTests(unittest.TestCase):
 
     def test_picker_disabled(self):
         spec = pod("download-client/qbittorrent", *VPN, "vpn.picker.enabled=false")
+        self.assertIsNotNone(by_name(spec["containers"], "gluetun"))
+        self.assert_no_picker(spec)
+
+    def test_kill_switch_off_disables_picker(self):
+        spec = pod("download-client/qbittorrent", *VPN, "vpn.killSwitch=false")
         self.assertIsNotNone(by_name(spec["containers"], "gluetun"))
         self.assert_no_picker(spec)
 
