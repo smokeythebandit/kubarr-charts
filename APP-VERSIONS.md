@@ -116,6 +116,21 @@ endpoints reported the expected versions and the migration succeeded.
 
 Reference: <https://docs.seerr.dev/migration-guide/>.
 
+## New application — 2026-11-07
+
+| Chart | Category | Image | Application version |
+| --- | --- | --- | --- |
+| Unpackerr | download-client | `ghcr.io/unpackerr/unpackerr` | 1.0.1 |
+
+The `v1.0.1` tag (2026-10-29) was verified on GHCR. Unpackerr runs in folder
+mode: each writable `/downloads/*` mount is polled (NFS carries no file events
+between nodes) and archives are extracted next to themselves, so the managers
+import them on their next download check without sharing an API key. Checked
+with the image: a ZIP dropped into a polled folder was extracted in place and
+the archive kept. Unpackerr 1.0 replaced `[[folder]]` lists with keyed
+sections, hence `UN_FOLDER_<key>_*` variables. Its web server stays off: it
+would require a password and logs a generated admin key.
+
 ## New applications — 2026-11-01
 
 Thirteen charts added. Each image tag below was verified against its registry

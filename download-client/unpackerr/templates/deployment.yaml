@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "unpackerr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "unpackerr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.unpackerr.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "unpackerr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "unpackerr.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "unpackerr.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.podSecurityContext.runAsUser "gid" .Values.podSecurityContext.runAsGroup) | nindent 8 }}
+      containers:
+        - name: unpackerr
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.unpackerr.image.repository }}:{{ .Values.unpackerr.image.tag }}"
+          imagePullPolicy: {{ .Values.unpackerr.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "unpackerr.fullname" . }}-config
+          resources:
+            {{- toYaml .Values.unpackerr.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) | nindent 12 }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- if gt (len .Values.storage.mounts) 0 }}
+        {{- include "kubarr-common.storage.mediaVolume" (dict "root" .) | nindent 8 }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.unpackerr.tmp.sizeLimit }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

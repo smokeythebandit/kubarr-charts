@@ -1,0 +1,101 @@
+# Unpackerr watches the download clients' folders and extracts archives in
+# place, so a release that arrives as RAR/ZIP/7z parts is imported by Sonarr,
+# Radarr and Lidarr like any other. It uses folder mode, which needs no API
+# key from the managers: they retry an import on every download check and find
+# the extracted video once it is there.
+
+namespace:
+  create: true
+  name: unpackerr
+
+unpackerr:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/unpackerr/unpackerr
+    pullPolicy: IfNotPresent
+    tag: "v1.0.1"
+
+  # Download folders live on NFS, where file events from a client on another
+  # node never arrive, so every watched folder is polled on this interval.
+  pollInterval: "1m"
+  # Put extracted files next to the archive, where the managers look, instead
+  # of an _unpackerred folder beside it.
+  moveBack: true
+  # Remove the extracted copy this long after extraction ("0s" keeps it). The
+  # archive itself is never deleted, so the torrent keeps seeding. Leave room
+  # for the manager to import first.
+  deleteExtractedAfter: "0s"
+  # Archives extracted at once.
+  parallel: 1
+
+  # Extra Unpackerr settings as UN_* variables; see https://unpackerr.zip.
+  env:
+    TZ: "Etc/UTC"
+    # One log line per extraction instead of an empty queue every minute.
+    UN_ACTIVITY: "true"
+
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  tmp:
+    sizeLimit: 64Mi
+
+# Paths this chart's own templates occupy, read by the install wizard
+# (api/src/services/install_options.rs) the same way as every other chart.
+kubarr:
+  storage:
+    required:
+      main: []
+    reserved:
+      main: ["/tmp"]
+
+# Each mount under /downloads becomes one watched folder. Keep the targets
+# identical to the managers' mounts so they see the extracted files.
+storage:
+  mounts:
+    - {name: qbittorrent, source: downloads/qbittorrent, target: /downloads/qbittorrent, mode: read-write}
+    - {name: transmission, source: downloads/transmission, target: /downloads/transmission, mode: read-write}
+    - {name: deluge, source: downloads/deluge, target: /downloads/deluge, mode: read-write}
+    - {name: rutorrent, source: downloads/rutorrent, target: /downloads/rutorrent, mode: read-write}
+    - {name: sabnzbd, source: downloads/sabnzbd, target: /downloads/sabnzbd, mode: read-write}
+  media:
+    existingClaim: media-data
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+# UID/GID 1000 owns the download folders the LinuxServer clients write.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+serviceAccount:
+  create: true
+  name: unpackerr
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+imagePullSecrets: []
+
+# Nothing calls Unpackerr and it calls nothing: it only reads and writes the
+# shared download storage.
+networkPolicy:
+  enabled: true

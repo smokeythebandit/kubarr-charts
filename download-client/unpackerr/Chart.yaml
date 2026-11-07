@@ -1,0 +1,30 @@
+apiVersion: v2
+name: unpackerr
+description: Extracts RAR, ZIP and 7z downloads so Sonarr, Radarr and Lidarr can import them
+type: application
+version: 1.0.1+1
+appVersion: "1.0.1"
+keywords:
+  - unpackerr
+  - extract
+  - rar
+  - download-client
+home: https://unpackerr.zip
+sources:
+  - https://github.com/Unpackerr/unpackerr
+maintainers:
+  - name: Kubarr Team
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+annotations:
+  kubarr.io/display-name: "Unpackerr"
+  kubarr.io/icon: "📦"
+  kubarr.io/category: "download-client"
+  # Unpackerr watches download folders and has no page: its web server is off
+  # (it would need a password and logs a generated admin key), so the dashboard
+  # offers no "open" tile. It is an app a user chooses, not a platform component.
+  kubarr.io/system: "false"
+  kubarr.io/browseable: "false"
+dependencies:
+  - name: kubarr-common
+    version: 0.8.2
+    repository: file://../../system/kubarr-common

@@ -1,0 +1,22 @@
+{{- include "unpackerr.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "unpackerr.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "unpackerr.labels" . | nindent 4 }}
+data:
+  UN_PARALLEL: {{ .Values.unpackerr.parallel | quote }}
+  {{- range $mount := include "unpackerr.folders" . | fromJsonArray }}
+  {{- $key := include "unpackerr.folderKey" $mount.name }}
+  UN_FOLDER_{{ $key }}_PATH: {{ $mount.target | quote }}
+  UN_FOLDER_{{ $key }}_INTERVAL: {{ $.Values.unpackerr.pollInterval | quote }}
+  UN_FOLDER_{{ $key }}_MOVE_BACK: {{ $.Values.unpackerr.moveBack | toString | quote }}
+  UN_FOLDER_{{ $key }}_DELETE_AFTER: {{ $.Values.unpackerr.deleteExtractedAfter | quote }}
+  UN_FOLDER_{{ $key }}_DELETE_FILES: {{ ne $.Values.unpackerr.deleteExtractedAfter "0s" | toString | quote }}
+  UN_FOLDER_{{ $key }}_DELETE_ORIGINAL: "false"
+  {{- end }}
+  {{- range $name, $value := .Values.unpackerr.env }}
+  {{ $name }}: {{ $value | toString | quote }}
+  {{- end }}
