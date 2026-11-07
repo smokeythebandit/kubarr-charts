@@ -2,7 +2,7 @@ apiVersion: v2
 name: redmine
 description: Redmine project and issue tracking
 type: application
-version: 7.0.2+16
+version: 7.0.2+17
 appVersion: "7.0.2"
 annotations:
   kubarr.io/display-name: "Redmine"
@@ -10,5 +10,5 @@ annotations:
   kubarr.io/category: "development"
 dependencies:
   - name: kubarr-common
-    version: 0.8.3
+    version: 0.8.4
     repository: file://../../system/kubarr-common

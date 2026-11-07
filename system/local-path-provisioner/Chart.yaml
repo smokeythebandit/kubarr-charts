@@ -2,7 +2,7 @@ apiVersion: v2
 name: local-path-provisioner
 description: Local-path provisioner for node-local Kubarr storage
 type: application
-version: 0.0.37+3
+version: 0.0.37+4
 appVersion: "v0.0.37"
 annotations:
   kubarr.io/display-name: "Local Path Provisioner"
@@ -13,5 +13,5 @@ annotations:
   kubarr.io/browseable: "false"
 dependencies:
   - name: kubarr-common
-    version: 0.8.3
+    version: 0.8.4
     repository: file://../kubarr-common

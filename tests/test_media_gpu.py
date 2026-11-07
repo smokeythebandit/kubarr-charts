@@ -180,7 +180,7 @@ class MediaGpuTests(unittest.TestCase):
                         self.assertEqual(pod["securityContext"]["supplementalGroups"], [44, 109])
                         self.assertEqual(pod["securityContext"]["fsGroup"], 1000)
                         containers = {c["name"]: c for c in pod["containers"]}
-                        self.assertEqual(set(containers), {app, "gluetun"} if vpn else {app})
+                        self.assertEqual(set(containers), {app, "gluetun", "vpn-picker"} if vpn else {app})
                         media = containers[app]
                         for side in ("requests", "limits"):
                             self.assertEqual(media["resources"][side][resource], 1)

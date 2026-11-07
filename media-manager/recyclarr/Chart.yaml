@@ -2,7 +2,7 @@ apiVersion: v2
 name: recyclarr
 description: Syncs TRaSH-Guides quality profiles and custom formats into Radarr and Sonarr
 type: application
-version: 8.8.1+6
+version: 8.8.1+7
 appVersion: "8.8.1"
 keywords:
   - recyclarr
@@ -36,5 +36,5 @@ annotations:
   kubarr.io/browseable: "false"
 dependencies:
   - name: kubarr-common
-    version: 0.8.3
+    version: 0.8.4
     repository: file://../../system/kubarr-common

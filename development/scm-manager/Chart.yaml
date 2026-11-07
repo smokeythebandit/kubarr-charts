@@ -2,7 +2,7 @@ apiVersion: v2
 name: scm-manager
 description: SCM-Manager Git repository hosting
 type: application
-version: 3.12.2+14
+version: 3.12.2+15
 appVersion: "3.12.2"
 annotations:
   kubarr.io/display-name: "SCM-Manager"
@@ -10,5 +10,5 @@ annotations:
   kubarr.io/category: "development"
 dependencies:
   - name: kubarr-common
-    version: 0.8.3
+    version: 0.8.4
     repository: file://../../system/kubarr-common

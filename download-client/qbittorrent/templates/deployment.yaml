@@ -35,11 +35,11 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- if or .Values.vpn.enabled $prepare }}
       initContainers:
-        {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
+        {{- include "kubarr-common.gluetun.initContainer" (dict "root" . "p2p" true) | nindent 8 }}
         {{- with $prepare }}{{- . | nindent 8 }}{{- end }}
       {{- end }}
       containers:
-        {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.qbittorrent.service.targetPort "inputPorts" (ternary (toString .Values.exporter.port) "" .Values.exporter.enabled) "defaultUpCommand" (printf "/bin/sh -c 'i=0; until wget -q -T 5 -O /dev/null --post-data=\"json={\\\"listen_port\\\":{{PORT}}}\" http://127.0.0.1:%v/api/v2/app/setPreferences; do i=$((i+1)); [ \"$i\" -lt 30 ] || exit 1; sleep 2; done'" .Values.qbittorrent.service.targetPort)) | nindent 8 }}
+        {{- include "kubarr-common.gluetun.container" (dict "root" . "p2p" true "appPort" .Values.qbittorrent.service.targetPort "inputPorts" (ternary (toString .Values.exporter.port) "" .Values.exporter.enabled) "defaultUpCommand" (printf "/bin/sh -c 'i=0; until wget -q -T 5 -O /dev/null --post-data=\"json={\\\"listen_port\\\":{{PORT}}}\" http://127.0.0.1:%v/api/v2/app/setPreferences; do i=$((i+1)); [ \"$i\" -lt 30 ] || exit 1; sleep 2; done'" .Values.qbittorrent.service.targetPort)) | nindent 8 }}
         - name: qbittorrent
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}

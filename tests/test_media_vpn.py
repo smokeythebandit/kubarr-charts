@@ -118,7 +118,7 @@ class MediaVpnTests(unittest.TestCase):
                 self.assertEqual(control["from"], [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kubarr-backend"}},
                                                    "podSelector": {"matchLabels": {"app.kubernetes.io/name": "kubarr-backend"}}}])
                 containers = {c["name"]: c for c in on["containers"]}
-                self.assertEqual(set(containers), {app, "gluetun"})
+                self.assertEqual(set(containers), {app, "gluetun", "vpn-picker"})
                 gluetun = containers["gluetun"]
                 env = {entry["name"]: entry["value"] for entry in gluetun["env"]}
                 self.assertNotIn("FIREWALL_OUTBOUND_SUBNETS", env)
@@ -136,7 +136,7 @@ class MediaVpnTests(unittest.TestCase):
         pod, _ = render("indexer/jackett", True,
                         {"portForwarding": {"enabled": True, "upCommand": "custom callback"}},
                         {"basePath": ""})
-        self.assertEqual([c["name"] for c in pod["initContainers"]], ["gluetun-tmp-permissions"])
+        self.assertEqual([c["name"] for c in pod["initContainers"]], ["vpn-picker-init", "gluetun-tmp-permissions"])
         env = {e["name"]: e["value"] for c in pod["containers"] if c["name"] == "gluetun" for e in c["env"]}
         self.assertEqual(env["VPN_PORT_FORWARDING_UP_COMMAND"], "custom callback")
         self.assertEqual(env["VPN_PORT_FORWARDING"], "on")

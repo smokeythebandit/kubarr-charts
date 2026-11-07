@@ -165,6 +165,33 @@ vpn:
   portForwarding:
     enabled: false
     upCommand: ""
+  # Server picker: chooses the fastest VPN server before gluetun starts and
+  # re-evaluates it while the pod runs. Reads fall back to these defaults.
+  picker:
+    enabled: true
+    shortlist: 5
+    sample: 40
+    initBudget: 60s
+    testSeconds: 8
+    testEndpoints:
+      - https://proof.ovh.net/files/100Mb.dat
+      - http://speedtest.tele2.net/100MB.zip
+    interval: 15m
+    degradeThreshold: 0.4
+    degradeChecks: 3
+    cooldown: 6h
+    switchWhileRunning: true
+    image:
+      repository: ghcr.io/smokeythebandit/kubarr-vpn-picker
+      tag: main
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
 
 # Network policy configuration
 networkPolicy:

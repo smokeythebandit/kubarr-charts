@@ -2,7 +2,7 @@ apiVersion: v2
 name: flaresolverr
 description: Proxy that solves Cloudflare and DDoS-GUARD challenges for indexers
 type: application
-version: 3.5.2+2
+version: 3.5.2+3
 appVersion: "3.5.2"
 keywords:
   - flaresolverr
@@ -37,5 +37,5 @@ annotations:
   kubarr.io/browseable: "false"
 dependencies:
   - name: kubarr-common
-    version: 0.8.3
+    version: 0.8.4
     repository: file://../../system/kubarr-common

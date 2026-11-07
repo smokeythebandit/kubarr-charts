@@ -51,10 +51,10 @@ spec:
           volumeMounts:
             - name: nginx-state
               mountPath: /var/lib/nginx
-        {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
+        {{- include "kubarr-common.gluetun.initContainer" (dict "root" . "p2p" true) | nindent 8 }}
         {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.rutorrent.env.PUID "gid" .Values.rutorrent.env.PGID) | nindent 8 }}
       containers:
-        {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.rutorrent.service.targetPort) | nindent 8 }}
+        {{- include "kubarr-common.gluetun.container" (dict "root" . "p2p" true "appPort" .Values.rutorrent.service.targetPort) | nindent 8 }}
         - name: rutorrent
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}

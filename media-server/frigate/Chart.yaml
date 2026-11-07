@@ -2,7 +2,7 @@ apiVersion: v2
 name: frigate
 description: Frigate local NVR and camera object detection
 type: application
-version: 0.18.2+14
+version: 0.18.2+15
 appVersion: "0.18.2"
 annotations:
   kubarr.io/display-name: "Frigate"
@@ -10,5 +10,5 @@ annotations:
   kubarr.io/category: "media-server"
 dependencies:
   - name: kubarr-common
-    version: 0.8.3
+    version: 0.8.4
     repository: file://../../system/kubarr-common

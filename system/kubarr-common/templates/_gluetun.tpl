@@ -1,13 +1,126 @@
 {{/*
 VPN pod fragments; include under containers, initContainers, and volumes respectively.
 container accepts dict "root" . "appPort" <targetPort> "inputPorts" <additional comma-separated ports>
-and optional "defaultUpCommand" <command>. All three helpers emit nothing when vpn.enabled is false.
+optional "defaultUpCommand" <command>, and optional "p2p" true (torrent clients; picks P2P-capable servers).
+The VPN init container helper takes the same "p2p" key and also emits the picker init container. All three helpers emit nothing when vpn.enabled is false.
 */}}
+
+{{/*
+Server picker settings, read with defaults so releases upgraded with
+--reuse-values (which drops new chart defaults, leaving vpn.picker absent) still
+render a working picker. Emits JSON; decode with fromJson.
+*/}}
+{{- define "kubarr-common.gluetun.pickerSettings" -}}
+{{- $p := default dict .vpn.picker -}}
+{{- $image := default dict (get $p "image") -}}
+{{- dict
+  "enabled" (dig "enabled" true $p)
+  "shortlist" (dig "shortlist" 5 $p)
+  "sample" (dig "sample" 40 $p)
+  "initBudget" (dig "initBudget" "60s" $p)
+  "testSeconds" (dig "testSeconds" 8 $p)
+  "testEndpoints" (dig "testEndpoints" (list "https://proof.ovh.net/files/100Mb.dat" "http://speedtest.tele2.net/100MB.zip") $p)
+  "interval" (dig "interval" "15m" $p)
+  "degradeThreshold" (dig "degradeThreshold" 0.4 $p)
+  "degradeChecks" (dig "degradeChecks" 3 $p)
+  "cooldown" (dig "cooldown" "6h" $p)
+  "switchWhileRunning" (dig "switchWhileRunning" true $p)
+  "image" (printf "%s:%s" (dig "repository" "ghcr.io/smokeythebandit/kubarr-vpn-picker" $image) (dig "tag" "main" $image))
+  "pullPolicy" (dig "pullPolicy" "IfNotPresent" $image)
+  "resources" (dig "resources" (dict "requests" (dict "cpu" "10m" "memory" "32Mi") "limits" (dict "cpu" "200m" "memory" "128Mi")) $p)
+  | toJson -}}
+{{- end }}
+
+{{/*
+Picker container body shared by the init container and the sidecar. Takes
+dict "root" . "p2p" <bool> "mode" init|run. Credentials come from the VPN Secret
+key by key (never envFrom) so the WireGuard private key stays out of the picker.
+*/}}
+{{- define "kubarr-common.gluetun.pickerContainer" -}}
+{{- $vpn := .root.Values.vpn -}}
+{{- $s := include "kubarr-common.gluetun.pickerSettings" (dict "vpn" $vpn) | fromJson -}}
+{{- $init := eq .mode "init" -}}
+- name: {{ ternary "vpn-picker-init" "vpn-picker" $init }}
+  image: {{ $s.image | quote }}
+  imagePullPolicy: {{ $s.pullPolicy }}
+  args: [{{ .mode | quote }}]
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+      {{- if $init }}
+      add:
+        - NET_RAW
+      {{- end }}
+  volumeMounts:
+    - name: picker
+      mountPath: /picker
+  env:
+    - name: PICKER_STATE_DIR
+      value: /picker
+    - name: PICKER_P2P
+      value: {{ ternary "true" "false" (default false .p2p) | quote }}
+    - name: PICKER_SHORTLIST
+      value: {{ $s.shortlist | int | quote }}
+    - name: PICKER_SAMPLE
+      value: {{ $s.sample | int | quote }}
+    - name: PICKER_INIT_BUDGET
+      value: {{ $s.initBudget | quote }}
+    - name: PICKER_TEST_SECONDS
+      value: {{ $s.testSeconds | int | quote }}
+    - name: PICKER_TEST_ENDPOINTS
+      value: {{ join "," $s.testEndpoints | quote }}
+    - name: PICKER_INTERVAL
+      value: {{ $s.interval | quote }}
+    - name: PICKER_DEGRADE_THRESHOLD
+      value: {{ $s.degradeThreshold | quote }}
+    - name: PICKER_DEGRADE_CHECKS
+      value: {{ $s.degradeChecks | int | quote }}
+    - name: PICKER_COOLDOWN
+      value: {{ $s.cooldown | quote }}
+    - name: PICKER_SWITCH_WHILE_RUNNING
+      value: {{ $s.switchWhileRunning | toString | quote }}
+    - name: VPN_PORT_FORWARDING
+      value: {{ ternary "on" "off" (dig "enabled" false (default dict $vpn.portForwarding)) | quote }}
+    {{- range list "VPN_SERVICE_PROVIDER" "VPN_TYPE" "SERVER_COUNTRIES" "SERVER_CITIES" "SERVER_HOSTNAMES" }}
+    - name: {{ . }}
+      valueFrom:
+        secretKeyRef:
+          name: {{ $vpn.secretName }}
+          key: {{ . }}
+          optional: true
+    {{- end }}
+  {{- if not $init }}
+  resources:
+    {{- toYaml $s.resources | nindent 4 }}
+  {{- end }}
+{{- end }}
+
+{{/*
+Picker init container: chooses a VPN server before gluetun starts. Runs before
+gluetun's firewall exists, so it can reach the provider and test servers directly.
+Accepts dict "root" . and optional "p2p" true. Emits nothing unless vpn.enabled
+and vpn.picker.enabled.
+*/}}
+{{- define "kubarr-common.gluetun.pickerInit" -}}
+{{- $vpn := .root.Values.vpn -}}
+{{- if $vpn.enabled -}}
+{{- if (include "kubarr-common.gluetun.pickerSettings" (dict "vpn" $vpn) | fromJson).enabled -}}
+{{- include "kubarr-common.gluetun.pickerContainer" (dict "root" .root "p2p" .p2p "mode" "init") -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
 
 {{- define "kubarr-common.gluetun.container" -}}
 {{- $root := .root -}}
 {{- $vpn := $root.Values.vpn -}}
 {{- if $vpn.enabled -}}
+{{- $picker := (include "kubarr-common.gluetun.pickerSettings" (dict "vpn" $vpn) | fromJson).enabled -}}
 {{- $ports := list (toString .appPort) -}}
 {{- range splitList "," (default "" .inputPorts) -}}
   {{- if trim . -}}
@@ -62,6 +175,12 @@ and optional "defaultUpCommand" <command>. All three helpers emit nothing when v
     {{- end }}
     {{- end }}
     {{- end }}
+    {{- if $picker }}
+    # The picker switches servers through gluetun's control API; the network
+    # policy is what protects it.
+    - name: HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE
+      value: '{"auth":"none"}'
+    {{- end }}
     {{- with $vpn.extraEnv }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -90,12 +209,18 @@ and optional "defaultUpCommand" <command>. All three helpers emit nothing when v
     failureThreshold: 5
   resources:
     {{- toYaml $vpn.resources | nindent 4 }}
+{{- if $picker }}
+{{ include "kubarr-common.gluetun.pickerContainer" (dict "root" $root "p2p" .p2p "mode" "run") }}
+{{- end }}
 {{- end -}}
 {{- end }}
 
 {{- define "kubarr-common.gluetun.initContainer" -}}
 {{- $vpn := .root.Values.vpn -}}
 {{- if $vpn.enabled -}}
+{{- $pickerInit := include "kubarr-common.gluetun.pickerInit" . -}}
+{{- if $pickerInit }}{{ $pickerInit }}
+{{ end -}}
 - name: gluetun-tmp-permissions
   image: "{{ $vpn.image.repository }}:{{ $vpn.image.tag }}"
   imagePullPolicy: {{ $vpn.image.pullPolicy }}
@@ -121,6 +246,10 @@ and optional "defaultUpCommand" <command>. All three helpers emit nothing when v
     type: CharDevice
 - name: gluetun-tmp
   emptyDir: {}
+{{- if (include "kubarr-common.gluetun.pickerSettings" (dict "vpn" .root.Values.vpn) | fromJson).enabled }}
+- name: picker
+  emptyDir: {}
+{{- end }}
 {{- end -}}
 {{- end }}
 

@@ -32,14 +32,14 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" .Values.deluge.env.PUID "gid" .Values.deluge.env.PGID) }}
-      {{- $gluetun := include "kubarr-common.gluetun.initContainer" (dict "root" .) }}
+      {{- $gluetun := include "kubarr-common.gluetun.initContainer" (dict "root" . "p2p" true) }}
       {{- if or $gluetun $prepare }}
       initContainers:
         {{- with $gluetun }}{{- . | nindent 8 }}{{- end }}
         {{- with $prepare }}{{- . | nindent 8 }}{{- end }}
       {{- end }}
       containers:
-        {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.deluge.service.targetPort) | nindent 8 }}
+        {{- include "kubarr-common.gluetun.container" (dict "root" . "p2p" true "appPort" .Values.deluge.service.targetPort) | nindent 8 }}
         - name: deluge
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
