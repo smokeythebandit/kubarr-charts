@@ -123,3 +123,20 @@ and optional "defaultUpCommand" <command>. All three helpers emit nothing when v
   emptyDir: {}
 {{- end -}}
 {{- end }}
+
+{{/*
+Pod DNS options for VPN pods; include at pod spec level. With VPN on, the pod
+resolves through gluetun, which forwards every query through the tunnel, so
+Kubernetes' default ndots:5 made each external name try three cluster search
+suffixes first, each hanging ~2s at the VPN's resolver (6-12s per lookup).
+ndots:1 sends dotted names as typed; in-cluster names used from VPN pods are
+fully qualified. Emits nothing when vpn.enabled is false.
+*/}}
+{{- define "kubarr-common.gluetun.dnsConfig" -}}
+{{- if .root.Values.vpn.enabled -}}
+dnsConfig:
+  options:
+    - name: ndots
+      value: "1"
+{{- end -}}
+{{- end }}

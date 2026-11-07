@@ -4,7 +4,7 @@ description: Distributed transcoding and health checking for media libraries
 type: application
 # Upstream publishes zero-padded tags (3.04.00); appVersion carries the same
 # release normalized to major.minor.patch so the chart version stays SemVer2.
-version: 3.4.0+4
+version: 3.4.0+5
 appVersion: "3.4.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
@@ -16,5 +16,5 @@ annotations:
   kubarr.io/category: "media-server"
 dependencies:
   - name: kubarr-common
-    version: 0.8.2
+    version: 0.8.3
     repository: file://../../system/kubarr-common

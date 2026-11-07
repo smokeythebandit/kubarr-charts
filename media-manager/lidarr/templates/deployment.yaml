@@ -166,4 +166,5 @@ spec:
               - key: api-key
                 path: api-key
         {{- end }}
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

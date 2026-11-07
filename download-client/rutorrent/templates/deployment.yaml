@@ -97,4 +97,5 @@ spec:
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "rutorrent.fullname" .)) | nindent 8 }}
         - name: nginx-state
           emptyDir: {}
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

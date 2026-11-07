@@ -84,4 +84,5 @@ spec:
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "plex.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

@@ -119,4 +119,5 @@ spec:
             name: {{ include "jackett.fullname" . }}-setup
             defaultMode: 0755
         {{- end }}
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

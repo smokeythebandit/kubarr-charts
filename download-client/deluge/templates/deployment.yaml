@@ -85,4 +85,5 @@ spec:
           configMap:
             name: {{ include "deluge.fullname" . }}-setup
             defaultMode: 0755
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

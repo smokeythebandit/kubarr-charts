@@ -117,4 +117,5 @@ spec:
         - name: qbittorrent-conf
           configMap:
             name: {{ include "qbittorrent.fullname" . }}-qbittorrent-conf
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}
