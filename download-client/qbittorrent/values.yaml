@@ -199,7 +199,7 @@ exporter:
   enabled: true
   image:
     repository: esanchezm/prometheus-qbittorrent-exporter
-    tag: "v1.7.0"
+    tag: "v1.8.0"
     pullPolicy: IfNotPresent
   port: 8000
   resources:
