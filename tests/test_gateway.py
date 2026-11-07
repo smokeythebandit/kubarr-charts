@@ -42,6 +42,8 @@ class GatewayTests(unittest.TestCase):
         cls.app_location = config.split(location, 1)[1]
         cls.header_lua = re.search(r"^( *)header_filter_by_lua_block \{\n(.*?)^\1\}", cls.app_location, re.M | re.S).group(2)
         cls.body_lua = re.search(r"^( *)body_filter_by_lua_block \{\n(.*?)^\1\}", cls.app_location, re.M | re.S).group(2)
+        init = re.search(r"^( *)init_by_lua_block \{\n(.*?)^\1\}", config, re.M | re.S).group(2)
+        cls.seerr_lua = init[init.index("kubarr_seerr = {"):]
         api_block = config.split("location /api/ {", 1)[1]
         api_match = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", api_block, re.M | re.S)
         if api_match is None:
@@ -224,6 +226,7 @@ ngx = {
   arg = {'<script src="/main.js">', true}
 }
 '''
+        script += "\n" + self.seerr_lua + "\n"
         script += "\nlocal function headers()\n" + self.header_lua + "\nend\n"
         script += "\nlocal function body()\n" + self.body_lua + "\nend\n"
         script += r'''
@@ -256,6 +259,58 @@ assert(ngx.header["Content-Length"] == "23")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('proxy_set_header Accept-Encoding "";', self.app_location.split('header_filter_by_lua_block', 1)[0])
         self.assertIn('proxy_set_header X-Ingress-Path $app_ingress_path;', self.app_location)
+
+    def run_filters(self, script):
+        script = "ngx = {ctx = {}}\n" + self.seerr_lua + "\n" + script
+        script = script.replace("HEADERS()", "(function()\n" + self.header_lua + "\nend)()")
+        script = script.replace("BODY()", "(function()\n" + self.body_lua + "\nend)()")
+        result = subprocess.run(["luajit", "-"], input=script, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_seerr_paths_are_rewritten_in_javascript_json_and_html(self):
+        # Seerr cannot be built with a base path; Turbopack registers chunks by
+        # comparing script URLs with "/_next/", so JS must change with HTML.
+        self.run_filters(r'''
+for _, app in ipairs({"seerr", "jellyseerr"}) do
+  for _, t in ipairs({"application/javascript; charset=UTF-8", "application/json", "text/html", "text/css"}) do
+    ngx.ctx = {}
+    ngx.var = {app_name = app, app_base_path = ""}
+    ngx.header = {["Content-Type"] = t, ["Content-Length"] = "9", ["ETag"] = "x"}
+    HEADERS()
+    assert(ngx.header["Content-Length"] == nil and ngx.header["ETag"] == nil, t)
+    -- The path straddles two chunks; nothing is sent until the last one.
+    ngx.arg = {'e("/_n', false}
+    BODY()
+    assert(ngx.arg[1] == nil, "buffered")
+    ngx.arg = {'ext/a.js","\\/api/v1",href="/")', true}
+    BODY()
+    local p = "/" .. app
+    assert(ngx.arg[1] == 'e("' .. p .. '/_next/a.js","\\' .. p .. '/api/v1",href="' .. p .. '")', ngx.arg[1])
+  end
+end
+''')
+
+    def test_seerr_leaves_images_and_other_apps_alone(self):
+        self.run_filters(r'''
+ngx.var = {app_name = "seerr", app_base_path = ""}
+ngx.header = {["Content-Type"] = "image/png", ["Content-Length"] = "4"}
+HEADERS()
+ngx.arg = {"/_next", true}
+BODY()
+assert(ngx.arg[1] == "/_next" and ngx.header["Content-Length"] == "4")
+ngx.var = {app_name = "sonarr", app_base_path = ""}
+ngx.header = {["Content-Type"] = "application/javascript", ["Content-Length"] = "6"}
+HEADERS()
+ngx.arg = {"/_next", true}
+BODY()
+assert(ngx.arg[1] == "/_next" and ngx.header["Content-Length"] == "6")
+''')
+
+    def test_seerr_rewrite_never_rewrites_a_replacement(self):
+        self.run_filters(r'''
+local out = kubarr_seerr.rewrite('\\/_next /_next href="/login" /movies', "/seerr")
+assert(out == '\\/seerr\\/_next /seerr/_next href="/seerr/login" /movies', out)
+''')
 
     def check_gateway(self, setup="", outcome="proxy", captures=1, checks=""):
         script = r'''

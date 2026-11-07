@@ -134,6 +134,72 @@ data:
           end
           return reply
         end
+
+        -- Seerr cannot be built with a base path, so its root-relative URLs
+        -- live in JavaScript and JSON as well as HTML: Turbopack's runtime
+        -- registers each chunk by comparing its script URL with "/_next/".
+        -- These are the rewrites Seerr documents for serving it from a
+        -- subfolder (docs.seerr.dev, Reverse Proxy, nginx subfolder), applied
+        -- to every text response in a single pass so a replacement is never
+        -- rewritten again.
+        kubarr_seerr = {
+          apps = {seerr = true, jellyseerr = true},
+          types = {"text/html", "javascript", "json", "text/css"},
+        }
+
+        function kubarr_seerr.rewritable(content_type)
+          for _, t in ipairs(kubarr_seerr.types) do
+            if content_type:find(t, 1, true) then
+              return true
+            end
+          end
+          return false
+        end
+
+        function kubarr_seerr.rewrite(body, prefix)
+          local p = prefix:sub(2)
+          local rules = {
+            {'href="/"', 'href="/' .. p .. '"'},
+            {'href="/login"', 'href="/' .. p .. '/login"'},
+            {'href:"/"', 'href:"/' .. p .. '"'},
+            {'\\/_next', '\\/' .. p .. '\\/_next'},
+            {'/login/plex/loading', '/' .. p .. '/login/plex/loading'},
+            {'/site.webmanifest', '/' .. p .. '/site.webmanifest'},
+            {'/imageproxy/', '/' .. p .. '/imageproxy/'},
+            {'/avatarproxy/', '/' .. p .. '/avatarproxy/'},
+            {'/android-', '/' .. p .. '/android-'},
+            {'/favicon', '/' .. p .. '/favicon'},
+            {'/images/', '/' .. p .. '/images/'},
+            {'/api/v1', '/' .. p .. '/api/v1'},
+            {'/apple-', '/' .. p .. '/apple-'},
+            {'/_next', '/' .. p .. '/_next'},
+            {'/logo_', '/' .. p .. '/logo_'},
+          }
+          local out, n, start, i = {}, #body, 1, 1
+          while true do
+            i = body:find('[/\\h]', i)
+            if not i then
+              break
+            end
+            local matched = false
+            for _, rule in ipairs(rules) do
+              local from = rule[1]
+              if body:sub(i, i + #from - 1) == from then
+                out[#out + 1] = body:sub(start, i - 1)
+                out[#out + 1] = rule[2]
+                i = i + #from
+                start = i
+                matched = true
+                break
+              end
+            end
+            if not matched then
+              i = i + 1
+            end
+          end
+          out[#out + 1] = body:sub(start, n)
+          return table.concat(out)
+        end
       }
 
 
@@ -476,8 +542,10 @@ data:
           proxy_set_header X-Ingress-Path $app_ingress_path;
           header_filter_by_lua_block {
             local content_type = ngx.header["Content-Type"] or ""
-            if ngx.var.app_base_path == "" and ngx.var.app_name ~= "frigate"
-                and content_type:find("text/html", 1, true) then
+            local seerr = ngx.var.app_base_path == "" and kubarr_seerr.apps[ngx.var.app_name]
+            if (seerr and kubarr_seerr.rewritable(content_type))
+                or (ngx.var.app_base_path == "" and ngx.var.app_name ~= "frigate"
+                and content_type:find("text/html", 1, true)) then
               -- Rewriting root-relative URLs changes the byte count. Retaining
               -- the upstream length corrupts keep-alive response framing.
               ngx.header["Content-Length"] = nil
@@ -506,6 +574,22 @@ data:
               return -- Frigate already applied X-Ingress-Path, including JS URLs.
             end
             local content_type = ngx.header["Content-Type"] or ""
+            if ngx.var.app_base_path == "" and kubarr_seerr.apps[ngx.var.app_name] then
+              if not kubarr_seerr.rewritable(content_type) then
+                return
+              end
+              -- Buffer the whole body: a path split across two chunks would
+              -- otherwise escape the rewrite.
+              local buffered = ngx.ctx.seerr_body or {}
+              ngx.ctx.seerr_body = buffered
+              buffered[#buffered + 1] = ngx.arg[1] or ""
+              if not ngx.arg[2] then
+                ngx.arg[1] = nil
+                return
+              end
+              ngx.arg[1] = kubarr_seerr.rewrite(table.concat(buffered), "/" .. ngx.var.app_name)
+              return
+            end
             if not content_type:find("text/html", 1, true) then
               return
             end
