@@ -19,6 +19,8 @@ jellyfin:
     type: ClusterIP
     port: 8096
     targetPort: 8096
+    # kubarr.io/landing-path is added by the template while sign-in with
+    # Kubarr is on, so opening Jellyfin from Kubarr signs the user in.
     annotations: {}
 
   # Resource limits and requests
@@ -124,7 +126,7 @@ kubarr:
       # The node-local transcoding scratch volume is not listed: the
       # validator reserves storage.scratch.target on its own, so dropping
       # storage.scratch frees that path for a shared mount.
-      main: ["/config", "/kubarr-secrets/jellyfin"]
+      main: ["/config", "/kubarr-secrets/jellyfin", "/kubarr-secrets/jellyfin-identity", "/kubarr-config"]
 
 storage:
   mounts:
@@ -212,10 +214,41 @@ networkPolicy:
 
 # API key shared with Sonarr and Radarr so their imports refresh the library.
 # Kubarr sets secretName to a Secret (key: api-key) it also gives those apps;
-# a sidecar keeps the key registered in Jellyfin's database, and Sonarr and
-# Radarr may then reach Jellyfin on its HTTP port. Empty disables all of it.
+# the Kubarr plugin (or, with the plugin off, a sidecar) keeps the key
+# registered in Jellyfin, and Sonarr and Radarr may then reach Jellyfin on its
+# HTTP port. Empty disables all of it.
 jellyfinIntegration:
   secretName: ""
+
+# Key the Kubarr plugin and Kubarr use to call each other: the plugin checks
+# native-app passwords and reads Kubarr's user list, Kubarr pushes user
+# changes. Kubarr sets secretName; empty leaves sign-in with Kubarr off.
+kubarrIdentity:
+  secretName: ""
+
+# The Kubarr plugin (github.com/smokeythebandit/kubarr-jellyfin): sign in with
+# Kubarr accounts, and server setup in place of the startup wizard. An init
+# container copies it into Jellyfin's plugin folder on every start.
+kubarrPlugin:
+  enabled: true
+  image:
+    repository: ghcr.io/smokeythebandit/kubarr-jellyfin
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  # Kubarr's API inside the cluster.
+  apiUrl: http://kubarr-backend.kubarr-backend.svc.cluster.local:8000
+  # Applied once in place of the startup wizard.
+  server:
+    name: Kubarr
+    uiCulture: en-US
+    metadataLanguage: en
+    metadataCountry: US
+  # Created once each if the folder exists; a library you delete stays
+  # deleted. Paths are inside the pod (storage.mounts puts media at /media).
+  libraries:
+    - {name: Movies, type: movies, paths: [/media/movies]}
+    - {name: Shows, type: tvshows, paths: [/media/shows]}
+    - {name: Music, type: music, paths: [/media/music]}
 
 # Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
 vpa:
