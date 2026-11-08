@@ -150,6 +150,10 @@ env:
     value: "media"
   - name: KUBARR_LOG_LEVEL
     value: "INFO"
+  # Pull charts from the self-hosted mirror (zot on charts.kubarr.com, anonymous
+  # read). The publish workflow pushes every chart to GHCR and to the mirror.
+  - name: KUBARR_CHARTS_REGISTRY
+    value: "oci://charts.kubarr.com/kubarr-charts"
   - name: HOME
     value: /tmp
   - name: XDG_CACHE_HOME
