@@ -182,7 +182,7 @@ vpn:
     switchWhileRunning: true
     image:
       repository: ghcr.io/smokeythebandit/kubarr-vpn-picker
-      tag: main
+      tag: 26e9358
       pullPolicy: IfNotPresent
     resources:
       requests:
