@@ -6,6 +6,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  # Self-hosted mirror (zot on charts.kubarr.com). Anonymous pull; pushes use
+  # the `ci` account from the KUBARR_CHARTS_REGISTRY_* secrets.
+  MIRROR_REGISTRY: charts.kubarr.com
+  MIRROR_REPO: oci://charts.kubarr.com/kubarr-charts
 
 jobs:
   validate:
@@ -97,6 +101,38 @@ jobs:
 
           done
 
+      # GHCR is pushed first and stays the source of truth; the mirror catches
+      # up independently (it checks its own contents), so a mirror outage
+      # never blocks GHCR and a later run fills whatever an outage missed.
+      - name: Log in to charts.kubarr.com
+        env:
+          MIRROR_USERNAME: ${{ secrets.KUBARR_CHARTS_REGISTRY_USERNAME }}
+          MIRROR_PASSWORD: ${{ secrets.KUBARR_CHARTS_REGISTRY_PASSWORD }}
+        run: echo "$MIRROR_PASSWORD" | helm registry login "$MIRROR_REGISTRY" --username "$MIRROR_USERNAME" --password-stdin
+
+      - name: Push validated charts to charts.kubarr.com
+        run: |
+          set -euo pipefail
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Mirrored to charts.kubarr.com" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          shopt -s failglob
+          for pkg in "$RUNNER_TEMP/helm-packages/"*.tgz; do
+            metadata=$(helm show chart "$pkg")
+            chart_name=$(awk '/^name:/ {print $2; exit}' <<< "$metadata")
+            version=$(awk '/^version:/ {print $2; exit}' <<< "$metadata")
+            if helm show chart "$MIRROR_REPO/$chart_name" --version "$version" >/dev/null 2>&1; then
+              echo "Mirror already has $chart_name:$version"
+              continue
+            fi
+            echo "Mirroring $chart_name:$version..."
+            helm push "$pkg" "$MIRROR_REPO"
+            echo "- \`${chart_name}:${version}\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
       - name: Logout
         if: always()
-        run: helm registry logout ${{ env.REGISTRY }} || true
+        run: |
+          helm registry logout ${{ env.REGISTRY }} || true
+          helm registry logout "$MIRROR_REGISTRY" || true
