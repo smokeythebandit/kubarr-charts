@@ -79,6 +79,39 @@ class QBittorrentVpnTests(unittest.TestCase):
                 subprocess.run(["bash", str(executable)], check=True, capture_output=True, text=True)
                 self.assertEqual(config_file.read_text(), result)
 
+    def test_startup_hands_config_back_to_the_config_directory_owner(self):
+        # The script runs as root (LinuxServer custom-cont-init.d) after the
+        # image's own chown, so a file it creates stays root-owned and
+        # qBittorrent (PUID) silently fails to save every WebUI change.
+        resources = render_resources()
+        script = next(resource["data"]["99-apply-config.sh"] for resource in resources
+                      if resource["kind"] == "ConfigMap" and "99-apply-config.sh" in resource["data"])
+        defaults = next(resource["data"]["qBittorrent.conf"] for resource in resources
+                        if resource["kind"] == "ConfigMap" and "qBittorrent.conf" in resource["data"])
+        for initial in ["", "[BitTorrent]\nSession\\Port=12345\n"]:
+            with self.subTest(initial=initial), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config_dir = root / "qBittorrent"
+                config_dir.mkdir()
+                config_file = config_dir / "qBittorrent.conf"
+                config_file.write_text(initial)
+                immutable = root / "defaults.conf"
+                immutable.write_text(defaults)
+                stubs = root / "bin"
+                stubs.mkdir()
+                calls = root / "chown.log"
+                stub = stubs / "chown"
+                stub.write_text(f'#!/bin/sh\necho "$@" >> "{calls}"\n')
+                stub.chmod(0o755)
+                executable = root / "init.sh"
+                executable.write_text(script.replace('CONFIG_DIR="/config/qBittorrent"',
+                                                      f'CONFIG_DIR="{config_dir}"')
+                                      .replace('/config-immutable/qBittorrent.conf', str(immutable)))
+                subprocess.run(["bash", str(executable)], check=True, capture_output=True, text=True,
+                               env={**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}"})
+                owner = f"{config_dir.stat().st_uid}:{config_dir.stat().st_gid}"
+                self.assertIn(f"{owner} {config_file}", calls.read_text().splitlines())
+
     def test_control_policy_only_allows_backend_on_8001_when_vpn_enabled(self):
         resources = render_resources({"vpn": {"enabled": True}})
         policies = [resource for resource in resources if resource["kind"] == "NetworkPolicy"]

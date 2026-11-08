@@ -17,9 +17,18 @@ data:
 
     mkdir -p "$CONFIG_DIR"
 
+    # This runs as root after the image has chowned /config, so every file it
+    # writes (cp, or mv of a temp file) would stay root-owned and qBittorrent,
+    # running as PUID, could never save a WebUI change. Hand the file back to
+    # whoever owns the config directory.
+    restore_owner() {
+      chown "$(stat -c '%u:%g' "$CONFIG_DIR")" "$CONFIG_FILE"
+    }
+
     if [ ! -s "$CONFIG_FILE" ]; then
       echo "Seeding qBittorrent configuration..."
       cp "$IMMUTABLE_CONFIG" "$CONFIG_FILE"
+      restore_owner
       exit 0
     fi
 
@@ -96,5 +105,6 @@ data:
     update_managed_setting 'PortForwardingEnabled'
     update_managed_setting 'Connection\PortRangeMin'
     update_managed_setting 'Connection\UPnP'
+    restore_owner
 
     echo "Kubarr-managed VPN settings applied; WebUI preferences preserved."
