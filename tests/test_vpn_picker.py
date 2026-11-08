@@ -63,7 +63,7 @@ class PickerTests(unittest.TestCase):
         self.assertFalse(isc["runAsNonRoot"])
         self.assertTrue(isc["readOnlyRootFilesystem"])
         self.assertFalse(isc["allowPrivilegeEscalation"])
-        self.assertEqual(init["image"], "ghcr.io/smokeythebandit/kubarr-vpn-picker:main")
+        self.assertEqual(init["image"], "ghcr.io/smokeythebandit/kubarr-vpn-picker:26e9358")
         self.assertIn({"name": "picker", "mountPath": "/picker"}, init["volumeMounts"])
         names = [c["name"] for c in self.spec["initContainers"]]
         self.assertLess(names.index("vpn-picker-init"), names.index("gluetun-tmp-permissions"))

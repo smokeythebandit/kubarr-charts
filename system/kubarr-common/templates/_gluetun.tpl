@@ -25,7 +25,7 @@ render a working picker. Emits JSON; decode with fromJson.
   "degradeChecks" (dig "degradeChecks" 3 $p)
   "cooldown" (dig "cooldown" "6h" $p)
   "switchWhileRunning" (dig "switchWhileRunning" true $p)
-  "image" (printf "%s:%s" (dig "repository" "ghcr.io/smokeythebandit/kubarr-vpn-picker" $image) (dig "tag" "main" $image))
+  "image" (printf "%s:%s" (dig "repository" "ghcr.io/smokeythebandit/kubarr-vpn-picker" $image) (dig "tag" "26e9358" $image))
   "pullPolicy" (dig "pullPolicy" "IfNotPresent" $image)
   "resources" (dig "resources" (dict "requests" (dict "cpu" "10m" "memory" "32Mi") "limits" (dict "cpu" "200m" "memory" "128Mi")) $p)
   | toJson -}}
