@@ -29,7 +29,7 @@ spec:
       automountServiceAccountToken: false
       securityContext: {fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" . "mounts" .Values.storage.workloads.machineLearning.mounts) }}
-      {{- if and $prepare (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      {{- if and $prepare (not .Values.machineLearning.cache.existingClaim) (not .Values.machineLearning.cache.storageClassName) .Values.storage.media.create }}
       initContainers:
         {{- $prepare | nindent 8 }}
       {{- end }}

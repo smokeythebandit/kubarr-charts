@@ -46,7 +46,8 @@ class MediaGpuTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             init = deployment["spec"]["template"]["spec"]["initContainers"]
             prepare = next(c for c in init if c["name"] == "prepare-media-directories")
-            self.assertEqual(prepare["args"], ["/nfs/custom/cache"])
+            # The read-only library is created too, but need not be writable.
+            self.assertEqual(prepare["args"], ["/nfs/custom/cache", "--read-only", "/nfs/media"])
             self.assertEqual(prepare["volumeMounts"], [{"name": "media", "mountPath": "/nfs"}])
             self.assertEqual(prepare["securityContext"]["runAsUser"], 1234)
             self.assertEqual(prepare["securityContext"]["runAsGroup"], 5678)

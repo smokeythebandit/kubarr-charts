@@ -233,13 +233,21 @@ class RedmineTests(unittest.TestCase):
         self.assertEqual(deployment["metadata"]["labels"]["helm.sh/chart"],
                          f'managed-nfs-{metadata["version"].replace("+", "_")}')
 
-    def test_external_root_squashed_export_uses_preprovisioned_paths(self):
+    def test_external_root_squashed_export_prepares_its_own_paths(self):
+        # Kubelet cannot create subPath directories on a root-squashed export,
+        # external or managed, so both workloads create theirs as their own uid.
         result, resources = render({"storage": {"media": {"nfs": {"server": "nas.example", "path": "/exports"}}}})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(objects(resources, "PersistentVolume")["kubarr-media-redmine-media-data"]["spec"]["nfs"],
                          {"server": "nas.example", "path": "/exports"})
-        self.assertFalse(objects(resources, "StatefulSet")["redmine-postgres"]["spec"]["template"]["spec"].get("initContainers"))
-        self.assertEqual(len(objects(resources, "Deployment")["redmine"]["spec"]["template"]["spec"]["initContainers"]), 1)
+        prepared = {}
+        for kind, name in (("StatefulSet", "redmine-postgres"), ("Deployment", "redmine")):
+            init = objects(resources, kind)[name]["spec"]["template"]["spec"]["initContainers"]
+            prepared[name] = next(c["args"] for c in init if c["name"] == "prepare-media-directories")
+        self.assertEqual(prepared, {
+            "redmine-postgres": ["/nfs/development/redmine/redmine/postgres"],
+            "redmine": ["/nfs/development/redmine/redmine/files"],
+        })
 
     def test_custom_release_preserves_declared_subpaths(self):
         result, resources = render(release="issues")
