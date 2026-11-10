@@ -96,9 +96,10 @@ plugin. Jellyfin Enhanced injects its script while serving `index.html`, so
 nothing is written to the web folder. Kubarr fills in its Seerr, Sonarr and
 Radarr settings using each app's existing API key, so no key is rotated.
 Values changed in the plugin's own settings page are kept. Jellyfin may now
-reach Seerr, Sonarr and Radarr: Sonarr 4.0.20+26, Radarr 6.4.4+26 and Seerr
-3.5.1+18 accept it. Set `jellyfinEnhanced.enabled=false` to leave the plugin
-out.
+reach Seerr, Sonarr and Radarr: Sonarr 4.0.20+27, Radarr 6.4.4+27 and Seerr
+3.5.1+19 accept it. To read each key, those charts let Kubarr's worker exec
+into their own pods, in that namespace only (`kubarrConfigAccess`). Set
+`jellyfinEnhanced.enabled=false` to leave the plugin out.
 
 ### Jellyseerr 2.7.3 → Seerr 3.5.1
 

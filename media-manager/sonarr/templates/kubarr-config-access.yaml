@@ -1,0 +1,34 @@
+{{- /* Kubarr's worker reads this app's existing API key from /config/config.xml
+(by exec, in this namespace only) to fill in Jellyfin Enhanced's settings, so
+the key never has to be rotated. kubarrConfigAccess.enabled=false removes it;
+Jellyfin Enhanced then has to be configured by hand. */ -}}
+{{- if (default dict .Values.kubarrConfigAccess).enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "sonarr.fullname" . }}-kubarr-config-access
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "sonarr.labels" . | nindent 4 }}
+rules:
+  # WebSocket exec (Kubernetes 1.30+) authorizes "get"; SPDY used "create".
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "sonarr.fullname" . }}-kubarr-config-access
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "sonarr.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "sonarr.fullname" . }}-kubarr-config-access
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.kubarrConfigAccess.serviceAccount }}
+    namespace: {{ .Values.kubarrConfigAccess.namespace }}
+{{- end }}

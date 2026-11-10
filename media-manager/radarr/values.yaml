@@ -275,3 +275,10 @@ vpa:
     - memory
   minAllowed: {}
   maxAllowed: {}
+
+# Lets Kubarr's worker read this app's API key (pod exec in this namespace
+# only) to set up Jellyfin Enhanced without rotating the key.
+kubarrConfigAccess:
+  enabled: true
+  serviceAccount: kubarr
+  namespace: kubarr-worker

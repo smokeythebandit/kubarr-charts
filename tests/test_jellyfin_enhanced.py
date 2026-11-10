@@ -99,6 +99,27 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(worker_policies(linked, "jellyfinEnhanced.enabled=false"), [])
 
 
+    def test_kubarr_worker_may_exec_only_in_each_apps_own_namespace(self):
+        for app, chart in (("sonarr", "media-manager/sonarr"), ("radarr", "media-manager/radarr"),
+                           ("jellyseerr", "media-manager/jellyseerr")):
+            with self.subTest(app=app):
+                rendered = docs(chart)
+                role, = [d for d in rendered if d["kind"] == "Role"
+                         and d["metadata"]["name"].endswith("-kubarr-config-access")]
+                self.assertEqual(role["metadata"]["namespace"], app)
+                self.assertEqual(role["rules"], [{"apiGroups": [""], "resources": ["pods/exec"],
+                                                  "verbs": ["get", "create"]}])
+                binding, = [d for d in rendered if d["kind"] == "RoleBinding"
+                            and d["metadata"]["name"].endswith("-kubarr-config-access")]
+                self.assertEqual(binding["metadata"]["namespace"], app)
+                self.assertEqual(binding["subjects"], [{"kind": "ServiceAccount", "name": "kubarr",
+                                                        "namespace": "kubarr-worker"}])
+                self.assertFalse(any(d["kind"] in ("ClusterRole", "ClusterRoleBinding") for d in rendered))
+                off = docs(chart, "kubarrConfigAccess.enabled=false")
+                self.assertFalse([d for d in off if d["kind"] in ("Role", "RoleBinding")
+                                  and d["metadata"]["name"].endswith("-kubarr-config-access")])
+
+
 class InstallScriptTests(unittest.TestCase):
     """Run the rendered script with a stub wget serving a local archive."""
 
