@@ -23,7 +23,7 @@ spec:
         fsGroup: 999
         {{- include "kubarr-common.storage.mediaGroup" . | nindent 8 }}
         seccompProfile: {type: RuntimeDefault}
-      {{- if and .Values.storage.workloads.postgres.mounts (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      {{- if and .Values.storage.workloads.postgres.mounts (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) .Values.storage.media.create }}
       initContainers:
         {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" 999 "mounts" .Values.storage.workloads.postgres.mounts) | nindent 8 }}
       {{- end }}
