@@ -2,7 +2,7 @@ apiVersion: v2
 name: dispatcharr
 description: IPTV stream and EPG manager that serves your provider's channels to Jellyfin as an HDHomeRun tuner
 type: application
-version: 0.33.0+2
+version: 0.33.0+3
 appVersion: "0.33.0"
 home: https://github.com/Dispatcharr/Dispatcharr
 sources:

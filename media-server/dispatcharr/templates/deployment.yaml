@@ -22,6 +22,7 @@ spec:
       labels:
         {{- include "dispatcharr.selectorLabels" . | nindent 8 }}
     spec:
+      {{- include "kubarr-common.gpu.podSettings" . | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -29,7 +30,7 @@ spec:
       serviceAccountName: {{ include "dispatcharr.serviceAccountName" . }}
       automountServiceAccountToken: false
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
       containers:
         - name: dispatcharr
           securityContext:
@@ -47,6 +48,11 @@ spec:
             - name: {{ $name }}
               value: {{ $value | toString | quote }}
             {{- end }}
+            {{- $gpu := default (dict) .Values.gpu }}
+            {{- if and $gpu.enabled (eq $gpu.provider "nvidia") }}
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "video,utility"
+            {{- end }}
           startupProbe:
             tcpSocket:
               port: http
@@ -62,7 +68,7 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.dispatcharr.resources | nindent 12 }}
+            {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" .Values.dispatcharr.resources) | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/data") | nindent 12 }}
       volumes:

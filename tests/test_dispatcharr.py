@@ -56,6 +56,24 @@ class DispatcharrTests(unittest.TestCase):
                    for rule in policy["ingress"] for peer in rule["from"]}
         self.assertEqual(sources, {"openresty", "jellyfin"})
 
+    def test_gpu_is_offered_and_off_by_default(self):
+        values = yaml.safe_load((ROOT / CHART / "values.yaml").read_text())
+        self.assertIs(values["gpu"]["enabled"], False)  # the install wizard keys on gpu.enabled
+        app = kind(render(), "Deployment")["spec"]["template"]["spec"]["containers"][0]
+        self.assertFalse(any("gpu" in k for side in app["resources"].values() for k in side))
+
+    def test_gpu_requests_the_device_and_nvidia_capabilities(self):
+        intel = kind(render("gpu.enabled=true"), "Deployment")["spec"]["template"]["spec"]
+        app = intel["containers"][0]
+        self.assertEqual(app["resources"]["limits"]["gpu.intel.com/i915"], 1)
+        self.assertEqual(app["resources"]["requests"]["gpu.intel.com/i915"], 1)
+        nvidia = kind(render("gpu.enabled=true", "gpu.provider=nvidia", "gpu.runtimeClassName=nvidia"),
+                      "Deployment")["spec"]["template"]["spec"]
+        env = {e["name"]: e["value"] for e in nvidia["containers"][0]["env"]}
+        self.assertEqual(env["NVIDIA_DRIVER_CAPABILITIES"], "video,utility")
+        self.assertEqual(nvidia["runtimeClassName"], "nvidia")
+        self.assertEqual(nvidia["containers"][0]["resources"]["limits"]["nvidia.com/gpu"], 1)
+
     def test_catalog_entry(self):
         annotations = yaml.safe_load((ROOT / CHART / "Chart.yaml").read_text())["annotations"]
         self.assertEqual(annotations["kubarr.io/category"], "media-server")

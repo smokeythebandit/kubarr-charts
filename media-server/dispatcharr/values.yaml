@@ -43,6 +43,17 @@ dispatcharr:
     failureThreshold: 60
     periodSeconds: 10
 
+# GPU for ffmpeg stream profiles that transcode (VA-API/QSV on Intel and AMD,
+# NVENC on NVIDIA). Plain pass-through needs none; Jellyfin transcodes for its
+# own clients either way. Kubarr's install wizard offers this choice.
+gpu:
+  enabled: false
+  provider: intel  # intel, nvidia, or amd
+  # Empty uses gpu.intel.com/i915 (intel) or nvidia.com/gpu (nvidia).
+  resourceName: ""
+  runtimeClassName: ""  # Optional, e.g. nvidia
+  supplementalGroups: []  # Optional numeric render/video device group IDs
+
 # The entrypoint starts as root, prepares /data and drops to its own users for
 # PostgreSQL, Redis and the app, hence these capabilities (all within the
 # baseline Pod Security level).

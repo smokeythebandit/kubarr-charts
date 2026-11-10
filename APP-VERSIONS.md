@@ -130,6 +130,9 @@ users, with only baseline capabilities. Kubarr's worker adds its tuner and
 guide to Jellyfin's Live TV, and Jellyfin 12.3.0+22 may reach it. Provider
 credentials are entered in Dispatcharr's UI. The UI serves from the root of its
 host, so it needs its own (sub)domain in Kubarr's Domains settings.
+From 0.33.0+3 the chart takes the shared `gpu` values, so Kubarr's install
+wizard offers a GPU for ffmpeg stream profiles that transcode. Plain
+pass-through needs no GPU.
 
 ## New application — 2026-11-07
 
