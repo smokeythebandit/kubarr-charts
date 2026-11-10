@@ -1,0 +1,2 @@
+{{- include "kubarr-common.storage.validateConfig" (dict "root" . "fullname" (include "dispatcharr.fullname" .) "replicas" .Values.dispatcharr.replicaCount "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) -}}
+{{ include "kubarr-common.storage.configClaim" (dict "root" . "fullname" (include "dispatcharr.fullname" .)) }}

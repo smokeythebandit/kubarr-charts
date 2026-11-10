@@ -79,7 +79,8 @@ class RenderTests(unittest.TestCase):
                   for rule in policy["spec"]["egress"] for peer in rule["to"]
                   if "namespaceSelector" in peer}
         for app, chart in (("sonarr", "media-manager/sonarr"), ("radarr", "media-manager/radarr"),
-                           ("jellyseerr", "media-manager/jellyseerr")):
+                           ("jellyseerr", "media-manager/jellyseerr"),
+                           ("dispatcharr", "media-server/dispatcharr")):
             with self.subTest(app=app):
                 self.assertIn(app, egress)
                 self.assertIn("jellyfin", ingress_namespaces(chart))
@@ -96,7 +97,8 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(rule["from"], [{"namespaceSelector": {"matchLabels": {
             "kubernetes.io/metadata.name": "kubarr-worker"}}}])
         self.assertEqual(rule["ports"], [{"protocol": "TCP", "port": 8096}])
-        self.assertEqual(worker_policies(linked, "jellyfinEnhanced.enabled=false"), [])
+        # Live TV setup needs it too, so it no longer depends on Jellyfin Enhanced.
+        self.assertEqual(len(worker_policies(linked, "jellyfinEnhanced.enabled=false")), 1)
 
 
     def test_kubarr_worker_may_exec_only_in_each_apps_own_namespace(self):

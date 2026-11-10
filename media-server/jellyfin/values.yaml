@@ -215,6 +215,7 @@ networkPolicy:
     - jellyseerr
     - sonarr
     - radarr
+    - dispatcharr  # Live TV tuner, guide and streams
 
 # API key shared with Sonarr and Radarr so their imports refresh the library.
 # Kubarr sets secretName to a Secret (key: api-key) it also gives those apps;

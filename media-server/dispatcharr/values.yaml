@@ -1,0 +1,106 @@
+# Dispatcharr (github.com/Dispatcharr/Dispatcharr, AGPL-3.0): manages IPTV
+# provider accounts (M3U or Xtream Codes), their EPG and connection limits, and
+# serves the channels as an HDHomeRun tuner plus M3U/XMLTV outputs. Kubarr's
+# worker adds it to Jellyfin's Live TV (tuner and guide). Provider credentials
+# are entered in Dispatcharr's own UI; Kubarr never stores them.
+#
+# The UI serves from the root of its host: give it a (sub)domain in Kubarr's
+# Domains settings (for example tv.example.com). A path under the main domain
+# does not work.
+
+namespace:
+  create: false
+  name: dispatcharr
+
+dispatcharr:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/dispatcharr/dispatcharr
+    pullPolicy: IfNotPresent
+    tag: "0.33.0"
+  basePath: ""
+  service:
+    type: ClusterIP
+    port: 9191
+    targetPort: 9191
+    annotations: {}
+  # All-in-one mode: PostgreSQL and Redis run inside the pod, on /data.
+  env:
+    TZ: "Etc/UTC"
+    DISPATCHARR_ENV: "aio"
+    REDIS_HOST: "localhost"
+    CELERY_BROKER_URL: "redis://localhost:6379/0"
+    DISPATCHARR_LOG_LEVEL: "info"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  # First start initialises PostgreSQL and runs migrations.
+  startupProbe:
+    failureThreshold: 60
+    periodSeconds: 10
+
+# The entrypoint starts as root, prepares /data and drops to its own users for
+# PostgreSQL, Redis and the app, hence these capabilities (all within the
+# baseline Pod Security level).
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+    add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+      - KILL
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+serviceAccount:
+  create: true
+  name: dispatcharr
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+imagePullSecrets: []
+
+kubarr:
+  storage:
+    required:
+      main: []
+    reserved:
+      main: ["/data"]
+
+storage:
+  mounts: []
+  # Database, settings and logs. A private claim, never the shared export:
+  # PostgreSQL needs real ownership and fsync.
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    size: 10Gi
+    storageClassName: "" # empty: cluster default StorageClass
+  media:
+    existingClaim: media-data
+
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to send traffic to this app
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy (UI)
+    - jellyfin   # Live TV tuner, guide and streams
+  # Namespaces this app can send traffic to (the IPTV provider is on the
+  # internet, which the shared policy already allows)
+  egressTo: []

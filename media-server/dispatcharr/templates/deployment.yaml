@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dispatcharr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "dispatcharr.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.dispatcharr.replicaCount }}
+  # One pod owns the embedded PostgreSQL data directory.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "dispatcharr.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "dispatcharr.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "dispatcharr.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: dispatcharr
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.dispatcharr.image.repository }}:{{ .Values.dispatcharr.image.tag }}"
+          imagePullPolicy: {{ .Values.dispatcharr.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.dispatcharr.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: DISPATCHARR_PORT
+              value: {{ .Values.dispatcharr.service.targetPort | quote }}
+            {{- range $name, $value := .Values.dispatcharr.env }}
+            - name: {{ $name }}
+              value: {{ $value | toString | quote }}
+            {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: {{ .Values.dispatcharr.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.dispatcharr.startupProbe.failureThreshold }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.dispatcharr.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/data") | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "dispatcharr.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

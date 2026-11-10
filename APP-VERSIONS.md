@@ -116,6 +116,21 @@ endpoints reported the expected versions and the migration succeeded.
 
 Reference: <https://docs.seerr.dev/migration-guide/>.
 
+## New application — 2026-11-10
+
+| Chart | Category | Image | Application version |
+| --- | --- | --- | --- |
+| Dispatcharr | media-server | `ghcr.io/dispatcharr/dispatcharr` | 0.33.0 |
+
+Dispatcharr (AGPL-3.0) manages IPTV provider accounts (M3U or Xtream Codes),
+their EPG and connection limits. It serves the channels as an HDHomeRun tuner,
+plus M3U and XMLTV outputs. It runs all-in-one: PostgreSQL and Redis share the
+pod, on a private claim. Its entrypoint starts as root and drops to its own
+users, with only baseline capabilities. Kubarr's worker adds its tuner and
+guide to Jellyfin's Live TV, and Jellyfin 12.3.0+22 may reach it. Provider
+credentials are entered in Dispatcharr's UI. The UI serves from the root of its
+host, so it needs its own (sub)domain in Kubarr's Domains settings.
+
 ## New application — 2026-11-07
 
 | Chart | Category | Image | Application version |

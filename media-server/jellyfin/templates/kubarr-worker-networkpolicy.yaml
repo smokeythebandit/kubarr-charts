@@ -1,7 +1,7 @@
-{{- /* Policies add up: while Jellyfin Enhanced is installed and Kubarr holds
-Jellyfin's key, Kubarr's worker may call Jellyfin's API to fill in the
-plugin's Seerr, Sonarr and Radarr settings. */ -}}
-{{- if and .Values.networkPolicy.enabled (default dict .Values.jellyfinEnhanced).enabled (default dict .Values.jellyfinIntegration).secretName }}
+{{- /* Policies add up: while Kubarr holds Jellyfin's key, Kubarr's worker may
+call Jellyfin's API to fill in Jellyfin Enhanced's Seerr, Sonarr and Radarr
+settings and to add Dispatcharr's Live TV tuner and guide. */ -}}
+{{- if and .Values.networkPolicy.enabled (default dict .Values.jellyfinIntegration).secretName }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
