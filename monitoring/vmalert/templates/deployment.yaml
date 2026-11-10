@@ -66,10 +66,9 @@ spec:
             {{- if $app.remoteWrite.enabled }}
             # Alert state written back to VictoriaMetrics: ALERTS and
             # ALERTS_FOR_STATE become queryable from Grafana.
+            # vmalert queues remote writes in memory (unlike vmagent there is no
+            # -remoteWrite.tmpDataPath; passing it makes vmalert exit at start).
             - "-remoteWrite.url={{ default $app.datasourceUrl $app.remoteWrite.url }}"
-            # The default buffer path is relative to the working directory,
-            # which is read-only here.
-            - "-remoteWrite.tmpDataPath=/tmp/vmalert-remotewrite"
             {{- end }}
             {{- if $app.remoteRead.enabled }}
             # Restores pending alerts after a restart instead of resetting

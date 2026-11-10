@@ -1,4 +1,6 @@
-"""Every writable NFS subpath is prepared by the shared unprivileged helper."""
+"""Every NFS subpath is prepared by the shared unprivileged helper: kubelet
+creates missing subPath directories as root, which a root-squashed export
+refuses, whether or not the mount is read-only."""
 
 import os
 from pathlib import Path
@@ -21,13 +23,20 @@ UIDS = {
     "download-client/rutorrent": 1000,
     "download-client/sabnzbd": 1000,
     "download-client/transmission": 1000,
+    "media-manager/bazarr": 1000,
     "media-manager/jellyseerr": 1000,
+    "media-manager/lidarr": 1000,
     "media-manager/radarr": 1000,
     "media-manager/sonarr": 1000,
+    "media-server/audiobookshelf": 1000,
+    "media-server/calibre-web-automated": 1000,
     "media-server/frigate": 1000,
     "media-server/immich": 1000,
     "media-server/jellyfin": 1000,
+    "media-server/komga": 1000,
+    "media-server/navidrome": 1000,
     "media-server/plex": 1000,
+    "media-server/tdarr": 1000,
     "monitoring/victorialogs": 1000,
     "monitoring/victoriametrics": 65534,
     "system/postgresql": 1000,  # the nightly dump CronJob
@@ -36,11 +45,15 @@ UIDS = {
 WITHOUT_PREPARATION = ("indexer/jackett", "monitoring/headlamp", "system/kubarr-backend")
 
 
-def workloads(chart):
+# The install gate's shared export: an external, root-squashed NFS server.
+EXTERNAL_NFS = ["--set", "storage.media.nfs.server=192.0.2.10", "--set", "storage.media.nfs.path=/"]
+
+
+def workloads(chart, extra=()):
     path = ROOT / chart
     result = subprocess.run(
         [os.environ.get("HELM", "helm"), "template", path.name, str(chart_input(path)),
-         *credential_args(path)],
+         *credential_args(path), *extra],
         check=True, capture_output=True, text=True,
     )
     return [doc for doc in yaml.safe_load_all(result.stdout)
@@ -54,42 +67,56 @@ def pod_spec(workload):
 
 
 def prepared_sources(pod):
-    """Writable media subPaths the application containers actually mount."""
-    sources = set()
+    """Media subPaths the application containers mount, as (writable, read-only)."""
+    writable, read_only = set(), set()
     for container in pod.get("containers", []) + pod.get("initContainers", []):
         if container["name"] == "prepare-media-directories":
             continue
         for mount in container.get("volumeMounts", []):
-            if mount["name"] == "media" and not mount.get("readOnly") and "subPath" in mount:
-                sources.add(mount["subPath"])
-    return sources
+            if mount["name"] == "media" and "subPath" in mount:
+                (read_only if mount.get("readOnly") else writable).add(mount["subPath"])
+    return writable, read_only - writable
+
+
+def split_args(args):
+    """The helper lists writable directories, then --read-only, then the rest."""
+    if "--read-only" in args:
+        index = args.index("--read-only")
+        return args[:index], args[index + 1:]
+    return args, []
 
 
 class PrepareMountsTests(unittest.TestCase):
-    def test_every_writable_subpath_is_prepared_exactly_once(self):
-        for chart, uid in UIDS.items():
-            for workload in workloads(chart):
-                pod = pod_spec(workload)
-                sources = prepared_sources(pod)
-                name = workload["metadata"]["name"]
-                with self.subTest(chart=chart, workload=name):
-                    prepare = [c for c in pod.get("initContainers", [])
-                               if c["name"] == "prepare-media-directories"]
-                    if not sources:
-                        self.assertEqual(prepare, [])
-                        continue
-                    self.assertEqual(len(prepare), 1)
-                    args = prepare[0]["args"]
-                    self.assertEqual(sorted(args), sorted(f"/nfs/{s}" for s in sources))
-                    self.assertEqual(len(args), len(set(args)))
-                    self.assertEqual(prepare[0]["volumeMounts"],
-                                     [{"name": "media", "mountPath": "/nfs"}])
-                    context = prepare[0]["securityContext"]
-                    self.assertEqual(context["runAsUser"], uid)
-                    self.assertEqual(context["runAsGroup"], 1000)
-                    self.assertTrue(context["runAsNonRoot"])
-                    self.assertFalse(context["allowPrivilegeEscalation"])
-                    self.assertEqual(context["capabilities"], {"drop": ["ALL"]})
+    def test_every_subpath_is_prepared_exactly_once(self):
+        for storage, extra in (("managed", ()), ("external", EXTERNAL_NFS)):
+            for chart, uid in UIDS.items():
+                for workload in workloads(chart, extra):
+                    self.assert_prepared(storage, chart, uid, workload)
+
+    def assert_prepared(self, storage, chart, uid, workload):
+        pod = pod_spec(workload)
+        writable, read_only = prepared_sources(pod)
+        name = workload["metadata"]["name"]
+        with self.subTest(storage=storage, chart=chart, workload=name):
+            prepare = [c for c in pod.get("initContainers", [])
+                       if c["name"] == "prepare-media-directories"]
+            if not writable and not read_only:
+                self.assertEqual(prepare, [])
+                return
+            self.assertEqual(len(prepare), 1)
+            args = prepare[0]["args"]
+            rw_args, ro_args = split_args(args)
+            self.assertEqual(sorted(rw_args), sorted(f"/nfs/{s}" for s in writable))
+            self.assertEqual(sorted(ro_args), sorted(f"/nfs/{s}" for s in read_only))
+            self.assertEqual(len(args), len(set(args)))
+            self.assertEqual(prepare[0]["volumeMounts"],
+                             [{"name": "media", "mountPath": "/nfs"}])
+            context = prepare[0]["securityContext"]
+            self.assertEqual(context["runAsUser"], uid)
+            self.assertEqual(context["runAsGroup"], 1000)
+            self.assertTrue(context["runAsNonRoot"])
+            self.assertFalse(context["allowPrivilegeEscalation"])
+            self.assertEqual(context["capabilities"], {"drop": ["ALL"]})
 
     def test_no_preparation_step_relies_on_root_or_chown(self):
         """Only steps that touch the shared export are constrained. A container

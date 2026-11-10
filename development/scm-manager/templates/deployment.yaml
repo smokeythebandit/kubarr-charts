@@ -30,7 +30,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if and .Values.storage.mounts (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      {{- if and .Values.storage.mounts (not .Values.storage.home.existingClaim) (not .Values.storage.home.storageClassName) .Values.storage.media.create }}
       initContainers:
         {{- include "kubarr-common.storage.prepareMounts" (dict "root" .) | nindent 8 }}
       {{- end }}

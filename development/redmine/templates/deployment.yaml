@@ -32,7 +32,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
-        {{- if and .Values.storage.mounts (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+        {{- if and .Values.storage.mounts (not .Values.storage.attachments.existingClaim) (not .Values.storage.attachments.storageClassName) .Values.storage.media.create }}
         {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" 999) | nindent 8 }}
         {{- end }}
         - name: wait-for-postgres
