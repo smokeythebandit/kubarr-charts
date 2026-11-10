@@ -18,6 +18,9 @@ unpackerr:
 
   # Download folders live on NFS, where file events from a client on another
   # node never arrive, so every watched folder is polled on this interval.
+  # auto: watch the download folders only while starrLink is off (watching
+  # them as well as following the Starr queues would extract twice).
+  folderWatch: auto
   pollInterval: "1m"
   # Put extracted files next to the archive, where the managers look, instead
   # of an _unpackerred folder beside it.
@@ -97,5 +100,14 @@ imagePullSecrets: []
 
 # Nothing calls Unpackerr and it calls nothing: it only reads and writes the
 # shared download storage.
+# Sonarr, Radarr and Lidarr mode. Kubarr's worker reads each installed app's
+# own API key and writes UN_SONARR_0_*, UN_RADARR_0_* and UN_LIDARR_0_* into
+# this Secret; Unpackerr then extracts what those apps are waiting for and
+# removes the extracted copy once they have imported it. Archives are never
+# deleted, so torrents keep seeding. Disabled, Unpackerr watches folders.
+starrLink:
+  enabled: true
+  secretName: kubarr-unpackerr-starr
+
 networkPolicy:
   enabled: true

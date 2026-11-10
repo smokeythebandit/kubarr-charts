@@ -16,6 +16,18 @@
 {{- toJson $folders -}}
 {{- end }}
 
+{{/* Folder watching extracts every archive in the download folders. With the
+     Starr link on, Unpackerr follows Sonarr, Radarr and Lidarr's queues instead,
+     and watching the same folders as well would extract twice, so "auto" turns
+     folder watching off whenever the link is on. */}}
+{{- define "unpackerr.watchFolders" -}}
+{{- $mode := toString .Values.unpackerr.folderWatch -}}
+{{- if not (has $mode (list "auto" "true" "false")) -}}
+{{- fail "unpackerr.folderWatch must be auto, true or false" -}}
+{{- end -}}
+{{- if or (eq $mode "true") (and (eq $mode "auto") (not (default dict .Values.starrLink).enabled)) -}}true{{- end -}}
+{{- end }}
+
 {{/* Unpackerr instance keys must be simple identifiers. */}}
 {{- define "unpackerr.folderKey" -}}
 {{- regexReplaceAll "[^a-z0-9]" (lower .) "_" -}}
@@ -34,8 +46,14 @@
 {{- if regexMatch "^UN_FOLDER_" $name -}}
 {{- fail (printf "unpackerr.env.%s is derived from storage.mounts; remove it" $name) -}}
 {{- end -}}
+{{- if regexMatch "^UN_(SONARR|RADARR|LIDARR)_" $name -}}
+{{- fail (printf "unpackerr.env.%s is set by Kubarr through starrLink; remove it" $name) -}}
 {{- end -}}
-{{- if eq (len (include "unpackerr.folders" . | fromJsonArray)) 0 -}}
+{{- end -}}
+{{- if and (default dict .Values.starrLink).enabled (not .Values.starrLink.secretName) -}}
+{{- fail "starrLink.secretName is required while starrLink.enabled is true" -}}
+{{- end -}}
+{{- if and (include "unpackerr.watchFolders" .) (eq (len (include "unpackerr.folders" . | fromJsonArray)) 0) -}}
 {{- fail "unpackerr needs at least one writable storage.mounts entry under /downloads/" -}}
 {{- end -}}
 {{- end }}

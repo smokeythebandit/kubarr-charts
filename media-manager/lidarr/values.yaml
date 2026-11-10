@@ -206,6 +206,7 @@ networkPolicy:
     - openresty  # Kubarr gateway proxy
     - victoriametrics  # metrics scraping
     - prowlarr  # indexer manager syncs indexer definitions in
+    - unpackerr  # extracts what this app is waiting for
   # Namespaces this app can send traffic to
   egressTo:
     - qbittorrent
@@ -249,3 +250,10 @@ vpa:
     - memory
   minAllowed: {}
   maxAllowed: {}
+
+# Lets Kubarr's worker read this app's API key (pod exec in this namespace
+# only) to set up Unpackerr without rotating the key.
+kubarrConfigAccess:
+  enabled: true
+  serviceAccount: kubarr
+  namespace: kubarr-worker

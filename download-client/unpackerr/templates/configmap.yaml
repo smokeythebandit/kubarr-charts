@@ -8,6 +8,7 @@ metadata:
     {{- include "unpackerr.labels" . | nindent 4 }}
 data:
   UN_PARALLEL: {{ .Values.unpackerr.parallel | quote }}
+  {{- if include "unpackerr.watchFolders" . }}
   {{- range $mount := include "unpackerr.folders" . | fromJsonArray }}
   {{- $key := include "unpackerr.folderKey" $mount.name }}
   UN_FOLDER_{{ $key }}_PATH: {{ $mount.target | quote }}
@@ -16,6 +17,7 @@ data:
   UN_FOLDER_{{ $key }}_DELETE_AFTER: {{ $.Values.unpackerr.deleteExtractedAfter | quote }}
   UN_FOLDER_{{ $key }}_DELETE_FILES: {{ ne $.Values.unpackerr.deleteExtractedAfter "0s" | toString | quote }}
   UN_FOLDER_{{ $key }}_DELETE_ORIGINAL: "false"
+  {{- end }}
   {{- end }}
   {{- range $name, $value := .Values.unpackerr.env }}
   {{ $name }}: {{ $value | toString | quote }}

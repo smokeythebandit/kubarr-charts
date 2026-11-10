@@ -1,8 +1,9 @@
 """Unpackerr extracts archived downloads in place for the managers to import.
 
-It runs in folder mode: every writable mount under /downloads becomes a polled
-watched folder (NFS delivers no file events from other nodes), and extracted
-files go next to the archive, where Sonarr, Radarr and Lidarr look.
+By default it follows Sonarr, Radarr and Lidarr's queues with the URLs and keys
+Kubarr writes into a Secret (starrLink). In folder mode every writable mount
+under /downloads becomes a polled watched folder (NFS delivers no file events
+from other nodes), and extracted files go next to the archive.
 """
 
 import os
@@ -16,6 +17,7 @@ from chart_artifacts import ROOT, chart_input
 
 
 CHART = "download-client/unpackerr"
+FOLDERS = "unpackerr.folderWatch=true"
 
 
 def render(*sets, check=True):
@@ -35,7 +37,7 @@ def kind(resources, name):
 
 class UnpackerrTests(unittest.TestCase):
     def test_every_download_mount_is_a_polled_folder_extracted_in_place(self):
-        env = kind(render(), "ConfigMap")["data"]
+        env = kind(render(FOLDERS), "ConfigMap")["data"]
         for client in ("qbittorrent", "transmission", "deluge", "rutorrent", "sabnzbd"):
             with self.subTest(client=client):
                 self.assertEqual(env[f"UN_FOLDER_{client}_PATH"], f"/downloads/{client}")
@@ -46,13 +48,14 @@ class UnpackerrTests(unittest.TestCase):
                 self.assertEqual(env[f"UN_FOLDER_{client}_DELETE_FILES"], "false")
 
     def test_deleting_the_extracted_copy_is_opt_in(self):
-        env = kind(render("unpackerr.deleteExtractedAfter=2h"), "ConfigMap")["data"]
+        env = kind(render(FOLDERS, "unpackerr.deleteExtractedAfter=2h"), "ConfigMap")["data"]
         self.assertEqual(env["UN_FOLDER_qbittorrent_DELETE_AFTER"], "2h")
         self.assertEqual(env["UN_FOLDER_qbittorrent_DELETE_FILES"], "true")
         self.assertEqual(env["UN_FOLDER_qbittorrent_DELETE_ORIGINAL"], "false")
 
     def test_only_writable_download_mounts_are_watched(self):
         env = kind(render(
+            FOLDERS,
             "storage.mounts[0].name=usenet-pull", "storage.mounts[0].source=downloads/sab",
             "storage.mounts[0].target=/downloads/sab", "storage.mounts[0].mode=read-write",
             "storage.mounts[1].name=library", "storage.mounts[1].source=media/shows",
@@ -71,7 +74,7 @@ class UnpackerrTests(unittest.TestCase):
             ("storage.mounts[0].target=/media/x", "at least one writable"),
         ):
             with self.subTest(value=value):
-                result = render(value, check=False)
+                result = render(FOLDERS, value, check=False)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(message, result.stderr)
 
@@ -91,8 +94,8 @@ class UnpackerrTests(unittest.TestCase):
         mounts = {m["mountPath"] for m in app["volumeMounts"]}
         self.assertTrue({"/downloads/qbittorrent", "/tmp"} <= mounts)
 
-    def test_network_policy_denies_everything_but_dns(self):
-        policy = kind(render(), "NetworkPolicy")["spec"]
+    def test_folder_mode_network_policy_denies_everything_but_dns(self):
+        policy = kind(render("starrLink.enabled=false"), "NetworkPolicy")["spec"]
         self.assertEqual(policy["ingress"], [])
         self.assertEqual(len(policy["egress"]), 1)
         self.assertEqual({p["port"] for p in policy["egress"][0]["ports"]}, {53})
@@ -102,6 +105,62 @@ class UnpackerrTests(unittest.TestCase):
         self.assertEqual(annotations["kubarr.io/category"], "download-client")
         self.assertEqual(annotations["kubarr.io/browseable"], "false")
         self.assertEqual(annotations["kubarr.io/system"], "false")
+
+
+
+
+
+class StarrLinkTests(unittest.TestCase):
+    def test_default_follows_the_starr_apps_instead_of_watching_folders(self):
+        resources = render()
+        env = kind(resources, "ConfigMap")["data"]
+        self.assertFalse([k for k in env if k.startswith("UN_FOLDER_")],
+                         "watching the folders as well would extract twice")
+        deployment = kind(resources, "Deployment")
+        self.assertEqual(deployment["metadata"]["annotations"]["kubarr.io/starr-secret"],
+                         "kubarr-unpackerr-starr")
+        container = deployment["spec"]["template"]["spec"]["containers"][0]
+        self.assertIn({"secretRef": {"name": "kubarr-unpackerr-starr", "optional": True}},
+                      container["envFrom"])
+
+    def test_link_off_falls_back_to_folders(self):
+        resources = render("starrLink.enabled=false")
+        env = kind(resources, "ConfigMap")["data"]
+        self.assertEqual(env["UN_FOLDER_qbittorrent_PATH"], "/downloads/qbittorrent")
+        deployment = kind(resources, "Deployment")
+        self.assertNotIn("annotations", deployment["metadata"])
+        container = deployment["spec"]["template"]["spec"]["containers"][0]
+        self.assertFalse([e for e in container["envFrom"] if "secretRef" in e])
+
+    def test_reaches_only_the_starr_apps_besides_dns(self):
+        egress = kind(render(), "NetworkPolicy")["spec"]["egress"]
+        namespaces = [peer["namespaceSelector"].get("matchLabels", {}).get("kubernetes.io/metadata.name")
+                      for rule in egress for peer in rule["to"] if "namespaceSelector" in peer]
+        self.assertEqual(sorted(n for n in namespaces if n), ["lidarr", "radarr", "sonarr"])
+        egress_off = kind(render("starrLink.enabled=false"), "NetworkPolicy")["spec"]["egress"]
+        self.assertEqual(len(egress_off), 1, "folder mode needs DNS only")
+
+    def test_starr_apps_accept_unpackerr_and_let_kubarr_read_their_key(self):
+        for app in ("sonarr", "radarr", "lidarr"):
+            with self.subTest(app=app):
+                chart = f"media-manager/{app}"
+                command = [os.environ.get("HELM", "helm"), "template", app, str(chart_input(ROOT / chart))]
+                docs = [d for d in yaml.safe_load_all(subprocess.run(
+                    command, check=True, capture_output=True, text=True).stdout) if d]
+                policy = next(d for d in docs if d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == app)
+                sources = {peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+                           for rule in policy["spec"]["ingress"] for peer in rule["from"]
+                           if "namespaceSelector" in peer and "matchLabels" in peer["namespaceSelector"]}
+                self.assertIn("unpackerr", sources)
+                self.assertTrue([d for d in docs if d["kind"] == "RoleBinding"
+                                 and d["metadata"]["name"].endswith("-kubarr-config-access")])
+
+    def test_kubarr_owns_the_starr_settings(self):
+        result = render("unpackerr.env.UN_RADARR_0_URL=http://x", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("set by Kubarr through starrLink", result.stderr)
+        result = render("unpackerr.folderWatch=sometimes", check=False)
+        self.assertIn("must be auto, true or false", result.stderr)
 
 
 if __name__ == "__main__":

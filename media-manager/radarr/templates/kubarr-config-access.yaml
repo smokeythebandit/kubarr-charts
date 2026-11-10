@@ -1,7 +1,7 @@
 {{- /* Kubarr's worker reads this app's existing API key from /config/config.xml
-(by exec, in this namespace only) to fill in Jellyfin Enhanced's settings, so
+(by exec, in this namespace only) to fill in Jellyfin Enhanced and Unpackerr, so
 the key never has to be rotated. kubarrConfigAccess.enabled=false removes it;
-Jellyfin Enhanced then has to be configured by hand. */ -}}
+Jellyfin Enhanced and Unpackerr then have to be configured by hand. */ -}}
 {{- if (default dict .Values.kubarrConfigAccess).enabled }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

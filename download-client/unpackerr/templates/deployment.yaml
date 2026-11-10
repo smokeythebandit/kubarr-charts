@@ -5,6 +5,12 @@ metadata:
   namespace: {{ .Values.namespace.name }}
   labels:
     {{- include "unpackerr.labels" . | nindent 4 }}
+  {{- if (default dict .Values.starrLink).enabled }}
+  annotations:
+    # Kubarr's worker writes Sonarr, Radarr and Lidarr's URLs and keys into
+    # this Secret and restarts the pod when they change.
+    kubarr.io/starr-secret: {{ .Values.starrLink.secretName | quote }}
+  {{- end }}
 spec:
   replicas: {{ .Values.unpackerr.replicaCount }}
   strategy:
@@ -41,6 +47,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "unpackerr.fullname" . }}-config
+            {{- if (default dict .Values.starrLink).enabled }}
+            # Absent until Kubarr finds a Starr app; Unpackerr then idles.
+            - secretRef:
+                name: {{ .Values.starrLink.secretName }}
+                optional: true
+            {{- end }}
           resources:
             {{- toYaml .Values.unpackerr.resources | nindent 12 }}
           volumeMounts:

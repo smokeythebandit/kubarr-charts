@@ -131,6 +131,21 @@ the archive kept. Unpackerr 1.0 replaced `[[folder]]` lists with keyed
 sections, hence `UN_FOLDER_<key>_*` variables. Its web server stays off: it
 would require a password and logs a generated admin key.
 
+### Unpackerr chart 1.0.1+2: follow Sonarr, Radarr and Lidarr
+
+Unpackerr now follows the Starr apps' download queues by default
+(`starrLink`). Kubarr's worker reads each installed app's existing API key and
+writes `UN_SONARR_0_*`, `UN_RADARR_0_*` and `UN_LIDARR_0_*` into the
+`kubarr-unpackerr-starr` Secret, then restarts Unpackerr when those values
+change. Unpackerr extracts what the apps are waiting for and removes the
+extracted copy after they import it. The archive is kept, so torrents keep
+seeding. Folder watching turns off while the link is on, because watching the
+same folders as well would extract twice. Set `unpackerr.folderWatch=true` to
+keep it, or `starrLink.enabled=false` to return to folder mode. Unpackerr may
+now reach Sonarr, Radarr and Lidarr, and Sonarr 4.0.20+28, Radarr 6.4.4+28
+and Lidarr 3.1.6+12 accept it. Lidarr also lets Kubarr's worker read its key
+by exec, in its own namespace only. The chart moves to kubarr-common 0.8.4.
+
 ## New applications — 2026-11-01
 
 Thirteen charts added. Each image tag below was verified against its registry

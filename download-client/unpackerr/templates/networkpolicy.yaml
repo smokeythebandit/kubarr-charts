@@ -28,4 +28,14 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    {{- if (default dict .Values.starrLink).enabled }}
+    {{- range $app := list "sonarr" "radarr" "lidarr" }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $app }}
+      ports:
+        - protocol: TCP
+    {{- end }}
+    {{- end }}
 {{- end }}

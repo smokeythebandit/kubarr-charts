@@ -2,7 +2,7 @@ apiVersion: v2
 name: unpackerr
 description: Extracts RAR, ZIP and 7z downloads so Sonarr, Radarr and Lidarr can import them
 type: application
-version: 1.0.1+1
+version: 1.0.1+2
 appVersion: "1.0.1"
 keywords:
   - unpackerr
@@ -26,5 +26,5 @@ annotations:
   kubarr.io/browseable: "false"
 dependencies:
   - name: kubarr-common
-    version: 0.8.2
+    version: 0.8.4
     repository: file://../../system/kubarr-common
