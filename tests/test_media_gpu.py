@@ -14,6 +14,12 @@ from chart_artifacts import ROOT, chart_input
 CHARTS = {"plex": "media-server/plex", "jellyfin": "media-server/jellyfin"}
 
 
+def gpu_env(container):
+    """Environment the GPU settings add. Jellyfin's Kubarr plugin adds its own
+    KUBARR_* variables regardless of the GPU, so they are left out here."""
+    return [e for e in container.get("env", []) if not e["name"].startswith("KUBARR_")]
+
+
 def render(app, overrides, set_flags=()):
     with tempfile.TemporaryDirectory() as directory:
         values = Path(directory) / "values.yaml"
@@ -80,7 +86,7 @@ class MediaGpuTests(unittest.TestCase):
                     self.assertEqual(pod["securityContext"]["fsGroup"], 1000)
                     self.assertNotIn("supplementalGroups", pod["securityContext"])
                     media = next(c for c in pod["containers"] if c["name"] == app)
-                    self.assertNotIn("env", media)
+                    self.assertEqual(gpu_env(media), [])
                     self.assertEqual(media["resources"]["requests"],
                                      legacy[app]["resources"]["requests"])
                     self.assertEqual(media["resources"]["limits"],
@@ -146,7 +152,7 @@ class MediaGpuTests(unittest.TestCase):
                 self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
                 self.assertNotIn("runtimeClassName", pod)
                 self.assertNotIn("supplementalGroups", pod["securityContext"])
-                self.assertNotIn("env", container)
+                self.assertEqual(gpu_env(container), [])
                 self.assertEqual(container["resources"]["requests"]["cpu"], "200m")
                 self.assertEqual(container["resources"]["limits"]["memory"], "4Gi")
                 self.assertFalse(any("gpu" in key for side in container["resources"].values()
@@ -187,9 +193,9 @@ class MediaGpuTests(unittest.TestCase):
                         self.assertEqual(media["resources"]["requests"]["cpu"], "500m")
                         self.assertEqual(media["resources"]["limits"]["memory"], "3Gi")
                         self.assertEqual("NVIDIA_DRIVER_CAPABILITIES" in
-                                         {e["name"] for e in media.get("env", [])}, provider == "nvidia")
+                                         {e["name"] for e in gpu_env(media)}, provider == "nvidia")
                         if provider == "nvidia":
-                            self.assertEqual(media["env"], [{"name": "NVIDIA_DRIVER_CAPABILITIES",
+                            self.assertEqual(gpu_env(media), [{"name": "NVIDIA_DRIVER_CAPABILITIES",
                                                              "value": "video,utility"}])
                         host_paths = [v["hostPath"]["path"] for v in pod["volumes"]
                                       if "hostPath" in v]
