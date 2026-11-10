@@ -18,6 +18,25 @@ unpackerr:
 
   # Download folders live on NFS, where file events from a client on another
   # node never arrive, so every watched folder is polled on this interval.
+  # Web UI behind Kubarr's gateway at /unpackerr. Unpackerr's own login is
+  # off (noauth); the network policy lets only the gateway in, and the gateway
+  # requires a Kubarr session allowed to open Unpackerr. Settings changed in
+  # the UI do not persist: Kubarr configures Unpackerr through its environment.
+  web:
+    enabled: true
+    # noauth only trusts requests from these ranges. The gateway's pod IP
+    # changes, so the private ranges are trusted and the network policy does
+    # the narrowing: only gateway pods can connect at all.
+    trustedProxies:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+  basePath: /unpackerr
+  service:
+    type: ClusterIP
+    port: 5656
+    targetPort: 5656
+    annotations: {}
   # auto: watch the download folders only while starrLink is off (watching
   # them as well as following the Starr queues would extract twice).
   folderWatch: auto
@@ -111,3 +130,6 @@ starrLink:
 
 networkPolicy:
   enabled: true
+  # Only the gateway may open the web UI.
+  ingressFrom:
+    - openresty

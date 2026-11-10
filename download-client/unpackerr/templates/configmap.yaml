@@ -8,6 +8,17 @@ metadata:
     {{- include "unpackerr.labels" . | nindent 4 }}
 data:
   UN_PARALLEL: {{ .Values.unpackerr.parallel | quote }}
+  {{- if .Values.unpackerr.web.enabled }}
+  UN_WEBSERVER_LISTEN_ADDR: {{ printf "0.0.0.0:%v" .Values.unpackerr.service.targetPort | quote }}
+  UN_WEBSERVER_URLBASE: {{ .Values.unpackerr.basePath | quote }}
+  # Kubarr's gateway authenticates; see web in values.yaml.
+  UN_WEBSERVER_UI_PASSWORD: "noauth"
+  {{- range $i, $cidr := .Values.unpackerr.web.trustedProxies }}
+  UN_WEBSERVER_UPSTREAMS_{{ $i }}: {{ $cidr | quote }}
+  {{- end }}
+  {{- else }}
+  UN_WEBSERVER_LISTEN_ADDR: ""
+  {{- end }}
   {{- if include "unpackerr.watchFolders" . }}
   {{- range $mount := include "unpackerr.folders" . | fromJsonArray }}
   {{- $key := include "unpackerr.folderKey" $mount.name }}

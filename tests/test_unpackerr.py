@@ -89,21 +89,21 @@ class UnpackerrTests(unittest.TestCase):
         self.assertIs(context["readOnlyRootFilesystem"], True)
         self.assertIs(context["allowPrivilegeEscalation"], False)
         self.assertEqual(context["capabilities"]["drop"], ["ALL"])
-        self.assertNotIn("ports", app)  # the web server stays off
         self.assertIn("checksum/config", deployment["spec"]["template"]["metadata"]["annotations"])
         mounts = {m["mountPath"] for m in app["volumeMounts"]}
         self.assertTrue({"/downloads/qbittorrent", "/tmp"} <= mounts)
 
-    def test_folder_mode_network_policy_denies_everything_but_dns(self):
-        policy = kind(render("starrLink.enabled=false"), "NetworkPolicy")["spec"]
+    def test_folder_mode_without_ui_denies_everything_but_dns(self):
+        policy = kind(render("starrLink.enabled=false", "unpackerr.web.enabled=false"),
+                      "NetworkPolicy")["spec"]
         self.assertEqual(policy["ingress"], [])
         self.assertEqual(len(policy["egress"]), 1)
         self.assertEqual({p["port"] for p in policy["egress"][0]["ports"]}, {53})
 
-    def test_catalog_lists_it_without_an_open_tile(self):
+    def test_catalog_lists_it_as_a_download_client_with_an_open_tile(self):
         annotations = yaml.safe_load((ROOT / CHART / "Chart.yaml").read_text())["annotations"]
         self.assertEqual(annotations["kubarr.io/category"], "download-client")
-        self.assertEqual(annotations["kubarr.io/browseable"], "false")
+        self.assertEqual(annotations["kubarr.io/browseable"], "true")
         self.assertEqual(annotations["kubarr.io/system"], "false")
 
 
@@ -161,6 +161,47 @@ class StarrLinkTests(unittest.TestCase):
         self.assertIn("set by Kubarr through starrLink", result.stderr)
         result = render("unpackerr.folderWatch=sometimes", check=False)
         self.assertIn("must be auto, true or false", result.stderr)
+
+
+class WebUiTests(unittest.TestCase):
+    def test_ui_is_served_under_the_gateway_path_without_its_own_login(self):
+        resources = render()
+        env = kind(resources, "ConfigMap")["data"]
+        self.assertEqual(env["UN_WEBSERVER_LISTEN_ADDR"], "0.0.0.0:5656")
+        self.assertEqual(env["UN_WEBSERVER_URLBASE"], "/unpackerr")
+        self.assertEqual(env["UN_WEBSERVER_UI_PASSWORD"], "noauth")
+        # noauth trusts nobody without upstreams; the policy narrows it to the gateway.
+        self.assertEqual([env[k] for k in sorted(k for k in env if k.startswith("UN_WEBSERVER_UPSTREAMS_"))],
+                         ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"])
+        service = kind(resources, "Service")
+        self.assertEqual(service["metadata"]["annotations"]["kubarr.io/base-path"], "/unpackerr")
+        self.assertEqual(service["spec"]["ports"][0]["port"], 5656)
+        app = kind(resources, "Deployment")["spec"]["template"]["spec"]["containers"][0]
+        self.assertEqual(app["ports"], [{"name": "http", "containerPort": 5656, "protocol": "TCP"}])
+        annotations = yaml.safe_load((ROOT / CHART / "Chart.yaml").read_text())["annotations"]
+        self.assertEqual(annotations["kubarr.io/browseable"], "true")
+
+    def test_only_the_gateway_may_open_the_ui(self):
+        ingress = kind(render(), "NetworkPolicy")["spec"]["ingress"]
+        self.assertEqual(ingress, [{"from": [{"namespaceSelector": {"matchLabels": {
+            "kubernetes.io/metadata.name": "openresty"}}}],
+            "ports": [{"protocol": "TCP", "port": 5656}]}])
+
+    def test_ui_off_closes_the_server(self):
+        resources = render("unpackerr.web.enabled=false")
+        self.assertEqual(kind(resources, "ConfigMap")["data"]["UN_WEBSERVER_LISTEN_ADDR"], "")
+        self.assertFalse([d for d in resources if d["kind"] == "Service"])
+        self.assertEqual(kind(resources, "NetworkPolicy")["spec"]["ingress"], [])
+        app = kind(resources, "Deployment")["spec"]["template"]["spec"]["containers"][0]
+        self.assertNotIn("ports", app)
+
+    def test_web_settings_come_from_values(self):
+        for setting, message in (("unpackerr.env.UN_WEBSERVER_UI_PASSWORD=admin:pw", "set from unpackerr.web"),
+                                 ("unpackerr.web.trustedProxies=null", "trustedProxies must list")):
+            with self.subTest(setting=setting):
+                result = render(setting, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
 
 
 if __name__ == "__main__":

@@ -46,9 +46,15 @@
 {{- if regexMatch "^UN_FOLDER_" $name -}}
 {{- fail (printf "unpackerr.env.%s is derived from storage.mounts; remove it" $name) -}}
 {{- end -}}
+{{- if regexMatch "^UN_WEBSERVER_(LISTEN_ADDR|URLBASE|UI_PASSWORD|UPSTREAMS_.*)$" $name -}}
+{{- fail (printf "unpackerr.env.%s is set from unpackerr.web; remove it" $name) -}}
+{{- end -}}
 {{- if regexMatch "^UN_(SONARR|RADARR|LIDARR)_" $name -}}
 {{- fail (printf "unpackerr.env.%s is set by Kubarr through starrLink; remove it" $name) -}}
 {{- end -}}
+{{- end -}}
+{{- if and .Values.unpackerr.web.enabled (not .Values.unpackerr.web.trustedProxies) -}}
+{{- fail "unpackerr.web.trustedProxies must list the gateway's address range: noauth trusts no one without it" -}}
 {{- end -}}
 {{- if and (default dict .Values.starrLink).enabled (not .Values.starrLink.secretName) -}}
 {{- fail "starrLink.secretName is required while starrLink.enabled is true" -}}

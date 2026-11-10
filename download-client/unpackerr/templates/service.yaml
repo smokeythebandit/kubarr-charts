@@ -1,0 +1,3 @@
+{{- if .Values.unpackerr.web.enabled }}
+{{ include "kubarr-common.service" (dict "root" . "app" .Values.unpackerr) }}
+{{- end }}

@@ -44,6 +44,21 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.unpackerr.image.repository }}:{{ .Values.unpackerr.image.tag }}"
           imagePullPolicy: {{ .Values.unpackerr.image.pullPolicy }}
+          {{- if .Values.unpackerr.web.enabled }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.unpackerr.service.targetPort }}
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "unpackerr.fullname" . }}-config

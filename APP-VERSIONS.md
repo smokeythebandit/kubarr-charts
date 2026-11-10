@@ -131,6 +131,20 @@ the archive kept. Unpackerr 1.0 replaced `[[folder]]` lists with keyed
 sections, hence `UN_FOLDER_<key>_*` variables. Its web server stays off: it
 would require a password and logs a generated admin key.
 
+### Unpackerr chart 1.0.1+3: web UI
+
+Unpackerr's web UI is on, at `/unpackerr` behind Kubarr's gateway, and the
+dashboard offers it as an app. It shows the queue, history and logs. Its own
+login is off (`noauth`). The network policy lets only the gateway connect, and
+the gateway requires a Kubarr session that is allowed to open Unpackerr.
+`noauth` only trusts requests from `unpackerr.web.trustedProxies` (the private
+ranges by default, since the gateway's pod IP changes). The live updates
+WebSocket checks the browser's Origin against the Host, and the gateway
+forwards Host without a port, so live updates work on a domain on the default
+port but not on a `host:port` address. Settings changed in the UI do not
+persist, because Kubarr configures Unpackerr through its environment. Set
+`unpackerr.web.enabled=false` to turn the UI off.
+
 ### Unpackerr chart 1.0.1+2: follow Sonarr, Radarr and Lidarr
 
 Unpackerr now follows the Starr apps' download queues by default
