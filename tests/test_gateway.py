@@ -38,7 +38,13 @@ class GatewayTests(unittest.TestCase):
         if match is None:
             raise AssertionError("Catch-all access block not found")
         cls.config = config
-        cls.access_lua = match.group(2)
+        init = re.search(r"^( *)init_by_lua_block \{\n(.*?)^\1\}", config, re.M | re.S).group(2)
+        # Access blocks call helpers the init block defines; load those the
+        # tests need without the rest of the init block's module setup.
+        identity = re.search(r"^ *function kubarr_identity\(reply\)\n.*?^ *end$", init, re.M | re.S)
+        if identity is None:
+            raise AssertionError("kubarr_identity helper not found")
+        cls.access_lua = identity.group(0) + "\n" + match.group(2)
         cls.app_location = config.split(location, 1)[1]
         cls.header_lua = re.search(r"^( *)header_filter_by_lua_block \{\n(.*?)^\1\}", cls.app_location, re.M | re.S).group(2)
         cls.body_lua = re.search(r"^( *)body_filter_by_lua_block \{\n(.*?)^\1\}", cls.app_location, re.M | re.S).group(2)
@@ -576,14 +582,20 @@ end
             'assert(b ~= c, "a different app must produce a different key")',
         ))
 
-    def test_requests_without_a_session_are_never_cached(self):
+    def test_requests_without_a_session_share_one_key_apart_from_sessions(self):
+        # Native Jellyfin clients carry no Kubarr cookie and stream many
+        # segments a second, so anonymous grants are cached under one shared
+        # key. It must never coincide with a session's key: the backend only
+        # grants anonymous requests for apps that authenticate their own
+        # clients, and those grants carry no identity.
         self.run_lua(self.cache_script(
             'ngx.var.http_cookie = "other=x"',
-            'assert(kubarr_cache.key("route", "host|/") == nil)',
-            'kubarr_cache.capture("/_kubarr_route_lookup", {}, nil)',
-            'kubarr_cache.capture("/_kubarr_route_lookup", {}, nil)',
-            'assert(captured == 2, "an anonymous lookup must not share an entry")',
-            'assert(next(stored) == nil)',
+            'local anonymous = kubarr_cache.key("route", "host|/")',
+            'assert(anonymous ~= nil, "anonymous grants are cacheable")',
+            'ngx.var.http_cookie = nil',
+            'assert(kubarr_cache.key("route", "host|/") == anonymous, "no cookie and no session cookie share a key")',
+            'ngx.var.http_cookie = "kubarr_active=0; kubarr_session_0=tok"',
+            'assert(kubarr_cache.key("route", "host|/") ~= anonymous, "a session never reads anonymous grants")',
         ))
 
     def test_denials_and_errors_are_never_cached(self):

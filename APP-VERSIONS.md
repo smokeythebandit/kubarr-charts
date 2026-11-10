@@ -71,6 +71,21 @@ upgrading. Jellyfin 12 migrates its database and changes plugin/API compatibilit
 restore the backup as well as the old image if rolling back. The deployed test
 instance migrated successfully and its native login UI rendered through Kubarr.
 
+### Jellyfin chart 12.3.0+20: sign in with Kubarr
+
+Installs the Kubarr plugin (`ghcr.io/smokeythebandit/kubarr-jellyfin`) through
+an init container. The plugin replaces the `api-key` sidecar and completes the
+startup wizard. Kubarr users then sign in with their Kubarr account, both in
+the browser and in native apps. On first sync, any existing local Jellyfin
+account whose name matches a Kubarr user is switched to Kubarr sign-in, and
+its Jellyfin password stops working. Accounts with no matching Kubarr user are
+not touched. Set `kubarrPlugin.enabled=false` to keep the previous behaviour.
+
+The gateway now lets requests without a Kubarr session reach Jellyfin
+(`kubarr.io/gateway-auth: app-native`), and Jellyfin authenticates them
+itself. This is what native clients need. Kubarr throttles failed password
+checks.
+
 ### Jellyseerr 2.7.3 → Seerr 3.5.1
 
 The chart, values root (`jellyseerr`), namespace, service, and private config claim
