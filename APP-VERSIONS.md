@@ -86,6 +86,20 @@ The gateway now lets requests without a Kubarr session reach Jellyfin
 itself. This is what native clients need. Kubarr throttles failed password
 checks.
 
+### Jellyfin chart 12.3.0+21: Jellyfin Enhanced
+
+Installs [Jellyfin Enhanced](https://github.com/n00bcodr/Jellyfin-Enhanced)
+12.15.0.0 (GPL-3.0) through an init container. The container downloads the
+pinned release zip, verifies its sha256, and unpacks it into the plugin
+folder. If the download or the check fails, Jellyfin starts without the
+plugin. Jellyfin Enhanced injects its script while serving `index.html`, so
+nothing is written to the web folder. Kubarr fills in its Seerr, Sonarr and
+Radarr settings using each app's existing API key, so no key is rotated.
+Values changed in the plugin's own settings page are kept. Jellyfin may now
+reach Seerr, Sonarr and Radarr: Sonarr 4.0.20+26, Radarr 6.4.4+26 and Seerr
+3.5.1+18 accept it. Set `jellyfinEnhanced.enabled=false` to leave the plugin
+out.
+
 ### Jellyseerr 2.7.3 → Seerr 3.5.1
 
 The chart, values root (`jellyseerr`), namespace, service, and private config claim

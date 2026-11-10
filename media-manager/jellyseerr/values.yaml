@@ -194,6 +194,7 @@ networkPolicy:
   enabled: true
   ingressFrom:
     - openresty  # Kubarr gateway proxy
+    - jellyfin  # Jellyfin Enhanced requests and discovery
   egressTo:
     - jellyfin
     - sonarr

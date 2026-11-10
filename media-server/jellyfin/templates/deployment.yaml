@@ -40,11 +40,12 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
-      {{- if or .Values.vpn.enabled $prepare (default dict .Values.kubarrPlugin).enabled }}
+      {{- if or .Values.vpn.enabled $prepare (default dict .Values.kubarrPlugin).enabled (default dict .Values.jellyfinEnhanced).enabled }}
       initContainers:
         {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
         {{- with $prepare }}{{- . | nindent 8 }}{{- end }}
         {{- include "jellyfin.kubarrPlugin.initContainer" . | nindent 8 }}
+        {{- include "jellyfin.jellyfinEnhanced.initContainer" . | nindent 8 }}
       {{- end }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.jellyfin.service.targetPort) | nindent 8 }}

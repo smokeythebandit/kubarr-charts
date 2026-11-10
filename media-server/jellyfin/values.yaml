@@ -210,7 +210,11 @@ networkPolicy:
   ingressFrom:
     - openresty  # Kubarr gateway proxy
     - jellyseerr
-  egressTo: []
+  # Jellyfin Enhanced calls Seerr, Sonarr and Radarr from the server side.
+  egressTo:
+    - jellyseerr
+    - sonarr
+    - radarr
 
 # API key shared with Sonarr and Radarr so their imports refresh the library.
 # Kubarr sets secretName to a Secret (key: api-key) it also gives those apps;
@@ -227,6 +231,21 @@ kubarrIdentity:
   secretName: ""
 
 # The Kubarr plugin (github.com/smokeythebandit/kubarr-jellyfin): sign in with
+# Jellyfin Enhanced (github.com/n00bcodr/Jellyfin-Enhanced, GPL-3.0): keyboard
+# shortcuts, subtitle styling, Seerr requests, and a Sonarr/Radarr calendar and
+# downloads view. An init container downloads this exact release, checks its
+# sha256 and unpacks it into the plugin folder; a failure only skips it. Kubarr
+# fills in its Seerr, Sonarr and Radarr settings; edits made in its own
+# settings page are kept. Updating means changing version and sha256 together.
+jellyfinEnhanced:
+  enabled: true
+  version: "12.15.0.0"
+  # Jellyfin ABI the release zip targets; picks the zip and goes in meta.json.
+  targetAbi: "12.0.0.0"
+  sha256: 19c8b691557be4b342562069e610756e294bd4648eefe1f25504c3014d90e2fb
+  # Override for a mirror; defaults to the GitHub release asset.
+  url: ""
+
 # Kubarr accounts, and server setup in place of the startup wizard. An init
 # container copies it into Jellyfin's plugin folder on every start.
 kubarrPlugin:

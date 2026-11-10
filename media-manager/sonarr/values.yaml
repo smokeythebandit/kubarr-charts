@@ -206,6 +206,7 @@ networkPolicy:
     - bazarr  # subtitle manager reads the library and queues searches
     - prowlarr  # indexer manager syncs indexer definitions in
     - recyclarr  # quality profile sync
+    - jellyfin  # Jellyfin Enhanced calendar, downloads and tags
   # Namespaces this app can send traffic to
   egressTo:
     - qbittorrent
