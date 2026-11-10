@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dispatcharr.fullname" . }}-tuner
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "dispatcharr.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    # Jellyfin's door into Dispatcharr: tuner, guide and streams only.
+    server {
+      listen {{ .Values.dispatcharr.tuner.port }};
+      location ~ ^/(hdhr|output|proxy)(/|$) {
+        proxy_pass http://127.0.0.1:{{ .Values.dispatcharr.service.targetPort }};
+        proxy_http_version 1.1;
+        # Dispatcharr builds stream URLs from Host, so they keep this port.
+        proxy_set_header Host $http_host;
+        # Never let a caller on this port assert a user.
+        proxy_set_header X-Kubarr-User "";
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+      }
+      location / {
+        return 403;
+      }
+    }

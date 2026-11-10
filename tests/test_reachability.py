@@ -47,7 +47,11 @@ def topology():
             "chart": chart,
             "namespace": namespace,
             "enabled": policy.get("enabled", True),
-            "ingress": list(policy.get("ingressFrom") or []),
+            # ingressFrom, or per-port lists such as Dispatcharr's uiFrom and
+            # tunerFrom: any *From list admits those callers.
+            "ingress": [peer for key, peers in policy.items()
+                        if key.endswith("From") and isinstance(peers, list)
+                        for peer in peers],
             "egress": list(policy.get("egressTo") or []),
         }
     return owners, declared

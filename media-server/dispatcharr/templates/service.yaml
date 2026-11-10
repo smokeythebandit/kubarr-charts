@@ -1,1 +1,25 @@
-{{ include "kubarr-common.service" (dict "root" . "app" .Values.dispatcharr) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dispatcharr.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "dispatcharr.labels" . | nindent 4 }}
+  {{- with .Values.dispatcharr.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.dispatcharr.service.type }}
+  ports:
+    # First port: what the gateway proxies to.
+    - port: {{ .Values.dispatcharr.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.dispatcharr.tuner.port }}
+      targetPort: tuner
+      protocol: TCP
+      name: tuner
+  selector:
+    {{- include "dispatcharr.selectorLabels" . | nindent 4 }}

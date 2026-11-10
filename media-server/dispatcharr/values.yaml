@@ -24,6 +24,22 @@ dispatcharr:
     port: 9191
     targetPort: 9191
     annotations: {}
+  # Jellyfin's own door: a proxy in the pod that serves only the tuner, guide
+  # and stream paths and deletes X-Kubarr-User, so Jellyfin can neither open
+  # the UI nor sign in as anyone. Kubarr points Jellyfin's Live TV here.
+  tuner:
+    port: 9192
+    image:
+      repository: nginxinc/nginx-unprivileged
+      tag: "1.29.3-alpine"
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: "1"
+        memory: 128Mi
   # All-in-one mode: PostgreSQL and Redis run inside the pod, on /data.
   env:
     TZ: "Etc/UTC"
@@ -31,6 +47,10 @@ dispatcharr:
     REDIS_HOST: "localhost"
     CELERY_BROKER_URL: "redis://localhost:6379/0"
     DISPATCHARR_LOG_LEVEL: "info"
+    # Reverse Proxy Auth trusts X-Kubarr-User only from these peers. Only the
+    # gateway can reach the UI port (network policy); Jellyfin uses the tuner
+    # port, whose proxy deletes the header and arrives from 127.0.0.1.
+    DISPATCHARR_TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
   resources:
     requests:
       cpu: 250m
@@ -108,10 +128,8 @@ storage:
 
 networkPolicy:
   enabled: true
-  # Namespaces allowed to send traffic to this app
-  ingressFrom:
-    - openresty  # Kubarr gateway proxy (UI)
-    - jellyfin   # Live TV tuner, guide and streams
-  # Namespaces this app can send traffic to (the IPTV provider is on the
-  # internet, which the shared policy already allows)
-  egressTo: []
+  # The gateway may reach the UI port only; Jellyfin the tuner port only.
+  uiFrom:
+    - openresty
+  tunerFrom:
+    - jellyfin

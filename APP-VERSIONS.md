@@ -86,6 +86,14 @@ The gateway now lets requests without a Kubarr session reach Jellyfin
 itself. This is what native clients need. Kubarr throttles failed password
 checks.
 
+### OpenResty gateway 1.29.2+5.20: X-Kubarr-User
+
+The gateway forwards the signed-in Kubarr username as `X-Kubarr-User` to apps
+whose chart sets `kubarr.io/user-header`, and always overwrites the header.
+The `/api/` location, which also serves host-routed apps' own APIs, now sets
+`X-Kubarr-Identity` and `X-Kubarr-User` from Kubarr's answer as well. It used
+to pass client-supplied values through.
+
 ### Jellyfin chart 12.3.0+21: Jellyfin Enhanced
 
 Installs [Jellyfin Enhanced](https://github.com/n00bcodr/Jellyfin-Enhanced)
@@ -133,6 +141,13 @@ host, so it needs its own (sub)domain in Kubarr's Domains settings.
 From 0.33.0+3 the chart takes the shared `gpu` values, so Kubarr's install
 wizard offers a GPU for ffmpeg stream profiles that transcode. Plain
 pass-through needs no GPU.
+From 0.33.0+4 Kubarr signs you in to Dispatcharr. The gateway sends the Kubarr
+username in `X-Kubarr-User` (`kubarr.io/user-header`), and Dispatcharr's
+Reverse Proxy Auth trusts it from private peers. Only the gateway may reach
+the UI port (9191). Jellyfin gets its own tuner port (9192): an nginx sidecar
+there serves only `/hdhr`, `/output` and `/proxy`, deletes `X-Kubarr-User`,
+and answers 403 for everything else. Jellyfin therefore cannot reach the
+sign-in or assert a user.
 
 ## New application — 2026-11-07
 

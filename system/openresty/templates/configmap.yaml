@@ -62,6 +62,9 @@ data:
           -- Signed identity for apps that sign Kubarr users in. It outlives the
           -- cache entry many times over (minutes against seconds).
           "x-kubarr-identity",
+          -- Plain username for apps whose reverse-proxy sign-in trusts a header
+          -- (kubarr.io/user-header). Cached per session like the identity.
+          "x-kubarr-user",
         }
         -- Only grants are cached. Denials and errors are always re-checked.
         local CACHEABLE = {[200] = true, [204] = true, [404] = true}
@@ -73,6 +76,7 @@ data:
         -- can never supply its own.
         function kubarr_identity(reply)
           ngx.var.kubarr_identity = (reply and reply.header["x-kubarr-identity"]) or ""
+          ngx.var.kubarr_user = (reply and reply.header["x-kubarr-user"]) or ""
         end
 
         -- Key on every Kubarr session cookie rather than one name: the backend
@@ -247,6 +251,10 @@ data:
         location /api/ {
           set $api_upstream "http://kubarr_api";
           set $api_target_path $request_uri;
+          # A host-routed app's own /api is proxied from here too: forward the
+          # identity Kubarr grants and never a client-supplied one.
+          set $kubarr_identity "";
+          set $kubarr_user "";
           access_by_lua_block {
             -- Health is gateway-owned; user APIs may belong to a host-routed app.
             if ngx.var.uri == "/api/system/health" then
@@ -271,6 +279,7 @@ data:
                   return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
                 end
                 ngx.var.api_upstream = upstream
+                kubarr_identity(route)
               end
             elseif route.status == ngx.HTTP_UNAUTHORIZED or route.status == ngx.HTTP_FORBIDDEN then
               return ngx.exit(route.status)
@@ -285,6 +294,8 @@ data:
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
+          proxy_set_header X-Kubarr-Identity $kubarr_identity;
+          proxy_set_header X-Kubarr-User $kubarr_user;
           proxy_pass $api_upstream$api_target_path;
         }
 
@@ -325,6 +336,7 @@ data:
           proxy_set_header X-Forwarded-Proto $scheme;
           # Never relay a client-supplied identity to a host-routed app.
           proxy_set_header X-Kubarr-Identity "";
+          proxy_set_header X-Kubarr-User "";
           proxy_pass $auth_upstream$request_uri;
         }
 
@@ -367,6 +379,7 @@ data:
           set $app_base_path "";
           set $target_path "";
           set $kubarr_identity "";
+          set $kubarr_user "";
 
           access_by_lua_block {
             -- Subdomain-routed apps (host assignments) resolve by host first;
@@ -437,6 +450,8 @@ data:
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Prefix /$app_name;
           proxy_set_header X-Kubarr-Identity $kubarr_identity;
+          # Always overwritten: a client can never supply its own username.
+          proxy_set_header X-Kubarr-User $kubarr_user;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;
@@ -449,6 +464,7 @@ data:
           set $app_ingress_path "";
           set $target_path "";
           set $kubarr_identity "";
+          set $kubarr_user "";
 
           access_by_lua_block {
             local route = (kubarr_cache or ngx.location).capture(
@@ -558,6 +574,8 @@ data:
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Prefix /$app_name;
           proxy_set_header X-Kubarr-Identity $kubarr_identity;
+          # Always overwritten: a client can never supply its own username.
+          proxy_set_header X-Kubarr-User $kubarr_user;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;
@@ -643,6 +661,7 @@ data:
           set $app_base_path "";
           set $target_path $uri;
           set $kubarr_identity "";
+          set $kubarr_user "";
 
           access_by_lua_block {
             -- Look routes up even without a session: an app-native app on its
@@ -690,6 +709,8 @@ data:
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Prefix /$app_name;
           proxy_set_header X-Kubarr-Identity $kubarr_identity;
+          # Always overwritten: a client can never supply its own username.
+          proxy_set_header X-Kubarr-User $kubarr_user;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;

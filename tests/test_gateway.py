@@ -54,7 +54,8 @@ class GatewayTests(unittest.TestCase):
         api_match = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", api_block, re.M | re.S)
         if api_match is None:
             raise AssertionError("API route access block not found")
-        cls.api_access_lua = api_match.group(2)
+        cls.api_access_lua = identity.group(0) + "\n" + api_match.group(2)
+        cls.api_block = api_block.split("\n        }\n", 1)[0]
         auth_block = config.split("location /auth/ {", 1)[1]
         cls.auth_access_lua = re.search(r"^( *)access_by_lua_block \{\n(.*?)^\1\}", auth_block, re.M | re.S).group(2)
         frontend_block = config.split("location / {", 1)[1]
@@ -581,6 +582,21 @@ end
             'local c = kubarr_cache.key("auth", "radarr")',
             'assert(b ~= c, "a different app must produce a different key")',
         ))
+
+    def test_kubarr_user_and_identity_headers_are_always_set_by_the_gateway(self):
+        # Every location that proxies to an app (the /api location included,
+        # which serves host-routed apps' own APIs) overwrites both headers, so
+        # a client can never supply its own username or identity.
+        self.assertIn('"x-kubarr-user"', self.init_lua())
+        self.assertIn('ngx.var.kubarr_user = (reply and reply.header["x-kubarr-user"]) or ""',
+                      self.init_lua())
+        for name, block in (("api", self.api_block), ("app", self.app_location)):
+            with self.subTest(location=name):
+                self.assertIn("proxy_set_header X-Kubarr-User $kubarr_user;", block)
+                self.assertIn("proxy_set_header X-Kubarr-Identity $kubarr_identity;", block)
+        auth_block = self.config.split("location /auth/ {", 1)[1].split("\n        }\n", 1)[0]
+        self.assertIn('proxy_set_header X-Kubarr-User "";', auth_block)
+        self.assertEqual(self.config.count('set $kubarr_identity "";'), self.config.count('set $kubarr_user "";'))
 
     def test_requests_without_a_session_share_one_key_apart_from_sessions(self):
         # Native Jellyfin clients carry no Kubarr cookie and stream many

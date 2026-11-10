@@ -31,7 +31,7 @@ class DispatcharrTests(unittest.TestCase):
     def test_all_in_one_on_a_private_claim(self):
         resources = render()
         pod = kind(resources, "Deployment")["spec"]["template"]["spec"]
-        app = pod["containers"][0]
+        app = next(c for c in pod["containers"] if c["name"] == "dispatcharr")
         env = {e["name"]: e["value"] for e in app["env"]}
         self.assertEqual(env["DISPATCHARR_ENV"], "aio")
         self.assertEqual(env["DISPATCHARR_PORT"], "9191")
@@ -50,11 +50,35 @@ class DispatcharrTests(unittest.TestCase):
         self.assertTrue(set(context["capabilities"]["add"]) <= baseline)
         self.assertFalse(context["allowPrivilegeEscalation"])
 
-    def test_only_the_gateway_and_jellyfin_connect(self):
+    def test_gateway_reaches_only_the_ui_and_jellyfin_only_the_tuner(self):
         policy = kind(render(), "NetworkPolicy")["spec"]
-        sources = {peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
-                   for rule in policy["ingress"] for peer in rule["from"]}
-        self.assertEqual(sources, {"openresty", "jellyfin"})
+        rules = {rule["from"][0]["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]:
+                 [p["port"] for p in rule["ports"]] for rule in policy["ingress"]}
+        self.assertEqual(rules, {"openresty": [9191], "jellyfin": [9192]})
+
+    def test_tuner_proxy_serves_only_tuner_paths_and_drops_identity(self):
+        config = next(d for d in render() if d["kind"] == "ConfigMap"
+                      and d["metadata"]["name"].endswith("-tuner"))["data"]["default.conf"]
+        self.assertIn("location ~ ^/(hdhr|output|proxy)(/|$)", config)
+        self.assertIn('proxy_set_header X-Kubarr-User "";', config)
+        self.assertIn("location / {\n    return 403;", config.replace("      ", "  ").replace("        ", "    "))
+        self.assertIn("listen 9192;", config)
+        self.assertIn("proxy_pass http://127.0.0.1:9191;", config)
+        pod = kind(render(), "Deployment")["spec"]["template"]["spec"]
+        tuner = next(c for c in pod["containers"] if c["name"] == "tuner")
+        self.assertTrue(tuner["securityContext"]["readOnlyRootFilesystem"])
+        self.assertTrue(tuner["securityContext"]["runAsNonRoot"])
+        service = kind(render(), "Service")
+        self.assertEqual([(p["name"], p["port"]) for p in service["spec"]["ports"]],
+                         [("http", 9191), ("tuner", 9192)])
+
+    def test_reverse_proxy_sign_in_trusts_only_private_peers(self):
+        app = next(c for c in kind(render(), "Deployment")["spec"]["template"]["spec"]["containers"]
+                   if c["name"] == "dispatcharr")
+        env = {e["name"]: e["value"] for e in app["env"]}
+        self.assertEqual(env["DISPATCHARR_TRUSTED_PROXIES"], "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
+        annotations = yaml.safe_load((ROOT / CHART / "Chart.yaml").read_text())["annotations"]
+        self.assertEqual(annotations["kubarr.io/user-header"], "true")
 
     def test_gpu_is_offered_and_off_by_default(self):
         values = yaml.safe_load((ROOT / CHART / "values.yaml").read_text())

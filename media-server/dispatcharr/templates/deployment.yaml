@@ -15,8 +15,9 @@ spec:
       {{- include "dispatcharr.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        checksum/tuner: {{ include (print $.Template.BasePath "/tuner-configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
@@ -71,6 +72,39 @@ spec:
             {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" .Values.dispatcharr.resources) | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/data") | nindent 12 }}
+        - name: tuner
+          image: "{{ .Values.dispatcharr.tuner.image.repository }}:{{ .Values.dispatcharr.tuner.image.tag }}"
+          imagePullPolicy: {{ .Values.dispatcharr.tuner.image.pullPolicy }}
+          ports:
+            - name: tuner
+              containerPort: {{ .Values.dispatcharr.tuner.port }}
+              protocol: TCP
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          readinessProbe:
+            tcpSocket:
+              port: tuner
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.dispatcharr.tuner.resources | nindent 12 }}
+          volumeMounts:
+            - name: tuner-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: tuner-tmp
+              mountPath: /tmp
       volumes:
+        - name: tuner-config
+          configMap:
+            name: {{ include "dispatcharr.fullname" . }}-tuner
+        - name: tuner-tmp
+          emptyDir:
+            sizeLimit: 64Mi
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "dispatcharr.fullname" .)) | nindent 8 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}
