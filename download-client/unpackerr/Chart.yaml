@@ -2,7 +2,7 @@ apiVersion: v2
 name: unpackerr
 description: Extracts RAR, ZIP and 7z downloads so Sonarr, Radarr and Lidarr can import them
 type: application
-version: 1.0.1+3
+version: 1.0.1+4
 appVersion: "1.0.1"
 keywords:
   - unpackerr
