@@ -54,11 +54,12 @@ qbittorrent:
       # Whitelist all private networks (pod network will be in this range)
       AuthSubnetWhitelist: "10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16"
     BitTorrent:
-      # POSIX file I/O instead of libtorrent 2's default memory-mapped files.
-      # Mapped pages count against the container's memory limit, so heavy disk
-      # activity (many active torrents, rechecks) got qBittorrent OOM-killed
-      # while its own memory was a few hundred MiB.
-      Session\DiskIOType: "Posix"
+      # Multi-threaded pread/pwrite (libtorrent 2.1) instead of the default
+      # memory-mapped files, whose pages count against the container's memory
+      # limit and got qBittorrent OOM-killed. Not "Posix": that backend is
+      # single-threaded and synchronous, and over NFS it capped downloads at
+      # ~5 MB/s (PreadPwrite: 60-80 MB/s on the same link and share).
+      Session\DiskIOType: "PreadPwrite"
       # Disk cache size (in MiB, -1 = auto)
       Session\DiskCacheSize: "256"
       # Disk cache expiry (seconds)

@@ -86,6 +86,13 @@ The gateway now lets requests without a Kubarr session reach Jellyfin
 itself. This is what native clients need. Kubarr throttles failed password
 checks.
 
+### qBittorrent chart 5.3.0+23: pread/pwrite disk I/O
+
+The default disk I/O is now `PreadPwrite` (libtorrent 2.1, multi-threaded
+pread/pwrite). The `Posix` default from +22 stopped the OOM kills, but that
+backend is single-threaded and synchronous: over NFS it capped downloads at
+about 5 MB/s. `PreadPwrite` measured 60–80 MB/s on the same link and share.
+
 ### qBittorrent chart 5.3.0+22: POSIX disk I/O
 
 qBittorrent now defaults to `Session\DiskIOType=Posix`. libtorrent 2's default
