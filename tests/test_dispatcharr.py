@@ -42,6 +42,14 @@ class DispatcharrTests(unittest.TestCase):
         self.assertFalse([v for v in pod["volumes"] if v["name"] == "media"])
         self.assertEqual(kind(resources, "Deployment")["spec"]["strategy"]["type"], "Recreate")
 
+    def test_liveness_follows_the_embedded_database(self):
+        app = next(c for c in kind(render(), "Deployment")["spec"]["template"]["spec"]["containers"]
+                   if c["name"] == "dispatcharr")
+        self.assertEqual(app["livenessProbe"]["exec"]["command"],
+                         ["pg_isready", "-q", "-h", "/var/run/postgresql", "-p", "5432"])
+        # First boot initialises the database, so the startup probe gates liveness.
+        self.assertIn("startupProbe", app)
+
     def test_capabilities_stay_within_baseline(self):
         context = kind(render(), "Deployment")["spec"]["template"]["spec"]["containers"][0]["securityContext"]
         baseline = {"AUDIT_WRITE", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "MKNOD",

@@ -176,6 +176,9 @@ stay open in gluetun's firewall. Since 0.33.0+7 gluetun's control server
 listens on 18001 (`vpn.controlPort`), because Dispatcharr uses 8001 and 8002
 inside the pod. kubarr-common's gluetun helper takes the port,
 default 8001, and Kubarr reads it from the `gluetun-ctrl` container port.
+From 0.33.0+9 the liveness probe runs `pg_isready` against the embedded
+PostgreSQL. A database that stops while nginx keeps answering now restarts the
+container instead of leaving Dispatcharr without data.
 
 ## New application — 2026-11-07
 

@@ -68,10 +68,13 @@ spec:
             tcpSocket:
               port: http
             periodSeconds: 10
+          # The embedded PostgreSQL can stop while nginx keeps answering (its
+          # lock file was removed under it once); restart the container then.
           livenessProbe:
-            tcpSocket:
-              port: http
+            exec:
+              command: [pg_isready, -q, -h, /var/run/postgresql, -p, "5432"]
             periodSeconds: 30
+            timeoutSeconds: 10
             failureThreshold: 3
           resources:
             {{- include "kubarr-common.gpu.resources" (dict "root" . "resources" .Values.dispatcharr.resources) | nindent 12 }}
