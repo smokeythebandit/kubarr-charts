@@ -86,6 +86,14 @@ The gateway now lets requests without a Kubarr session reach Jellyfin
 itself. This is what native clients need. Kubarr throttles failed password
 checks.
 
+### qBittorrent chart 5.3.0+22: POSIX disk I/O
+
+qBittorrent now defaults to `Session\DiskIOType=Posix`. libtorrent 2's default
+memory-mapped file I/O counts mapped pages against the container's memory
+limit, so heavy disk activity got qBittorrent OOM-killed while its own memory
+was a few hundred MiB. Existing installs receive the key on the next start,
+because startup only adds missing keys. A value set in qBittorrent is kept.
+
 ### OpenResty gateway 1.29.2+5.22: retry address on app errors
 
 When an app cannot be reached, the redirect to `/app-error` carries the

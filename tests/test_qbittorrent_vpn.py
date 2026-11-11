@@ -48,6 +48,7 @@ class QBittorrentVpnTests(unittest.TestCase):
         defaults = next(resource["data"]["qBittorrent.conf"] for resource in resources
                         if resource["kind"] == "ConfigMap" and "qBittorrent.conf" in resource["data"])
         for initial in ["", "[Preferences]\nWebUI\\Address=*\nWebUI\\ServerDomains=*\n",
+                        "[BitTorrent]\nSession\\DiskIOType=Posix\nSession\\QueueingSystemEnabled=false\n",
                         "[Preferences]\nWebUI\\CSRFProtection=true\nWebUI\\Password_PBKDF2=keep-hash\n"
                         "[BitTorrent]\nSession\\DefaultSavePath=/my/downloads/\nSession\\Port=12345\n"
                         "[Custom]\nKeep=value\n"]:
@@ -68,6 +69,9 @@ class QBittorrentVpnTests(unittest.TestCase):
                 config = configparser.RawConfigParser(strict=True)
                 config.read_string(result)
                 self.assertEqual(config["Preferences"]["WebUI\\LocalHostAuth"], "false")
+                # Existing installs gain POSIX disk I/O too (memory-mapped files
+                # count against the memory limit and got qBittorrent OOM-killed).
+                self.assertEqual(config["BitTorrent"]["Session\\DiskIOType"], "Posix")
                 self.assertEqual(config["Preferences"]["WebUI\\AuthSubnetWhitelistEnabled"], "true")
                 self.assertEqual(config["Preferences"]["WebUI\\CSRFProtection"],
                                  "true" if "keep-hash" in initial else "false")
