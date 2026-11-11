@@ -797,7 +797,11 @@ data:
             if app_name == "" then
               return ngx.exit(ngx.HTTP_BAD_GATEWAY)
             end
-            return ngx.redirect("/app-error?app=" .. ngx.escape_uri(app_name) .. "&reason=connection_failed", ngx.HTTP_MOVED_TEMPORARILY)
+            -- retry: where the button sends the user back to. On an app's own
+            -- (sub)domain that is not /<app>/, so pass the address that failed.
+            return ngx.redirect("/app-error?app=" .. ngx.escape_uri(app_name)
+              .. "&reason=connection_failed&retry=" .. ngx.escape_uri(ngx.var.request_uri or ""),
+              ngx.HTTP_MOVED_TEMPORARILY)
           }
         }
 

@@ -71,7 +71,7 @@ local exited, redirect, body
 local method = "GET"
 ngx = {
  HTTP_BAD_GATEWAY=502, HTTP_MOVED_TEMPORARILY=302,
- header={}, var={app_name="jellyfin", upstream_status="502"},
+ header={}, var={app_name="jellyfin", upstream_status="502", request_uri="/web/index.html"},
  req={get_method=function() return method end},
  say=function(value) body=value end,
  exit=function(status) exited=status end,
@@ -106,7 +106,8 @@ for _, navigation_method in ipairs({"GET","HEAD"}) do
  exited, redirect=nil,nil
  failure()
  assert(exited==nil and redirect[2]==302)
- assert(redirect[1]=="/app-error?app=jellyfin&reason=connection_failed")
+ -- retry carries the address that failed (escape_uri is the identity here).
+ assert(redirect[1]=="/app-error?app=jellyfin&reason=connection_failed&retry=/web/index.html")
 end
 '''
         result = subprocess.run(["luajit", "-"], input=script, capture_output=True, text=True)

@@ -86,6 +86,12 @@ The gateway now lets requests without a Kubarr session reach Jellyfin
 itself. This is what native clients need. Kubarr throttles failed password
 checks.
 
+### OpenResty gateway 1.29.2+5.22: retry address on app errors
+
+When an app cannot be reached, the redirect to `/app-error` carries the
+address that failed (`retry`). On an app's own (sub)domain, Try Again then
+returns there instead of to `/<app>/`.
+
 ### Headlamp chart 0.46.0+13 and gateway 1.29.2+5.21: sign in with Kubarr
 
 Headlamp no longer asks for a token. The chart creates `headlamp-admin`
