@@ -80,9 +80,9 @@ gpu:
 vpn:
   enabled: false
   secretName: ""
-  # Dispatcharr's own WebSocket server (daphne) listens on 8001, gluetun's
-  # default control port, inside the same pod.
-  controlPort: 8002
+  # Dispatcharr uses 8001 (daphne) and 8002 (internal) itself, so gluetun's
+  # control server moves well clear of them, inside the same pod.
+  controlPort: 18001
   image:
     repository: qmcgaw/gluetun
     tag: "v3.41.3"
