@@ -36,6 +36,19 @@ spec:
         - protocol: TCP
           port: {{ $.Values.dispatcharr.tuner.port }}
     {{- end }}
+    {{- if .Values.vpn.enabled }}
+    # Kubarr's backend reads the VPN status from gluetun's control server.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kubarr-backend
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kubarr-backend
+      ports:
+        - protocol: TCP
+          port: 8001
+    {{- end }}
   egress:
     - to:
         - namespaceSelector: {}

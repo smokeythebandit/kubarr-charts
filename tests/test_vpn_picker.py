@@ -18,7 +18,7 @@ VPN_CHARTS = TORRENT_CLIENTS + (
     "download-client/sabnzbd", "indexer/jackett", "indexer/prowlarr",
     "media-manager/bazarr", "media-manager/jellyseerr", "media-manager/lidarr",
     "media-manager/radarr", "media-manager/sonarr", "media-server/jellyfin",
-    "media-server/plex")
+    "media-server/plex", "media-server/dispatcharr")
 
 
 def render(chart, *sets):

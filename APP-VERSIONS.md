@@ -163,6 +163,10 @@ sign-in or assert a user.
 From 0.33.0+5 the tuner port also serves channel logos
 (`/api/channels/logos/<id>/cache/`, GET only), which the guide and lineup point
 at. The rest of `/api` stays refused.
+From 0.33.0+6 a VPN assigned in Kubarr takes effect. The shared gluetun sidecar
+with its kill switch routes Dispatcharr's traffic (provider playlists, EPG and
+streams), the VPN server picker chooses the server, and both inbound ports
+stay open in gluetun's firewall.
 
 ## New application — 2026-11-07
 

@@ -32,7 +32,12 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
+      {{- with include "kubarr-common.gluetun.initContainer" (dict "root" .) }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
+        {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.dispatcharr.service.targetPort "inputPorts" (toString .Values.dispatcharr.tuner.port)) | nindent 8 }}
         - name: dispatcharr
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
@@ -100,6 +105,7 @@ spec:
             - name: tuner-tmp
               mountPath: /tmp
       volumes:
+        {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         - name: tuner-config
           configMap:
             name: {{ include "dispatcharr.fullname" . }}-tuner
@@ -107,4 +113,5 @@ spec:
           emptyDir:
             sizeLimit: 64Mi
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "dispatcharr.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

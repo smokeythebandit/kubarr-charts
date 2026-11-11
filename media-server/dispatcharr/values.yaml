@@ -74,6 +74,59 @@ gpu:
   runtimeClassName: ""  # Optional, e.g. nvidia
   supplementalGroups: []  # Optional numeric render/video device group IDs
 
+# Route Dispatcharr's own traffic (provider playlists, EPG and streams) through
+# a VPN: a gluetun sidecar with a kill switch. Kubarr fills these in when a VPN
+# is assigned to Dispatcharr. Both inbound ports stay reachable.
+vpn:
+  enabled: false
+  secretName: ""
+  image:
+    repository: qmcgaw/gluetun
+    tag: "v3.41.3"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  killSwitch: true
+  firewallOutboundSubnets: ""
+  # Port forwarding via NAT-PMP (supported by ProtonVPN, PIA, AirVPN)
+  portForwarding:
+    enabled: false
+    upCommand: ""
+  # Server picker: chooses the fastest VPN server before gluetun starts and
+  # re-evaluates it while the pod runs. Reads fall back to these defaults.
+  picker:
+    enabled: true
+    shortlist: 5
+    sample: 40
+    initBudget: 60s
+    testSeconds: 8
+    testEndpoints:
+      - https://proof.ovh.net/files/100Mb.dat
+      - http://speedtest.tele2.net/100MB.zip
+    interval: 15m
+    degradeThreshold: 0.4
+    degradeChecks: 3
+    cooldown: 6h
+    switchWhileRunning: true
+    image:
+      repository: ghcr.io/smokeythebandit/kubarr-vpn-picker
+      tag: 26e9358
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+# Network policy configuration
+
 # The entrypoint starts as root, prepares /data and drops to its own users for
 # PostgreSQL, Redis and the app, hence these capabilities (all within the
 # baseline Pod Security level).

@@ -102,6 +102,23 @@ class DispatcharrTests(unittest.TestCase):
         self.assertEqual(nvidia["runtimeClassName"], "nvidia")
         self.assertEqual(nvidia["containers"][0]["resources"]["limits"]["nvidia.com/gpu"], 1)
 
+    def test_vpn_routes_dispatcharr_and_keeps_both_ports_reachable(self):
+        off = kind(render(), "Deployment")["spec"]["template"]["spec"]
+        self.assertEqual({c["name"] for c in off["containers"]}, {"dispatcharr", "tuner"})
+        on_resources = render("vpn.enabled=true", "vpn.secretName=vpn-dispatcharr")
+        on = kind(on_resources, "Deployment")["spec"]["template"]["spec"]
+        containers = {c["name"]: c for c in on["containers"]}
+        self.assertTrue({"gluetun", "dispatcharr", "tuner"} <= set(containers))
+        env = {e["name"]: e.get("value") for e in containers["gluetun"]["env"]}
+        self.assertEqual(env["FIREWALL"], "on")
+        # The gateway's UI port and Jellyfin's tuner port both stay reachable.
+        self.assertEqual(env["FIREWALL_INPUT_PORTS"].split(",")[:2], ["9191", "9192"])
+        self.assertEqual(on["dnsConfig"], {"options": [{"name": "ndots", "value": "1"}]})
+        ingress = kind(on_resources, "NetworkPolicy")["spec"]["ingress"]
+        self.assertEqual([r["ports"][0]["port"] for r in ingress], [9191, 9192, 8001])
+        control = ingress[-1]["from"][0]
+        self.assertEqual(control["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"], "kubarr-backend")
+
     def test_catalog_entry(self):
         annotations = yaml.safe_load((ROOT / CHART / "Chart.yaml").read_text())["annotations"]
         self.assertEqual(annotations["kubarr.io/category"], "media-server")
