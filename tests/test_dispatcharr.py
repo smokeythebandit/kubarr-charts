@@ -115,7 +115,13 @@ class DispatcharrTests(unittest.TestCase):
         self.assertEqual(env["FIREWALL_INPUT_PORTS"].split(",")[:2], ["9191", "9192"])
         self.assertEqual(on["dnsConfig"], {"options": [{"name": "ndots", "value": "1"}]})
         ingress = kind(on_resources, "NetworkPolicy")["spec"]["ingress"]
-        self.assertEqual([r["ports"][0]["port"] for r in ingress], [9191, 9192, 8001])
+        self.assertEqual([r["ports"][0]["port"] for r in ingress], [9191, 9192, 8002])
+        # gluetun's control server moves off 8001, where Dispatcharr's daphne listens.
+        self.assertEqual(env["HTTP_CONTROL_SERVER_ADDRESS"], ":8002")
+        self.assertIn("8002", env["FIREWALL_INPUT_PORTS"].split(","))
+        self.assertNotIn("8001", env["FIREWALL_INPUT_PORTS"].split(","))
+        ctrl = next(p for p in containers["gluetun"]["ports"] if p["name"] == "gluetun-ctrl")
+        self.assertEqual(ctrl["containerPort"], 8002)
         control = ingress[-1]["from"][0]
         self.assertEqual(control["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"], "kubarr-backend")
 

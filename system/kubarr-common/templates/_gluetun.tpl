@@ -136,7 +136,8 @@ and vpn.picker.enabled.
   {{- end -}}
 {{- end -}}
 {{- $ports = append $ports "9999" -}}
-{{- $ports = append $ports "8001" -}}
+{{- $control := toString (default 8001 $vpn.controlPort) -}}
+{{- $ports = append $ports $control -}}
 - name: gluetun
   image: "{{ $vpn.image.repository }}:{{ $vpn.image.tag }}"
   imagePullPolicy: {{ $vpn.image.pullPolicy }}
@@ -170,7 +171,7 @@ and vpn.picker.enabled.
     - name: HEALTH_SERVER_ADDRESS
       value: ":9999"
     - name: HTTP_CONTROL_SERVER_ADDRESS
-      value: ":8001"
+      value: {{ printf ":%s" $control | quote }}
     {{- with $vpn.portForwarding }}
     {{- if .enabled }}
     - name: VPN_PORT_FORWARDING
@@ -197,7 +198,7 @@ and vpn.picker.enabled.
       containerPort: 8888
       protocol: TCP
     - name: gluetun-ctrl
-      containerPort: 8001
+      containerPort: {{ $control }}
       protocol: TCP
   livenessProbe:
     httpGet:

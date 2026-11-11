@@ -166,7 +166,10 @@ at. The rest of `/api` stays refused.
 From 0.33.0+6 a VPN assigned in Kubarr takes effect. The shared gluetun sidecar
 with its kill switch routes Dispatcharr's traffic (provider playlists, EPG and
 streams), the VPN server picker chooses the server, and both inbound ports
-stay open in gluetun's firewall.
+stay open in gluetun's firewall. Since 0.33.0+7 gluetun's control server
+listens on 8002 (`vpn.controlPort`), because Dispatcharr's WebSocket server
+already uses 8001 in the pod. kubarr-common's gluetun helper takes the port,
+default 8001, and Kubarr reads it from the `gluetun-ctrl` container port.
 
 ## New application — 2026-11-07
 

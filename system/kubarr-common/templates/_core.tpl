@@ -150,7 +150,7 @@ spec:
               app.kubernetes.io/name: kubarr-backend
       ports:
         - protocol: TCP
-          port: 8001
+          port: {{ default 8001 $root.Values.vpn.controlPort }}
     {{- end }}
   egress:
     - to:
