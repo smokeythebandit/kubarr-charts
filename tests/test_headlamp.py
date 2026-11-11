@@ -28,7 +28,8 @@ def render(*overrides, release="headlamp"):
 
 class HeadlampTests(unittest.TestCase):
     def test_default_routes_login_and_runtime(self):
-        resources = render()
+        # The routing and runtime contract, without Kubarr sign-in (tested below).
+        resources = render("kubarrAccess.enabled=false")
         self.assertEqual(set(resources), {"ServiceAccount", "Service", "Deployment", "NetworkPolicy"})
         service, deploy = resources["Service"], resources["Deployment"]
         pod = deploy["spec"]["template"]["spec"]
@@ -58,6 +59,32 @@ class HeadlampTests(unittest.TestCase):
         self.assertEqual(policy["ingress"][0]["from"][0]["namespaceSelector"]["matchLabels"],
                          {"kubernetes.io/metadata.name": "openresty"})
         self.assertEqual([port["port"] for port in policy["egress"][1]["ports"]], [443, 6443])
+
+    def test_kubarr_sign_in_maps_roles_to_scoped_service_accounts(self):
+        result = template()
+        result.check_returncode()
+        docs = [d for d in yaml.safe_load_all(result.stdout) if d]
+        bindings = {d["metadata"]["name"]: d for d in docs if d["kind"] == "ClusterRoleBinding"}
+        self.assertEqual(bindings["headlamp-admin"]["roleRef"]["name"], "cluster-admin")
+        self.assertEqual(bindings["headlamp-view"]["roleRef"]["name"], "view")
+        for level in ("admin", "view"):
+            self.assertEqual(bindings[f"headlamp-{level}"]["subjects"],
+                             [{"kind": "ServiceAccount", "name": f"headlamp-{level}", "namespace": "headlamp"}])
+        role = next(d for d in docs if d["kind"] == "Role")
+        # Kubarr's backend may mint tokens for these two accounts and nothing else.
+        self.assertEqual(role["rules"], [{"apiGroups": [""], "resources": ["serviceaccounts/token"],
+                                          "resourceNames": ["headlamp-admin", "headlamp-view"],
+                                          "verbs": ["create"]}])
+        binding = next(d for d in docs if d["kind"] == "RoleBinding")
+        self.assertEqual(binding["subjects"], [{"kind": "ServiceAccount", "name": "kubarr",
+                                                "namespace": "kubarr-backend"}])
+        container = next(d for d in docs if d["kind"] == "Deployment")["spec"]["template"]["spec"]["containers"][0]
+        for arg in ("-proxy-auth", "-proxy-auth-token-header=X-Kubarr-Kube-Token",
+                    "-proxy-auth-username-header=X-Kubarr-User"):
+            self.assertIn(arg, container["args"])
+        self.assertFalse(any("unsafe" in arg for arg in container["args"]))
+        annotations = yaml.safe_load((CHART / "Chart.yaml").read_text())["annotations"]
+        self.assertEqual(annotations["kubarr.io/kube-token"], "true")
 
     def test_release_and_policy_overrides(self):
         resources = render("fullnameOverride=custom-headlamp", "headlamp.service.port=8080",

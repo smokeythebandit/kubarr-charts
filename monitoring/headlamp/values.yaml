@@ -48,3 +48,16 @@ networkPolicy:
   # cluster if known. Required for in-cluster discovery and user API requests.
   apiServerCIDRs: [0.0.0.0/0]
   apiServerPorts: [443, 6443]
+
+# Sign-in through Kubarr. The gateway sends a token for one of these service
+# accounts in X-Kubarr-Kube-Token, chosen by the user's Kubarr role, and the
+# username in X-Kubarr-User; Headlamp's proxy-auth uses them. Only Kubarr's
+# backend may request those tokens (a Role in this namespace).
+kubarrAccess:
+  enabled: true
+  # Kubarr admins (settings.manage)
+  adminClusterRole: cluster-admin
+  # Everyone else with access to Headlamp
+  viewClusterRole: view
+  backendServiceAccount: kubarr
+  backendNamespace: kubarr-backend

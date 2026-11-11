@@ -593,9 +593,12 @@ end
         for name, block in (("api", self.api_block), ("app", self.app_location)):
             with self.subTest(location=name):
                 self.assertIn("proxy_set_header X-Kubarr-User $kubarr_user;", block)
+                self.assertIn("proxy_set_header X-Kubarr-Kube-Token $kubarr_kube_token;", block)
                 self.assertIn("proxy_set_header X-Kubarr-Identity $kubarr_identity;", block)
         auth_block = self.config.split("location /auth/ {", 1)[1].split("\n        }\n", 1)[0]
         self.assertIn('proxy_set_header X-Kubarr-User "";', auth_block)
+        self.assertIn('proxy_set_header X-Kubarr-Kube-Token "";', auth_block)
+        self.assertEqual(self.config.count('set $kubarr_identity "";'), self.config.count('set $kubarr_kube_token "";'))
         self.assertEqual(self.config.count('set $kubarr_identity "";'), self.config.count('set $kubarr_user "";'))
 
     def test_requests_without_a_session_share_one_key_apart_from_sessions(self):

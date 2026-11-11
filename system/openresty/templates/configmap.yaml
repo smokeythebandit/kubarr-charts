@@ -65,6 +65,9 @@ data:
           -- Plain username for apps whose reverse-proxy sign-in trusts a header
           -- (kubarr.io/user-header). Cached per session like the identity.
           "x-kubarr-user",
+          -- Kubernetes token for the user's role (kubarr.io/kube-token, Headlamp).
+          -- Kubarr renews it long before it expires; the cache window is short.
+          "x-kubarr-kube-token",
         }
         -- Only grants are cached. Denials and errors are always re-checked.
         local CACHEABLE = {[200] = true, [204] = true, [404] = true}
@@ -77,6 +80,7 @@ data:
         function kubarr_identity(reply)
           ngx.var.kubarr_identity = (reply and reply.header["x-kubarr-identity"]) or ""
           ngx.var.kubarr_user = (reply and reply.header["x-kubarr-user"]) or ""
+          ngx.var.kubarr_kube_token = (reply and reply.header["x-kubarr-kube-token"]) or ""
         end
 
         -- Key on every Kubarr session cookie rather than one name: the backend
@@ -255,6 +259,7 @@ data:
           # identity Kubarr grants and never a client-supplied one.
           set $kubarr_identity "";
           set $kubarr_user "";
+          set $kubarr_kube_token "";
           access_by_lua_block {
             -- Health is gateway-owned; user APIs may belong to a host-routed app.
             if ngx.var.uri == "/api/system/health" then
@@ -296,6 +301,7 @@ data:
           proxy_set_header Connection $connection_upgrade;
           proxy_set_header X-Kubarr-Identity $kubarr_identity;
           proxy_set_header X-Kubarr-User $kubarr_user;
+          proxy_set_header X-Kubarr-Kube-Token $kubarr_kube_token;
           proxy_pass $api_upstream$api_target_path;
         }
 
@@ -337,6 +343,7 @@ data:
           # Never relay a client-supplied identity to a host-routed app.
           proxy_set_header X-Kubarr-Identity "";
           proxy_set_header X-Kubarr-User "";
+          proxy_set_header X-Kubarr-Kube-Token "";
           proxy_pass $auth_upstream$request_uri;
         }
 
@@ -380,6 +387,7 @@ data:
           set $target_path "";
           set $kubarr_identity "";
           set $kubarr_user "";
+          set $kubarr_kube_token "";
 
           access_by_lua_block {
             -- Subdomain-routed apps (host assignments) resolve by host first;
@@ -452,6 +460,7 @@ data:
           proxy_set_header X-Kubarr-Identity $kubarr_identity;
           # Always overwritten: a client can never supply its own username.
           proxy_set_header X-Kubarr-User $kubarr_user;
+          proxy_set_header X-Kubarr-Kube-Token $kubarr_kube_token;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;
@@ -465,6 +474,7 @@ data:
           set $target_path "";
           set $kubarr_identity "";
           set $kubarr_user "";
+          set $kubarr_kube_token "";
 
           access_by_lua_block {
             local route = (kubarr_cache or ngx.location).capture(
@@ -576,6 +586,7 @@ data:
           proxy_set_header X-Kubarr-Identity $kubarr_identity;
           # Always overwritten: a client can never supply its own username.
           proxy_set_header X-Kubarr-User $kubarr_user;
+          proxy_set_header X-Kubarr-Kube-Token $kubarr_kube_token;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;
@@ -662,6 +673,7 @@ data:
           set $target_path $uri;
           set $kubarr_identity "";
           set $kubarr_user "";
+          set $kubarr_kube_token "";
 
           access_by_lua_block {
             -- Look routes up even without a session: an app-native app on its
@@ -711,6 +723,7 @@ data:
           proxy_set_header X-Kubarr-Identity $kubarr_identity;
           # Always overwritten: a client can never supply its own username.
           proxy_set_header X-Kubarr-User $kubarr_user;
+          proxy_set_header X-Kubarr-Kube-Token $kubarr_kube_token;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;

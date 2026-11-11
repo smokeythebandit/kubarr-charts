@@ -58,6 +58,13 @@ spec:
             - -in-cluster
             - -base-url={{ $app.basePath }}
             - -plugins-dir=/headlamp/plugins
+            {{- if (default dict .Values.kubarrAccess).enabled }}
+            # Kubarr's gateway authenticates and supplies the token; it always
+            # overwrites these headers, so a client cannot set them.
+            - -proxy-auth
+            - -proxy-auth-token-header=X-Kubarr-Kube-Token
+            - -proxy-auth-username-header=X-Kubarr-User
+            {{- end }}
           ports:
             - name: http
               containerPort: 4466

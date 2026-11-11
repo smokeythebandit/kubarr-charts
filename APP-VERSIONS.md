@@ -86,6 +86,18 @@ The gateway now lets requests without a Kubarr session reach Jellyfin
 itself. This is what native clients need. Kubarr throttles failed password
 checks.
 
+### Headlamp chart 0.46.0+13 and gateway 1.29.2+5.21: sign in with Kubarr
+
+Headlamp no longer asks for a token. The chart creates `headlamp-admin`
+(bound to `cluster-admin`) and `headlamp-view` (bound to `view`), and lets only
+Kubarr's backend request tokens for those two accounts. For each user the
+backend picks the account by Kubarr role (`settings.manage` means admin) and
+mints a one-hour token, which it renews 10 minutes before expiry. The gateway
+forwards that token as `X-Kubarr-Kube-Token` (`kubarr.io/kube-token`) and the
+username as `X-Kubarr-User`, and Headlamp's `-proxy-auth` uses both. The
+gateway always overwrites both headers. Set `kubarrAccess.enabled=false` to
+return to token login.
+
 ### OpenResty gateway 1.29.2+5.20: X-Kubarr-User
 
 The gateway forwards the signed-in Kubarr username as `X-Kubarr-User` to apps

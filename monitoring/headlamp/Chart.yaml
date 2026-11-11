@@ -1,13 +1,18 @@
 apiVersion: v2
 name: headlamp
-description: Headlamp Kubernetes web UI with per-user token login
+description: Headlamp Kubernetes web UI, signed in with your Kubarr account
 type: application
-version: 0.46.0+12
+version: 0.46.0+13
 appVersion: "0.46.0"
 annotations:
   kubarr.io/display-name: "Headlamp"
   kubarr.io/icon: "🔦"
   kubarr.io/category: "monitoring"
+  # Kubarr's gateway hands Headlamp a short-lived token for headlamp-admin
+  # (Kubarr admins) or headlamp-view (everyone else with access), plus the
+  # username, so there is no token to paste.
+  kubarr.io/kube-token: "true"
+  kubarr.io/user-header: "true"
 dependencies:
   - name: kubarr-common
     version: 0.8.4

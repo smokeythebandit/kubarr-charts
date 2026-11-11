@@ -1,0 +1,60 @@
+{{- /* Two service accounts the Kubarr gateway hands tokens for, by Kubarr
+role, and a Role letting only Kubarr's backend request those tokens. */ -}}
+{{- if (default dict .Values.kubarrAccess).enabled }}
+{{- $access := .Values.kubarrAccess }}
+{{- range $level, $role := dict "admin" $access.adminClusterRole "view" $access.viewClusterRole }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $.Chart.Name }}-{{ $level }}
+  namespace: {{ $.Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" $ | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $.Chart.Name }}-{{ $level }}
+  labels:
+    {{- include "kubarr-common.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $role }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $.Chart.Name }}-{{ $level }}
+    namespace: {{ $.Values.namespace.name }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Chart.Name }}-kubarr-tokens
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["{{ .Chart.Name }}-admin", "{{ .Chart.Name }}-view"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Chart.Name }}-kubarr-tokens
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kubarr-common.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Chart.Name }}-kubarr-tokens
+subjects:
+  - kind: ServiceAccount
+    name: {{ $access.backendServiceAccount }}
+    namespace: {{ $access.backendNamespace }}
+{{- end }}
