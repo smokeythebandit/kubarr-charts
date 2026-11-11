@@ -61,6 +61,10 @@ class DispatcharrTests(unittest.TestCase):
                       and d["metadata"]["name"].endswith("-tuner"))["data"]["default.conf"]
         self.assertIn("location ~ ^/(hdhr|output|proxy)(/|$)", config)
         self.assertIn('proxy_set_header X-Kubarr-User "";', config)
+        # Channel logos are the only /api path, read-only.
+        self.assertIn("location ~ ^/api/channels/logos/[0-9]+/cache/?$", config)
+        self.assertIn("limit_except GET", config)
+        self.assertEqual(config.count('proxy_set_header X-Kubarr-User "";'), 2)
         self.assertIn("location / {\n    return 403;", config.replace("      ", "  ").replace("        ", "    "))
         self.assertIn("listen 9192;", config)
         self.assertIn("proxy_pass http://127.0.0.1:9191;", config)

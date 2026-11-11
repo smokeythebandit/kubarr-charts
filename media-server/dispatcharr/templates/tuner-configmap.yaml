@@ -24,6 +24,19 @@ data:
         proxy_read_timeout 1h;
         proxy_send_timeout 1h;
       }
+      # Channel logos the guide and lineup point at: read-only, nothing else
+      # under /api.
+      location ~ ^/api/channels/logos/[0-9]+/cache/?$ {
+        limit_except GET {
+          deny all;
+        }
+        proxy_pass http://127.0.0.1:{{ .Values.dispatcharr.service.targetPort }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Kubarr-User "";
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+      }
       location / {
         return 403;
       }

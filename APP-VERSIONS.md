@@ -148,6 +148,9 @@ the UI port (9191). Jellyfin gets its own tuner port (9192): an nginx sidecar
 there serves only `/hdhr`, `/output` and `/proxy`, deletes `X-Kubarr-User`,
 and answers 403 for everything else. Jellyfin therefore cannot reach the
 sign-in or assert a user.
+From 0.33.0+5 the tuner port also serves channel logos
+(`/api/channels/logos/<id>/cache/`, GET only), which the guide and lineup point
+at. The rest of `/api` stays refused.
 
 ## New application — 2026-11-07
 
