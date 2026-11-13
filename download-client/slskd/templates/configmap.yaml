@@ -1,0 +1,34 @@
+{{- $app := .Values.slskd -}}
+{{- $portForwarding := and .Values.vpn.enabled .Values.vpn.portForwarding.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "slskd.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "slskd.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := $app.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  # Derived settings.
+  SLSKD_APP_DIR: "/app"
+  SLSKD_HTTP_PORT: {{ $app.service.targetPort | quote }}
+  SLSKD_NO_HTTPS: "true"
+  SLSKD_URL_BASE: {{ $app.basePath | quote }}
+  SLSKD_SLSK_LISTEN_PORT: {{ $app.listenPort | quote }}
+  SLSKD_NO_AUTH: {{ ternary "false" "true" $app.auth.enabled | quote }}
+  SLSKD_DOWNLOADS_DIR: "/downloads/slskd"
+  # Incomplete files stay on the private claim and only finished ones reach
+  # the shared export, so Lidarr never sees a partial download.
+  SLSKD_INCOMPLETE_DIR: "/app/incomplete"
+  {{- $shared := list -}}
+  {{- range .Values.storage.mounts -}}
+  {{- if eq .mode "read" -}}{{- $shared = append $shared .target -}}{{- end -}}
+  {{- end }}
+  {{- with $shared }}
+  SLSKD_SHARED_DIR: {{ join ";" . | quote }}
+  {{- end }}
+  # Gluetun's port-forwarding callback sets the listen port through the
+  # options API, which slskd only accepts with remote configuration on.
+  SLSKD_REMOTE_CONFIGURATION: {{ ternary "true" "false" $portForwarding | quote }}

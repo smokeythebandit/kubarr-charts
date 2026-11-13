@@ -200,6 +200,7 @@ container instead of leaving Dispatcharr without data.
 | Chart | Category | Image | Application version |
 | --- | --- | --- | --- |
 | Unpackerr | download-client | `ghcr.io/unpackerr/unpackerr` | 1.0.1 |
+| slskd | download-client | `slskd/slskd` | 0.26.2 |
 
 The `v1.0.1` tag (2026-10-29) was verified on GHCR. Unpackerr runs in folder
 mode: each writable `/downloads/*` mount is polled (NFS carries no file events

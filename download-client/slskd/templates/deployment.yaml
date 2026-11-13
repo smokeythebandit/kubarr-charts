@@ -1,0 +1,127 @@
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) -}}
+{{- $app := .Values.slskd -}}
+{{- $secret := default (printf "%s-credentials" (include "slskd.fullname" .)) .Values.secrets.existingSecret -}}
+{{- /* Gluetun runs this with the forwarded port in place of {{PORT}} and sets
+it as slskd's listen port through the options API. busybox wget cannot send
+PATCH, so the request is written to nc, which needs its input held open
+until slskd answers. slskd may still be scanning shares when the port
+arrives, so it retries for five minutes. */ -}}
+{{- $upCommand := printf "/bin/sh -c 'body=\"{\\\"soulseek\\\":{\\\"listenPort\\\":%s}}\"; i=0; until (printf \"PATCH %s/api/v0/options HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nX-API-Key: %%s\\r\\nContent-Type: application/json\\r\\nContent-Length: %%s\\r\\nConnection: close\\r\\n\\r\\n%%s\" \"$SLSKD_API_KEY\" \"${#body}\" \"$body\"; sleep 5) | nc -w 10 127.0.0.1 %v | head -n 1 | grep -q \" 200 \"; do i=$((i+1)); [ \"$i\" -lt 60 ] || exit 1; sleep 5; done'" "{{PORT}}" (trimSuffix "/" $app.basePath) $app.service.targetPort -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "slskd.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "slskd.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $app.replicaCount }}
+  # The private claim is ReadWriteOnce and holds slskd's SQLite databases, so
+  # the old pod must release it before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "slskd.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "slskd.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "slskd.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if or .Values.vpn.enabled $prepare }}
+      initContainers:
+        {{- include "kubarr-common.gluetun.initContainer" (dict "root" . "p2p" true) | nindent 8 }}
+        {{- with $prepare }}{{- . | nindent 8 }}{{- end }}
+      {{- end }}
+      containers:
+        {{- $gluetun := include "kubarr-common.gluetun.container" (dict "root" . "p2p" true "appPort" $app.service.targetPort "inputPorts" (toString $app.listenPort) "defaultUpCommand" $upCommand) }}
+        {{- if $gluetun }}
+        {{- /* The callback authenticates with slskd's API key when slskd's
+        own authentication is on; gluetun reads it from the same Secret. */ -}}
+        {{- $gluetun = regexReplaceAll "(?m)^  env:\n(    - name: FIREWALL)" $gluetun (printf "  env:\n    - name: SLSKD_API_KEY\n      valueFrom:\n        secretKeyRef:\n          name: %s\n          key: %s\n${1}" $secret .Values.secrets.apiKeyKey) }}
+        {{- $gluetun | nindent 8 }}
+        {{- end }}
+        - name: slskd
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ $app.image.repository }}:{{ $app.image.tag }}"
+          imagePullPolicy: {{ $app.image.pullPolicy }}
+          # The image's entrypoint switches users with gosu, which needs
+          # root; run the binary directly as the pod's user instead.
+          command: ["/bin/sh", "-ec", "mkdir -p /app/incomplete && exec ./slskd"]
+          ports:
+            - name: http
+              containerPort: {{ $app.service.targetPort }}
+              protocol: TCP
+            - name: soulseek
+              containerPort: {{ $app.listenPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "slskd.fullname" . }}-config
+          env:
+            - name: SLSKD_SLSK_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: {{ .Values.secrets.usernameKey }}
+            - name: SLSKD_SLSK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: {{ .Values.secrets.passwordKey }}
+            - name: SLSKD_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: {{ .Values.secrets.apiKeyKey }}
+            - name: SLSKD_USERNAME
+              value: admin
+            - name: SLSKD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: {{ .Values.secrets.webPasswordKey }}
+          {{- if $app.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ $app.livenessProbe.httpGet.path }}
+              port: {{ $app.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ $app.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $app.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ $app.readinessProbe.httpGet.path }}
+              port: {{ $app.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ $app.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $app.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $app.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ $app.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml $app.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/app") | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list "/app") (default dict .Values.kubarr))) | nindent 12 }}
+      volumes:
+        {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "slskd.fullname" .)) | nindent 8 }}
+      {{- include "kubarr-common.gluetun.dnsConfig" (dict "root" .) | nindent 6 }}
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

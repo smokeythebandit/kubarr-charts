@@ -117,6 +117,8 @@ storage:
     - {name: deluge, source: downloads/deluge, target: /downloads/deluge, mode: read-write}
     - {name: rutorrent, source: downloads/rutorrent, target: /downloads/rutorrent, mode: read-write}
     - {name: sabnzbd, source: downloads/sabnzbd, target: /downloads/sabnzbd, mode: read-write}
+    # slskd writes completed downloads here at the same path, for Tubifarry.
+    - {name: slskd, source: downloads/slskd, target: /downloads/slskd, mode: read-write}
   config:
     migrationConfirmed: false
     create: true
@@ -214,6 +216,7 @@ networkPolicy:
     - deluge
     - rutorrent
     - sabnzbd
+    - slskd  # Soulseek, through the Tubifarry plugin
     - prowlarr  # indexer manager
 
 # Metrics exporter (exportarr) - auto-scraped by VictoriaMetrics

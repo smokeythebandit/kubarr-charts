@@ -20,6 +20,7 @@ PRIVATE_CONFIG = (
     "indexer/jackett", "indexer/prowlarr",
     "download-client/deluge", "download-client/qbittorrent",
     "download-client/transmission", "download-client/rutorrent", "download-client/sabnzbd",
+    "download-client/slskd",
 )
 # A private claim without a shared-export mount: the config contract applies,
 # the NFS one does not.
@@ -49,6 +50,7 @@ CLAIM_OPT_IN = {
 CONFIG_PATHS = {
     "media-manager/jellyseerr": "/app/config",
     "media-server/tdarr": "/app/server",
+    "download-client/slskd": "/app",
     "monitoring/alertmanager": "/alertmanager",
 }
 # A path the application cannot run without, so an empty mount list is refused
@@ -184,7 +186,7 @@ class DeclarativeStorageTests(unittest.TestCase):
                                  for m in c.get("volumeMounts", [])))
 
     def test_non_nfs_charts_do_not_gain_shared_export_volumes(self):
-        self.assertEqual(len(NFS_CHARTS) + len(OTHER_CHARTS), 45)
+        self.assertEqual(len(NFS_CHARTS) + len(OTHER_CHARTS), 46)
         for chart in OTHER_CHARTS:
             with self.subTest(chart=chart):
                 if chart == "system/kubarr-common":

@@ -1,0 +1,240 @@
+# Default values for slskd (https://github.com/slskd/slskd)
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: false
+  name: slskd
+
+# slskd application configuration
+slskd:
+  replicaCount: 1
+
+  image:
+    repository: slskd/slskd
+    pullPolicy: IfNotPresent
+    tag: "0.26.2"
+
+  # Service configuration (web UI and API)
+  service:
+    type: ClusterIP
+    port: 5030
+    targetPort: 5030
+    annotations: {}
+
+  # Resource limits and requests. The share index for a large library lives
+  # in memory; the image caps the .NET heap at 2 GiB.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # slskd serves its UI and API under SLSKD_URL_BASE, so the gateway forwards
+  # the full /slskd path. Clients in the cluster (Lidarr's Tubifarry) use
+  # http://slskd.slskd.svc.cluster.local:5030/slskd.
+  basePath: "/slskd"
+
+  # Port slskd listens on for incoming Soulseek peer connections. With VPN
+  # port forwarding on, gluetun replaces it at run time with the forwarded
+  # port (see templates/deployment.yaml).
+  listenPort: 50300
+
+  # Web UI and API authentication. Off by default: the Kubarr gateway already
+  # requires a signed-in user, and the NetworkPolicy admits only the gateway
+  # and Lidarr. Turn it on to require slskd's own login and the API key too.
+  auth:
+    enabled: false
+
+  # Extra SLSKD_* environment variables (see slskd's docs/config.md).
+  env:
+    TZ: "Etc/UTC"
+
+  # Probes use slskd's unauthenticated health endpoint.
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 5030
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 5
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: 5030
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Soulseek account, web login and API key. Empty existingSecret: the chart
+# generates them once (a random, unregistered username, which the Soulseek
+# server registers on first login) and keeps the Secret across upgrades and
+# uninstalls. Otherwise name a Secret with the keys below.
+secrets:
+  existingSecret: ""
+  usernameKey: slsk-username
+  passwordKey: slsk-password
+  apiKeyKey: api-key
+  webPasswordKey: web-password
+
+# Security context. slskd's entrypoint expects root to switch users with
+# gosu; the deployment runs the binary directly as an unprivileged user.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: slskd
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# VPN configuration (Gluetun sidecar). Kubarr enables it and names the Secret
+# when a VPN is assigned to slskd in Settings > Networking. Soulseek is
+# peer-to-peer, so without it peers see the cluster's public address.
+vpn:
+  enabled: false
+  # Name of the Kubernetes secret containing VPN credentials
+  # Created by Kubarr when you configure VPN in Settings > Networking
+  secretName: ""
+  # Gluetun container image
+  image:
+    repository: qmcgaw/gluetun
+    tag: "v3.41.3"
+    pullPolicy: IfNotPresent
+  # Resource limits for Gluetun container
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Kill switch - block all traffic if VPN disconnects
+  killSwitch: true
+  # Optional cluster-specific egress exceptions (e.g. a DNS service IP /32).
+  # Empty by default: private network ranges must not bypass the VPN.
+  firewallOutboundSubnets: ""
+  # Port forwarding via NAT-PMP (supported by ProtonVPN, PIA, AirVPN). The
+  # default callback sets slskd's listen port to the forwarded one.
+  portForwarding:
+    enabled: false
+    # Optional override for the default callback; Gluetun replaces {{PORT}}.
+    upCommand: ""
+  # Server picker: chooses the fastest VPN server before gluetun starts and
+  # re-evaluates it while the pod runs. Reads fall back to these defaults.
+  picker:
+    enabled: true
+    shortlist: 5
+    sample: 40
+    initBudget: 60s
+    testSeconds: 8
+    testEndpoints:
+      - https://proof.ovh.net/files/100Mb.dat
+      - http://speedtest.tele2.net/100MB.zip
+    interval: 15m
+    degradeThreshold: 0.4
+    degradeChecks: 3
+    cooldown: 6h
+    switchWhileRunning: true
+    image:
+      repository: ghcr.io/smokeythebandit/kubarr-vpn-picker
+      tag: 26e9358
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: ["/downloads/slskd"]
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # slskd's application directory: its databases, logs and the
+      # incomplete downloads.
+      main: ["/app"]
+
+storage:
+  mounts:
+    # Completed downloads, at the same path Lidarr mounts them, so Lidarr
+    # imports them without a remote path mapping.
+    - {name: downloads, source: downloads/slskd, target: /downloads/slskd, mode: read-write}
+    # Shared with the Soulseek network, read-only. Remove this entry to share
+    # nothing; some peers refuse users who share no files.
+    - {name: music, source: media/music, target: /music, mode: read}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    # slskd's application directory (SQLite databases, the share cache and
+    # incomplete downloads), mounted at /app. Off NFS on purpose.
+    size: 10Gi
+    storageClassName: "" # empty: cluster default StorageClass
+  media:
+    existingClaim: media-data
+
+# Network policy configuration
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+    - lidarr     # Tubifarry's Slskd indexer and download client
+  egressTo: []   # Soulseek needs outbound internet only
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}
