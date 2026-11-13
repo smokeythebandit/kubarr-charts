@@ -1,0 +1,18 @@
+apiVersion: v2
+name: lms
+description: Lightweight Music Server - self-hosted music streaming with a Subsonic-compatible API
+type: application
+version: 3.82.0+1
+appVersion: "3.82.0"
+# Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
+# display-name: human-readable name for the dashboard UI
+# icon: emoji or identifier for the app catalog and sidebar
+# category: groups apps in catalog (download-client, media-server, media-manager, etc.)
+annotations:
+  kubarr.io/display-name: "LMS"
+  kubarr.io/icon: "🎶"
+  kubarr.io/category: "media-server"
+dependencies:
+  - name: kubarr-common
+    version: 0.8.4
+    repository: file://../../system/kubarr-common

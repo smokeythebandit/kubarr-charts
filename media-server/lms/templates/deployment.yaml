@@ -1,0 +1,118 @@
+{{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lms.fullname" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "lms.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.lms.replicaCount }}
+  # The private config claim is ReadWriteOnce and holds a SQLite database (lms.db), so
+  # the old pod must release it before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "lms.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "lms.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "lms.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        {{- with $prepare }}
+        {{- . | nindent 8 }}
+        {{- end }}
+        # Wt serves static files from docroot URL prefixes that ignore
+        # deploy-path, so under a base path they must sit beneath it too.
+        # Symlinks into the image keep the files themselves where they are.
+        - name: link-static-files
+          image: "{{ .Values.lms.image.repository }}:{{ .Values.lms.image.tag }}"
+          imagePullPolicy: {{ .Values.lms.image.pullPolicy }}
+          command: [sh, -ec]
+          args:
+            - |
+              target="/docroot{{ trimSuffix "/" .Values.lms.basePath }}"
+              mkdir -p "$target"
+              for directory in css images js; do
+                ln -sfn "/usr/share/lms/docroot/$directory" "$target/$directory"
+              done
+              ln -sfn /usr/share/Wt/resources "$target/resources"
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: docroot
+              mountPath: /docroot
+      containers:
+        - name: lms
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.lms.image.repository }}:{{ .Values.lms.image.tag }}"
+          imagePullPolicy: {{ .Values.lms.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.lms.service.targetPort }}
+              protocol: TCP
+          args: ["/etc/lms-kubarr.conf"]
+          {{- if .Values.lms.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ printf "%s%s" (trimSuffix "/" .Values.lms.basePath) .Values.lms.livenessProbe.httpGet.path }}
+              port: {{ .Values.lms.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.lms.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.lms.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.lms.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.lms.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.lms.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ printf "%s%s" (trimSuffix "/" .Values.lms.basePath) .Values.lms.readinessProbe.httpGet.path }}
+              port: {{ .Values.lms.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.lms.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.lms.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.lms.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.lms.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.lms.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list "/config" "/docroot" "/etc/lms-kubarr.conf") (default dict .Values.kubarr))) | nindent 12 }}
+            - name: lms-conf
+              mountPath: /etc/lms-kubarr.conf
+              subPath: lms.conf
+              readOnly: true
+            - name: docroot
+              mountPath: /docroot
+              readOnly: true
+      volumes:
+        {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "lms.fullname" .)) | nindent 8 }}
+        - name: lms-conf
+          configMap:
+            name: {{ include "lms.fullname" . }}-config
+        - name: docroot
+          emptyDir:
+            sizeLimit: 1Mi
+      {{- include "kubarr-common.scheduling" . | nindent 6 }}

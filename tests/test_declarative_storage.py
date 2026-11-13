@@ -14,7 +14,7 @@ from chart_artifacts import ROOT, chart_input, credential_args
 PRIVATE_CONFIG = (
     "media-manager/radarr", "media-manager/sonarr", "media-manager/jellyseerr",
     "media-manager/lidarr", "media-manager/bazarr",
-    "media-server/plex", "media-server/jellyfin", "media-server/navidrome",
+    "media-server/plex", "media-server/jellyfin", "media-server/navidrome", "media-server/lms",
     "media-server/audiobookshelf", "media-server/komga", "media-server/tdarr",
     "media-server/calibre-web-automated",
     "indexer/jackett", "indexer/prowlarr",
@@ -184,7 +184,7 @@ class DeclarativeStorageTests(unittest.TestCase):
                                  for m in c.get("volumeMounts", [])))
 
     def test_non_nfs_charts_do_not_gain_shared_export_volumes(self):
-        self.assertEqual(len(NFS_CHARTS) + len(OTHER_CHARTS), 44)
+        self.assertEqual(len(NFS_CHARTS) + len(OTHER_CHARTS), 45)
         for chart in OTHER_CHARTS:
             with self.subTest(chart=chart):
                 if chart == "system/kubarr-common":

@@ -253,6 +253,7 @@ nightly, develop and beta channels were excluded, as everywhere else here.
 | Bazarr | media-manager | `linuxserver/bazarr` | 1.6.2 |
 | Recyclarr | media-manager | `ghcr.io/recyclarr/recyclarr` | 8.8.1 |
 | Navidrome | media-server | `deluan/navidrome` | 0.64.2 |
+| LMS | media-server | `epoupon/lms` | 3.82.0 |
 | Audiobookshelf | media-server | `ghcr.io/advplyr/audiobookshelf` | 2.37.2 |
 | Komga | media-server | `gotson/komga` | 1.29.2 |
 | Calibre-Web Automated | media-server | `ghcr.io/crocodilestick/calibre-web-automated` | 4.0.8 |

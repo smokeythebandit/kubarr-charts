@@ -1,0 +1,177 @@
+# Default values for lms (Lightweight Music Server, https://github.com/epoupon/lms)
+# This is a YAML-formatted file.
+
+# Namespace configuration
+namespace:
+  create: true
+  name: lms
+
+# LMS application configuration
+lms:
+  replicaCount: 1
+
+  image:
+    repository: epoupon/lms
+    pullPolicy: IfNotPresent
+    tag: "3.82.0"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 5082
+    targetPort: 5082
+    annotations: {}
+
+  # Resource limits and requests. Scanning runs tag parsing and the optional
+  # musicnn similarity model on scanner-thread-count threads, which is what
+  # the CPU and memory limits are sized for.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  # Base path for reverse proxy. LMS (a Wt application) serves its pages from
+  # deploy-path, but its static files from docroot URL prefixes that ignore
+  # deploy-path; the deployment re-roots those under this path too (see
+  # templates/deployment.yaml). Equal to /<release name>, so the gateway
+  # forwards the full path instead of stripping it.
+  basePath: "/lms"
+
+  # lms.conf settings. working-dir, listen-*, deploy-path, docroot and the
+  # reverse-proxy settings are derived in templates/configmap.yaml. Libraries
+  # (add /music) and users are configured in the web interface; the first
+  # account created becomes the administrator.
+  config:
+    log-min-severity: "info"
+    db-integrity-check: "quick"
+    authentication-backend: "internal"
+    api-subsonic: true
+    # 0: half the logical CPUs the pod sees.
+    scanner-thread-count: 0
+    # No audio device in the pod.
+    jukebox-audio-backend: "none"
+
+  # Peers allowed to set X-Forwarded-For. The NetworkPolicy admits only the
+  # Kubarr gateway, so every request already came through it; these are the
+  # pod network ranges it can appear from. LMS throttles failed logins per
+  # client address, so without this every user would share the gateway's.
+  trustedProxies:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "127.0.0.1"
+
+  # Probes hit a static stylesheet: requesting the application path makes Wt
+  # start a session on every probe.
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /css/lms.css
+      port: 5082
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /css/lms.css
+      port: 5082
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Service Account
+serviceAccount:
+  create: true
+  name: lms
+  annotations: {}
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Storage paths this chart's templates enforce, declared here so there is a
+# single source of truth: the templates hand these same lists to
+# kubarr-common's storage validator, and the backend's install wizard
+# (api/src/services/install_options.rs) reads them out of this file to
+# validate and pre-fill the mounts it offers. `main` is the primary workload;
+# any other key must match a storage.workloads.<name> key in this file.
+kubarr:
+  storage:
+    # Writable persistent mounts the application cannot start without.
+    required:
+      main: []
+    # Paths this chart's own templates already occupy, which a user mount
+    # must not shadow.
+    reserved:
+      # lms.db and the cover cache live in the private claim; /docroot and
+      # /etc/lms-kubarr.conf are the re-rooted static files and the config.
+      main: ["/config", "/docroot", "/etc/lms-kubarr.conf"]
+
+storage:
+  mounts:
+    # LMS reads tags and artwork from the library and writes nothing to it,
+    # so the mount stays read-only. Add it as a library at /music in the UI.
+    - {name: music, source: media/music, target: /music, mode: read}
+  config:
+    migrationConfirmed: false
+    create: true
+    existingClaim: ""
+    # LMS's working-dir: lms.db (SQLite), the cover cache and downloaded
+    # podcast episodes. SQLite must not live on the shared NFS export, so this
+    # is a private claim.
+    size: 5Gi
+    storageClassName: "" # empty: cluster default StorageClass (not managed NFS)
+  media:
+    existingClaim: media-data
+
+# Network policy configuration
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - openresty  # Kubarr gateway proxy
+  egressTo: []
+
+# Vertical Pod Autoscaler. Requires the VPA operator/CRD in the cluster.
+vpa:
+  enabled: false
+  updateMode: Auto
+  containerName: "*"
+  controlledResources:
+    - cpu
+    - memory
+  minAllowed: {}
+  maxAllowed: {}

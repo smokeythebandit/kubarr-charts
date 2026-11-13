@@ -1,0 +1,54 @@
+{{- /* lms.conf is libconfig syntax: strings quoted, booleans and numbers bare,
+lists as ("a", "b"). Keys from lms.config are written as given, followed by
+the settings the chart derives. libconfig rejects a file that repeats a key,
+so setting a derived key in lms.config fails rendering instead of leaving LMS
+unable to start. */ -}}
+{{- $app := .Values.lms -}}
+{{- $base := trimSuffix "/" $app.basePath -}}
+{{- $derived := list "working-dir" "listen-port" "listen-addr" "deploy-path" "docroot" "wt-resources" "approot" "behind-reverse-proxy" "original-ip-header" "trusted-proxies" "log-file" -}}
+{{- range $key, $_ := $app.config -}}
+{{- if has $key $derived -}}
+{{- fail (printf "lms.config.%s is derived by the chart; set the matching chart value instead" $key) -}}
+{{- end -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lms.fullname" . }}-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "lms.labels" . | nindent 4 }}
+data:
+  lms.conf: |
+    {{- range $key, $value := $app.config }}
+    {{- if kindIs "bool" $value }}
+    {{ $key }} = {{ $value }};
+    {{- else if or (kindIs "float64" $value) (kindIs "int" $value) (kindIs "int64" $value) }}
+    {{ $key }} = {{ int64 $value }};
+    {{- else if kindIs "slice" $value }}
+    {{ $key }} = ({{ range $i, $item := $value }}{{ if $i }}, {{ end }}{{ $item | toString | quote }}{{ end }});
+    {{- else }}
+    {{ $key }} = {{ $value | toString | quote }};
+    {{- end }}
+    {{- end }}
+
+    # Derived by the chart.
+    # SQLite (lms.db) and caches live on the private claim, never on NFS.
+    working-dir = "/config";
+    log-file = "";
+    listen-port = {{ int $app.service.targetPort }};
+    listen-addr = "0.0.0.0";
+    behind-reverse-proxy = true;
+    original-ip-header = "X-Forwarded-For";
+    trusted-proxies = ({{ range $i, $cidr := $app.trustedProxies }}{{ if $i }}, {{ end }}{{ $cidr | quote }}{{ end }});
+    approot = "/usr/share/lms/approot";
+    wt-resources = "/usr/share/Wt/resources";
+    {{- if $base }}
+    # Static files are served from these URL prefixes regardless of
+    # deploy-path; the init container links them under {{ $base }}/ in /docroot.
+    docroot = "/docroot/;{{ $base }}/resources,{{ $base }}/css,{{ $base }}/images,{{ $base }}/js";
+    deploy-path = "{{ $base }}/";
+    {{- else }}
+    docroot = "/usr/share/lms/docroot/;/resources,/css,/images,/js";
+    deploy-path = "/";
+    {{- end }}
