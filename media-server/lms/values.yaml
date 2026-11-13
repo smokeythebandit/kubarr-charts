@@ -33,12 +33,10 @@ lms:
       cpu: 2000m
       memory: 2Gi
 
-  # Base path for reverse proxy. LMS (a Wt application) serves its pages from
-  # deploy-path, but its static files from docroot URL prefixes that ignore
-  # deploy-path; the deployment re-roots those under this path too (see
-  # templates/deployment.yaml). Equal to /<release name>, so the gateway
-  # forwards the full path instead of stripping it.
-  basePath: "/lms"
+  # Empty: the gateway serves LMS at /lms and strips the prefix. A native
+  # base path is not possible: deploy-path moves the web UI, but the Subsonic
+  # API stays at /rest/, so clients pointed at .../lms could not reach it.
+  basePath: ""
 
   # lms.conf settings. working-dir, listen-*, deploy-path, docroot and the
   # reverse-proxy settings are derived in templates/configmap.yaml. Libraries
@@ -137,9 +135,9 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      # lms.db and the cover cache live in the private claim; /docroot and
-      # /etc/lms-kubarr.conf are the re-rooted static files and the config.
-      main: ["/config", "/docroot", "/etc/lms-kubarr.conf"]
+      # lms.db and the cover cache live in the private claim;
+      # /etc/lms-kubarr.conf is the generated configuration.
+      main: ["/config", "/etc/lms-kubarr.conf"]
 
 storage:
   mounts:

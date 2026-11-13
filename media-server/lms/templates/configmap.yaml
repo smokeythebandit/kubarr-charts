@@ -4,7 +4,6 @@ the settings the chart derives. libconfig rejects a file that repeats a key,
 so setting a derived key in lms.config fails rendering instead of leaving LMS
 unable to start. */ -}}
 {{- $app := .Values.lms -}}
-{{- $base := trimSuffix "/" $app.basePath -}}
 {{- $derived := list "working-dir" "listen-port" "listen-addr" "deploy-path" "docroot" "wt-resources" "approot" "behind-reverse-proxy" "original-ip-header" "trusted-proxies" "log-file" -}}
 {{- range $key, $_ := $app.config -}}
 {{- if has $key $derived -}}
@@ -43,12 +42,8 @@ data:
     trusted-proxies = ({{ range $i, $cidr := $app.trustedProxies }}{{ if $i }}, {{ end }}{{ $cidr | quote }}{{ end }});
     approot = "/usr/share/lms/approot";
     wt-resources = "/usr/share/Wt/resources";
-    {{- if $base }}
-    # Static files are served from these URL prefixes regardless of
-    # deploy-path; the init container links them under {{ $base }}/ in /docroot.
-    docroot = "/docroot/;{{ $base }}/resources,{{ $base }}/css,{{ $base }}/images,{{ $base }}/js";
-    deploy-path = "{{ $base }}/";
-    {{- else }}
+    # LMS runs at the root: its Subsonic API is fixed at /rest/ whatever
+    # deploy-path says, so the gateway strips /lms instead. The web UI builds
+    # relative URLs and works under the stripped prefix unchanged.
     docroot = "/usr/share/lms/docroot/;/resources,/css,/images,/js";
     deploy-path = "/";
-    {{- end }}

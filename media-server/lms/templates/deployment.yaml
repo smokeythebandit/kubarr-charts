@@ -33,37 +33,10 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with $prepare }}
       initContainers:
-        {{- with $prepare }}
         {{- . | nindent 8 }}
-        {{- end }}
-        # Wt serves static files from docroot URL prefixes that ignore
-        # deploy-path, so under a base path they must sit beneath it too.
-        # Symlinks into the image keep the files themselves where they are.
-        - name: link-static-files
-          image: "{{ .Values.lms.image.repository }}:{{ .Values.lms.image.tag }}"
-          imagePullPolicy: {{ .Values.lms.image.pullPolicy }}
-          command: [sh, -ec]
-          args:
-            - |
-              target="/docroot{{ trimSuffix "/" .Values.lms.basePath }}"
-              mkdir -p "$target"
-              for directory in css images js; do
-                ln -sfn "/usr/share/lms/docroot/$directory" "$target/$directory"
-              done
-              ln -sfn /usr/share/Wt/resources "$target/resources"
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
-          volumeMounts:
-            - name: docroot
-              mountPath: /docroot
+      {{- end }}
       containers:
         - name: lms
           securityContext:
@@ -78,7 +51,7 @@ spec:
           {{- if .Values.lms.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
-              path: {{ printf "%s%s" (trimSuffix "/" .Values.lms.basePath) .Values.lms.livenessProbe.httpGet.path }}
+              path: {{ .Values.lms.livenessProbe.httpGet.path }}
               port: {{ .Values.lms.livenessProbe.httpGet.port }}
             initialDelaySeconds: {{ .Values.lms.livenessProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.lms.livenessProbe.periodSeconds }}
@@ -88,7 +61,7 @@ spec:
           {{- if .Values.lms.readinessProbe.enabled }}
           readinessProbe:
             httpGet:
-              path: {{ printf "%s%s" (trimSuffix "/" .Values.lms.basePath) .Values.lms.readinessProbe.httpGet.path }}
+              path: {{ .Values.lms.readinessProbe.httpGet.path }}
               port: {{ .Values.lms.readinessProbe.httpGet.port }}
             initialDelaySeconds: {{ .Values.lms.readinessProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.lms.readinessProbe.periodSeconds }}
@@ -99,20 +72,15 @@ spec:
             {{- toYaml .Values.lms.resources | nindent 12 }}
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
-            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list "/config" "/docroot" "/etc/lms-kubarr.conf") (default dict .Values.kubarr))) | nindent 12 }}
+            {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list "/config" "/etc/lms-kubarr.conf") (default dict .Values.kubarr))) | nindent 12 }}
             - name: lms-conf
               mountPath: /etc/lms-kubarr.conf
               subPath: lms.conf
-              readOnly: true
-            - name: docroot
-              mountPath: /docroot
               readOnly: true
       volumes:
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "lms.fullname" .)) | nindent 8 }}
         - name: lms-conf
           configMap:
             name: {{ include "lms.fullname" . }}-config
-        - name: docroot
-          emptyDir:
-            sizeLimit: 1Mi
+
       {{- include "kubarr-common.scheduling" . | nindent 6 }}

@@ -2,7 +2,7 @@ apiVersion: v2
 name: lms
 description: Lightweight Music Server - self-hosted music streaming with a Subsonic-compatible API
 type: application
-version: 3.82.0+2
+version: 3.82.0+3
 appVersion: "3.82.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
