@@ -107,7 +107,7 @@ kubarr:
     # Paths this chart's own templates already occupy, which a user mount
     # must not shadow.
     reserved:
-      main: ["/config", "/custom-services.d/setup-downloadclients", "/custom-services.d/setup-prowlarr", "/kubarr-secrets/sabnzbd", "/kubarr-secrets/prowlarr"]
+      main: ["/config", "/custom-services.d/setup-downloadclients", "/custom-services.d/setup-prowlarr", "/kubarr-secrets/sabnzbd", "/kubarr-secrets/prowlarr", "/custom-services.d/setup-slskd", "/kubarr-secrets/slskd"]
 
 storage:
   mounts:
@@ -197,6 +197,25 @@ sabnzbdIntegration:
 # Empty leaves the registration off.
 prowlarrIntegration:
   secretName: ""
+
+# slskd link. Kubarr sets secretName to a Secret (key: api-key) holding the API
+# key it also gives slskd; Lidarr then adds Tubifarry's Slskd indexer and
+# download client pointing at slskd. Empty leaves both unconfigured.
+slskdIntegration:
+  secretName: ""
+
+# Tubifarry (github.com/TypNull/Tubifarry, GPL-3.0), the plugin that adds
+# Soulseek through slskd. With the slskd link on and the plugin absent, an init
+# container downloads this release, checks its sha256 and unpacks it into the
+# plugin folder; a failure only skips it. Afterwards Lidarr updates the plugin
+# itself, so a newer copy already in place is kept.
+tubifarry:
+  enabled: true
+  # Must support this chart's Lidarr version (2.3.1 needs Lidarr 3.2).
+  version: "2.3.0.1"
+  sha256: 29005a1fc8712d6df0e6d155468f868770553b699de9d83ae32aee9113569c4d
+  # Override for a mirror; defaults to the GitHub release asset.
+  url: ""
 
 # Network policy configuration
 networkPolicy:

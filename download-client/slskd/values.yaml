@@ -84,6 +84,13 @@ secrets:
   apiKeyKey: api-key
   webPasswordKey: web-password
 
+# Lidarr link. Kubarr sets secretName to a Secret (key: api-key) holding the
+# API key it also gives Lidarr, whose Tubifarry plugin then searches and
+# downloads through slskd; it replaces the generated API key above. Empty
+# keeps the generated one.
+slskdIntegration:
+  secretName: ""
+
 # Security context. slskd's entrypoint expects root to switch users with
 # gosu; the deployment runs the binary directly as an unprivileged user.
 securityContext:

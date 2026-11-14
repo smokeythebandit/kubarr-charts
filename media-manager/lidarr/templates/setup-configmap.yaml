@@ -488,3 +488,85 @@ data:
       fi
       sleep $CHECK_INTERVAL
     done
+  setup-slskd.sh: |
+    #!/bin/bash
+    # Add Tubifarry's Slskd indexer and download client, pointing at slskd with
+    # the API key Kubarr gave both apps. Only a missing entry is added: one
+    # already present, whoever made it, is kept as it is, since Lidarr returns
+    # the stored key masked and settings may have been tuned by hand.
+
+    CONFIG_FILE="/config/config.xml"
+    API="http://localhost:8686/lidarr/api/v1"
+    SLSKD_URL="http://slskd.slskd.svc.cluster.local:5030/slskd"
+    KEY_FILE="/kubarr-secrets/slskd/api-key"
+    CHECK_INTERVAL=60
+
+    if [ ! -s "$KEY_FILE" ]; then
+      echo "[slskd-link] No slskd API key from Kubarr; not configuring"
+      exec sleep infinity
+    fi
+    SLSKD_KEY=$(tr -d '[:space:]' < "$KEY_FILE")
+
+    get_api_key() {
+      sed -n 's/.*<ApiKey>\([^<]*\)<\/ApiKey>.*/\1/p' "$CONFIG_FILE" 2>/dev/null
+    }
+
+    lidarr() {
+      curl -fsS --connect-timeout 5 --max-time 60 -H "X-Api-Key: $API_KEY" "$@"
+    }
+
+    slskd_up() {
+      curl -fsS --connect-timeout 3 --max-time 10 -H "X-API-Key: $SLSKD_KEY" \
+        "$SLSKD_URL/api/v0/application" > /dev/null 2>&1
+    }
+
+    # ensure KIND IMPLEMENTATION NAME JQ_SETTINGS
+    ensure() {
+      local kind="$1" impl="$2" name="$3" settings="$4" schema body response
+      lidarr "$API/$kind" | jq -e --arg impl "$impl" 'any(.[]; .implementation == $impl)' \
+        > /dev/null 2>&1 && return 0
+      schema=$(lidarr "$API/$kind/schema") || return 1
+      body=$(echo "$schema" | jq -c --arg impl "$impl" --arg name "$name" \
+        --arg url "$SLSKD_URL" --arg key "$SLSKD_KEY" "
+        first(.[] | select(.implementation == \$impl))
+        | .name = \$name
+        | .fields |= map(
+            if .name == \"baseUrl\" then .value = \$url
+            elif .name == \"apiKey\" then .value = \$key
+            else . end)
+        | $settings")
+      if [ -z "$body" ]; then
+        echo "[slskd-link] Lidarr offers no $impl; is Tubifarry loaded?"
+        return 1
+      fi
+      response=$(curl -sS --connect-timeout 5 --max-time 120 -X POST \
+        -H "X-Api-Key: $API_KEY" -H "Content-Type: application/json" \
+        "$API/$kind" -d "$body")
+      if echo "$response" | jq -e '.id' > /dev/null 2>&1; then
+        echo "[slskd-link] Added $name"
+      else
+        echo "[slskd-link] Lidarr refused $name: $(echo "$response" | tr -s '[:space:]' ' ' | head -c 300)"
+        return 1
+      fi
+    }
+
+    echo "[slskd-link] Starting slskd configuration..."
+    while true; do
+      API_KEY=$(get_api_key)
+      if [ -n "$API_KEY" ] && lidarr "$API/system/status" > /dev/null 2>&1; then
+        break
+      fi
+      sleep 2
+    done
+    echo "[slskd-link] API is ready"
+
+    while true; do
+      API_KEY=$(get_api_key)
+      if [ -n "$API_KEY" ] && slskd_up; then
+        ensure downloadclient SlskdClient slskd \
+          '.enable = true | .priority = 1 | .removeCompletedDownloads = true | .removeFailedDownloads = true'
+        ensure indexer SlskdIndexer slskd \
+          '.enableRss = false | .enableAutomaticSearch = true | .enableInteractiveSearch = true'
+      fi
+      sleep $CHECK_INTERVAL
+    done

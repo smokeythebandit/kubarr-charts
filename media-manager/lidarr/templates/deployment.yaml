@@ -89,6 +89,7 @@ spec:
               cat "$CONFIG_FILE"
           volumeMounts:
             {{- include "kubarr-common.storage.configMount" (dict "root" . "mountPath" "/config") | nindent 12 }}
+        {{- include "lidarr.tubifarry.initContainer" . | nindent 8 }}
         {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.lidarr.service.targetPort "inputPorts" (ternary (toString .Values.exporter.port) "" .Values.exporter.enabled)) | nindent 8 }}
@@ -143,6 +144,14 @@ spec:
               mountPath: /kubarr-secrets/prowlarr
               readOnly: true
             {{- end }}
+            {{- if (default dict .Values.slskdIntegration).secretName }}
+            - name: setup-scripts
+              mountPath: /custom-services.d/setup-slskd
+              subPath: setup-slskd.sh
+            - name: slskd-api-key
+              mountPath: /kubarr-secrets/slskd
+              readOnly: true
+            {{- end }}
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "lidarr.fullname" .)) | nindent 8 }}
@@ -162,6 +171,14 @@ spec:
         - name: prowlarr-api-key
           secret:
             secretName: {{ (default dict .Values.prowlarrIntegration).secretName }}
+            items:
+              - key: api-key
+                path: api-key
+        {{- end }}
+        {{- if (default dict .Values.slskdIntegration).secretName }}
+        - name: slskd-api-key
+          secret:
+            secretName: {{ (default dict .Values.slskdIntegration).secretName }}
             items:
               - key: api-key
                 path: api-key

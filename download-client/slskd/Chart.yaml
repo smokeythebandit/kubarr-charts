@@ -2,7 +2,7 @@ apiVersion: v2
 name: slskd
 description: Soulseek client with a web UI and API, used by Lidarr's Tubifarry plugin as an indexer and download client
 type: application
-version: 0.26.2+1
+version: 0.26.2+2
 appVersion: "0.26.2"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI

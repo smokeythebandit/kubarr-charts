@@ -1,6 +1,13 @@
 {{- $prepare := include "kubarr-common.storage.prepareMounts" (dict "root" .) -}}
 {{- $app := .Values.slskd -}}
 {{- $secret := default (printf "%s-credentials" (include "slskd.fullname" .)) .Values.secrets.existingSecret -}}
+{{- /* With the slskd link on, the API key is the one Kubarr also gave Lidarr. */ -}}
+{{- $keySecret := $secret -}}
+{{- $keyKey := .Values.secrets.apiKeyKey -}}
+{{- with (default dict .Values.slskdIntegration).secretName }}
+{{- $keySecret = . -}}
+{{- $keyKey = "api-key" -}}
+{{- end -}}
 {{- /* Gluetun runs this with the forwarded port in place of {{PORT}} and sets
 it as slskd's listen port through the options API. busybox wget cannot send
 PATCH, so the request is written to nc, which needs its input held open
@@ -51,7 +58,7 @@ spec:
         {{- if $gluetun }}
         {{- /* The callback authenticates with slskd's API key when slskd's
         own authentication is on; gluetun reads it from the same Secret. */ -}}
-        {{- $gluetun = regexReplaceAll "(?m)^  env:\n(    - name: FIREWALL)" $gluetun (printf "  env:\n    - name: SLSKD_API_KEY\n      valueFrom:\n        secretKeyRef:\n          name: %s\n          key: %s\n${1}" $secret .Values.secrets.apiKeyKey) }}
+        {{- $gluetun = regexReplaceAll "(?m)^  env:\n(    - name: FIREWALL)" $gluetun (printf "  env:\n    - name: SLSKD_API_KEY\n      valueFrom:\n        secretKeyRef:\n          name: %s\n          key: %s\n${1}" $keySecret $keyKey) }}
         {{- $gluetun | nindent 8 }}
         {{- end }}
         - name: slskd
@@ -86,8 +93,8 @@ spec:
             - name: SLSKD_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ $secret }}
-                  key: {{ .Values.secrets.apiKeyKey }}
+                  name: {{ $keySecret }}
+                  key: {{ $keyKey }}
             - name: SLSKD_USERNAME
               value: admin
             - name: SLSKD_PASSWORD
