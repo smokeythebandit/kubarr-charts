@@ -247,6 +247,67 @@ jellyfinEnhanced:
   # Override for a mirror; defaults to the GitHub release asset.
   url: ""
 
+# Companion plugins Jellyfin Enhanced lists under Overview > Optional
+# Dependencies. An init container downloads each enabled one, checks its sha256
+# and unpacks it into the plugin folder; a failure only skips that plugin.
+# Builds must match this chart's Jellyfin ABI. KefinTweaks is not here: it is
+# a web script loaded through JavaScript Injector, not a server plugin.
+jellyfinPlugins:
+  enabled: true
+  plugins:
+    # Lets plugins edit served web files in memory; Plugin Pages and Custom
+    # Tabs need it.
+    - name: File Transformation
+      enabled: true
+      guid: 5e87cc92-571a-4d8d-8d98-d2d4147f9f90
+      version: "3.0.3.0"
+      targetAbi: "12.0.0.0"
+      assembly: Jellyfin.Plugin.FileTransformation.dll
+      url: https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases/download/3.0.3.0/Release-12.0.0.zip
+      sha256: e4a4c777aba618185b2f1107010c5e19bb4504de1257dbc791c700a05a3e96c8
+      description: Lets other plugins transform the web client's files in memory.
+    # Sidebar pages for Jellyfin Enhanced's "Use Plugin Pages" options.
+    - name: Plugin Pages
+      enabled: true
+      guid: 5b6550fa-a014-4f4c-8a2c-59a43680ac6d
+      version: "3.0.3.0"
+      targetAbi: "12.0.0.0"
+      assembly: Jellyfin.Plugin.PluginPages.dll
+      url: https://github.com/IAmParadox27/jellyfin-plugin-pages/releases/download/3.0.3.0/Release-12.0.0.zip
+      sha256: d707add3896c75ee6f4dca883f01c33cb9590d51457a2148d4b9ff70adbc5c13
+      description: Adds plugin-provided pages to the web client.
+    # Home tabs for Jellyfin Enhanced's "Use Custom Tabs" options.
+    - name: Custom Tabs
+      enabled: true
+      guid: fbacd0b6-fd46-4a05-b0a4-2045d6a135b0
+      version: "0.3.3.0"
+      targetAbi: "12.0.0.0"
+      assembly: Jellyfin.Plugin.CustomTabs.dll
+      url: https://github.com/IAmParadox27/jellyfin-plugin-custom-tabs/releases/download/0.3.3.0/Release-12.0.0.zip
+      sha256: ed3efeff440ba1a055aa4e65127493bd82fedbfc5bb8293ed8a019648064d138
+      description: Adds custom tabs to the home screen.
+    # Detects intros and credits for Jellyfin Enhanced's Auto-Skip. Its
+    # analysis runs as a scheduled task and uses CPU while it scans.
+    - name: Intro Skipper
+      enabled: true
+      guid: c83d86bb-a1e0-4c35-a113-e2101cf4ee6b
+      version: "12.0.6.0"
+      targetAbi: "12.2.0.0"
+      assembly: IntroSkipper.dll
+      url: https://github.com/intro-skipper/intro-skipper/releases/download/12.0/v12.0.6.0/intro-skipper-v12.0.6.0.zip
+      sha256: 28cb2b92ed51f0e6029c46295cd201be02fd50cba98d18f14defe6d52aa36352
+      description: Detects intro and credit segments.
+    # Episode list inside the player, for the Open Episode Preview shortcut.
+    - name: InPlayerEpisodePreview
+      enabled: true
+      guid: 73833d5f-0bcb-45dc-ab8b-7ce668f4345d
+      version: "2.5.0.3"
+      targetAbi: "12.0.0.0"
+      assembly: Namo.Plugin.InPlayerEpisodePreview.dll
+      url: https://github.com/Namo2/InPlayerEpisodePreview/releases/download/v2.5.0/InPlayerEpisodePreview_2.5.0.3-12.0.zip
+      sha256: fa33b34ccf430f76baa6ca23412318de09b990df605c9dd7f40d98a92c421c89
+      description: Shows the episode list inside the video player.
+
 # Kubarr accounts, and server setup in place of the startup wizard. An init
 # container copies it into Jellyfin's plugin folder on every start.
 kubarrPlugin:
