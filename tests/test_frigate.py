@@ -8,7 +8,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, default_image
 
 
 CHART = ROOT / "media-server/frigate"
@@ -42,7 +42,7 @@ class FrigateTests(unittest.TestCase):
         pod = deployment["spec"]["template"]["spec"]
         app = pod["containers"][0]
         self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
-        self.assertEqual(app["image"], "ghcr.io/blakeblackshear/frigate:0.18.2")
+        self.assertEqual(app["image"], default_image("media-server/frigate", "frigate", "image"))
         self.assertEqual(objects(resources, "Service")["frigate"]["spec"]["ports"],
                          [{"port": 8971, "targetPort": "http", "protocol": "TCP", "name": "http"}])
         self.assertEqual(app["ports"], [{"name": "http", "containerPort": 8971, "protocol": "TCP"}])
