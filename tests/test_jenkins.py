@@ -121,6 +121,18 @@ class JenkinsTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(message, result.stderr)
 
+    def test_external_nfs_export_still_prepares_home_directory(self):
+        # A root-squashed export refuses kubelet's subPath mkdir, so the
+        # non-root init container must create the directory first.
+        result, resources = render({"storage": {"media": {"nfs": {
+            "server": "192.0.2.10", "path": "/", "size": "8Gi"}}}})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        pod = one(resources, "Deployment")["spec"]["template"]["spec"]
+        prepare = pod["initContainers"][0]
+        self.assertEqual(prepare["name"], "prepare-media-directories")
+        self.assertEqual(prepare["args"], ["/nfs/development/jenkins/jenkins/home"])
+        self.assertEqual(prepare["securityContext"]["runAsUser"], 1000)
+
     def test_explicit_dedicated_class_bypasses_managed_nfs(self):
         result, resources = render({"storage": {"home": {"storageClassName": "nfs-client"}}})
         self.assertEqual(result.returncode, 0, result.stderr)
