@@ -15,10 +15,17 @@ updates:
       day: monday
       time: "09:00"
       timezone: Etc/UTC
-    open-pull-requests-limit: 5
+    # Each chart bump is its own PR; a low limit stalls every other chart
+    # (Dependabot skips the scheduled run entirely once the limit is full).
+    open-pull-requests-limit: 15
     ignore:
       # The file:// dependency is released together with its consumers.
       - dependency-name: kubarr-common
+      # Major Postgres upgrades need a data migration, not a tag bump.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+      - dependency-name: ghcr.io/immich-app/postgres
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
