@@ -15,7 +15,7 @@ tdarr:
     repository: ghcr.io/haveagitgat/tdarr
     pullPolicy: IfNotPresent
     # Server and Node images must be the same release; the chart refuses a mismatch.
-    tag: "3.04.00"
+    tag: "3.09.00"
 
   # Service configuration. http is the web UI; server is the port Nodes
   # connect outbound to. Nodes never open an inbound port of their own.
