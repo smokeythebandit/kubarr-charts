@@ -61,6 +61,12 @@ class DependabotConfigTests(unittest.TestCase):
             })
             self.assertGreater(update["open-pull-requests-limit"], 0)
         self.assertEqual(helm["open-pull-requests-limit"], 15)
+        # Server/worker pairs that must move together get one PR.
+        self.assertEqual(helm["groups"], {
+            "tdarr": {"patterns": ["ghcr.io/haveagitgat/tdarr", "ghcr.io/haveagitgat/tdarr_node"]},
+            "immich": {"patterns": ["ghcr.io/immich-app/immich-server",
+                                    "ghcr.io/immich-app/immich-machine-learning"]},
+        })
         self.assertEqual(actions["directory"], "/")
         self.assertEqual(actions["groups"]["actions"]["patterns"], ["*"])
 

@@ -9,7 +9,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, default_image
 
 
 CHART = ROOT / "media-manager/sonarr"
@@ -52,9 +52,9 @@ class SonarrExporterTests(unittest.TestCase):
         deployment, init_container, _ = startup_script()
         exporter, = deployment["spec"]["template"]["spec"]["containers"]
 
-        self.assertEqual(init_container["image"], "linuxserver/sonarr:4.0.20")
+        self.assertEqual(init_container["image"], default_image("media-manager/sonarr", "sonarr", "image"))
         self.assertEqual(init_container["command"][:2], ["/bin/sh", "-c"])
-        self.assertEqual(exporter["image"], "ghcr.io/onedr0p/exportarr:v2.3.0")
+        self.assertEqual(exporter["image"], default_image("media-manager/sonarr", "exporter", "image"))
         self.assertEqual(exporter["args"], ["sonarr", "--config=/config/config.xml"])
         self.assertEqual(
             deployment["spec"]["template"]["metadata"]["labels"],

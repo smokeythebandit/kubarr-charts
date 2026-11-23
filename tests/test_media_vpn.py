@@ -8,7 +8,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, default_image
 
 
 CHARTS = {
@@ -57,7 +57,7 @@ class MediaVpnTests(unittest.TestCase):
     def test_seerr_keeps_existing_config_mount_and_runs_as_node(self):
         pod, _ = render("media-manager/jellyseerr", False)
         app = next(c for c in pod["containers"] if c["name"] == "jellyseerr")
-        self.assertEqual(app["image"], "ghcr.io/seerr-team/seerr:v3.5.1")
+        self.assertEqual(app["image"], default_image("media-manager/jellyseerr", "jellyseerr", "image"))
         self.assertEqual(app["command"], ["node", "dist/index.js"])
         self.assertEqual(app["securityContext"]["runAsUser"], 1000)
         self.assertTrue(app["securityContext"]["runAsNonRoot"])

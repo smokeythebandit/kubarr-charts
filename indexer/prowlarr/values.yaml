@@ -13,7 +13,7 @@ prowlarr:
   image:
     repository: linuxserver/prowlarr
     pullPolicy: IfNotPresent
-    tag: "2.7.0"
+    tag: "3.0.2"
 
   # Service configuration
   service:
