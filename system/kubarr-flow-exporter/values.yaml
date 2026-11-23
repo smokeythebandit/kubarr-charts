@@ -12,7 +12,7 @@ image:
 dumper:
   image:
     repository: quay.io/cilium/cilium
-    tag: "v1.20.4"
+    tag: "v1.20.5"
     pullPolicy: IfNotPresent
   intervalSeconds: 15
 
