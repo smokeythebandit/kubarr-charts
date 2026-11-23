@@ -26,6 +26,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: ghcr.io/immich-app/postgres
         update-types: ["version-update:semver-major"]
+    # Images the charts require to share one release; the templates refuse
+    # to render if their tags differ.
+    groups:
+      tdarr:
+        patterns: ["ghcr.io/haveagitgat/tdarr", "ghcr.io/haveagitgat/tdarr_node"]
+      immich:
+        patterns: ["ghcr.io/immich-app/immich-server", "ghcr.io/immich-app/immich-machine-learning"]
 
   - package-ecosystem: github-actions
     directory: /

@@ -10,7 +10,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, default_image
 
 
 CHART = ROOT / "development/redmine"
@@ -130,7 +130,7 @@ class RedmineTests(unittest.TestCase):
         self.assertEqual(secret["metadata"]["annotations"]["helm.sh/resource-policy"], "keep")
         self.assertEqual(set(secret["data"]), {"database-password", "secret-key-base"})
         self.assertNotEqual(secret["data"]["database-password"], secret["data"]["secret-key-base"])
-        self.assertEqual(container(db)["image"], "docker.io/library/postgres:16.15-bookworm")
+        self.assertEqual(container(db)["image"], default_image("development/redmine", "database", "bundled", "image"))
         for workload in (app, db):
             self.assertTrue(container(workload)["securityContext"]["runAsNonRoot"])
             self.assertFalse(container(workload)["securityContext"]["allowPrivilegeEscalation"])
