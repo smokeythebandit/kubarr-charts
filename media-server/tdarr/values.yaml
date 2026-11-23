@@ -101,7 +101,7 @@ node:
   image:
     repository: ghcr.io/haveagitgat/tdarr_node
     pullPolicy: IfNotPresent
-    tag: "3.04.00"
+    tag: "3.09.00"
 
   # Name every Node registers under. Empty gives each pod its own name, which
   # is required for more than one replica. A fixed name needs replicaCount: 1.
