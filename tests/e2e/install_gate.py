@@ -69,6 +69,9 @@ REGISTRY = "oci://ghcr.io/smokeythebandit/kubarr-charts"
 # failure there are failures in the same cluster.
 KIND_IMAGE = "kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0"
 NFS_IMAGE = "itsthenetwork/nfs-server-alpine:12"
+# Upper bound on waiting for a published baseline's StatefulSets before the
+# upgrade rolls them (see settle_baseline).
+BASELINE_SETTLE_SECONDS = 180
 
 # Charts that cannot be installed in a bare kind cluster. Every entry is named
 # with its reason and is printed in the job summary, so the list cannot grow
@@ -897,6 +900,33 @@ class Gate:
         if desired < 1 or ready < desired:
             raise GateFailure(f"{kind}/{workload} in {namespace} has {ready}/{desired} ready")
 
+    def settle_baseline(self, namespace):
+        """Give the baseline's StatefulSets a bounded chance to finish starting.
+
+        A database killed during its first initialization keeps a half-written
+        data directory, and its entrypoint skips init on the next start, so an
+        upgrade that rolls the StatefulSet seconds after the baseline would
+        fail for a reason no real upgrade (from a settled install) can hit.
+        Best effort only: a baseline that never settles is not the local
+        chart's fault, and the upgrade below is still what gets asserted.
+        """
+        try:
+            names = self.kube("-n", namespace, "get", "statefulsets",
+                              "-o", "jsonpath={.items[*].metadata.name}").split()
+        except RuntimeError:
+            return
+        deadline = time.monotonic() + BASELINE_SETTLE_SECONDS
+        for name in names:
+            remaining = int(deadline - time.monotonic())
+            if remaining <= 0:
+                break
+            try:
+                self.kube("-n", namespace, "rollout", "status", f"statefulset/{name}",
+                          f"--timeout={remaining}s", timeout=remaining + 30)
+            except (RuntimeError, subprocess.TimeoutExpired):
+                print(f"[gate] WARN baseline statefulset/{name} in {namespace} did not settle",
+                      flush=True)
+
     def assert_cronjob(self, workload, namespace, budget, scope=None):
         job = f"{workload}-gate"
         self.kube("-n", namespace, "create", "job", job, f"--from=cronjob/{workload}")
@@ -1066,6 +1096,7 @@ class Gate:
                         f"upgrade path to exercise: {error}")
                     print(f"[gate] WARN {name}: {record['upgrade']}", flush=True)
                     raise GateFailure("baseline") from None
+                self.settle_baseline(namespace)
                 local = self.rendered(name, upgrade=True)
                 scope = {"claims": self.claim_names(local),
                          "ignore_pods": self.pod_uids(namespace)}
