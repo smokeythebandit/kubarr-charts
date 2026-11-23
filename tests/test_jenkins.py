@@ -12,6 +12,8 @@ from chart_artifacts import ROOT, chart_input
 
 
 CHART = ROOT / "development/jenkins"
+# Image tags are bumped by Dependabot; assert against the chart's own default.
+IMAGE = yaml.safe_load((CHART / "values.yaml").read_text())["jenkins"]["image"]
 
 
 def render(overrides=None, release="jenkins"):
@@ -58,7 +60,7 @@ class JenkinsTests(unittest.TestCase):
         self.assertEqual(service["spec"]["ports"],
                          [{"port": 8080, "targetPort": "http", "protocol": "TCP", "name": "http"}])
         self.assertEqual(container["ports"], [{"name": "http", "containerPort": 8080, "protocol": "TCP"}])
-        self.assertEqual(container["image"], "jenkins/jenkins:2.580.1-jdk21")
+        self.assertEqual(container["image"], f"{IMAGE['repository']}:{IMAGE['tag']}")
         self.assertEqual({e["name"]: e["value"] for e in container["env"]},
                          {"JENKINS_OPTS": "--prefix=/jenkins", "TZ": "Etc/UTC"})
         self.assertEqual(pod["securityContext"]["runAsUser"], 1000)
