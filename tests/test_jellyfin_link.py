@@ -39,6 +39,12 @@ def enabled(chart):
     return render(chart, f"jellyfinIntegration.secretName={SECRET}")
 
 
+def without_plugin(chart=JELLYFIN):
+    """The key sidecar runs only with the Kubarr plugin off; the plugin
+    registers the key itself."""
+    return render(chart, f"jellyfinIntegration.secretName={SECRET}", "kubarrPlugin.enabled=false")
+
+
 def pod(resources, name):
     for doc in resources:
         if doc["kind"] == "Deployment" and doc["metadata"]["name"] == name:
@@ -66,7 +72,7 @@ class JellyfinSidecarTests(unittest.TestCase):
         self.assertEqual(secret_volumes(spec), [])
 
     def test_sidecar_is_unprivileged_and_reads_the_key_read_only(self):
-        spec = pod(enabled(JELLYFIN), "jellyfin")
+        spec = pod(without_plugin(), "jellyfin")
         sidecar = container(spec, "api-key")
         context = sidecar["securityContext"]
         self.assertIs(context["runAsNonRoot"], True)
@@ -92,6 +98,15 @@ class JellyfinSidecarTests(unittest.TestCase):
         self.assertEqual(sources, {"sonarr", "radarr"})
         ports = {port["port"] for rule in spec["ingress"] for port in rule["ports"]}
         self.assertEqual(ports, {8096})
+
+
+    def test_the_kubarr_plugin_replaces_the_sidecar(self):
+        docs = enabled(JELLYFIN)
+        spec = pod(docs, "jellyfin")
+        self.assertNotIn("register-api-key", [c["name"] for c in spec["containers"]])
+        self.assertFalse([d for d in docs if d["kind"] == "ConfigMap"
+                          and d["metadata"]["name"].endswith("-api-key")])
+        self.assertIn("install-kubarr-plugin", [c["name"] for c in spec["initContainers"]])
 
 
 class ArrConnectionTests(unittest.TestCase):
@@ -142,7 +157,7 @@ class RegisterKeyTests(unittest.TestCase):
     """Run the sidecar's script against a database shaped like Jellyfin's."""
 
     def setUp(self):
-        config = next(d for d in enabled(JELLYFIN)
+        config = next(d for d in without_plugin()
                       if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-api-key"))
         self.module = types.ModuleType("register_api_key")
         exec(config["data"]["register-api-key.py"], self.module.__dict__)

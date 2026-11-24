@@ -2,7 +2,7 @@ apiVersion: v2
 name: jellyfin
 description: Free software media server for organizing and streaming media
 type: application
-version: 12.3.0+19
+version: 12.3.0+20
 appVersion: "12.3"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
@@ -12,6 +12,11 @@ annotations:
   kubarr.io/display-name: "Jellyfin"
   kubarr.io/icon: "📺"
   kubarr.io/category: "media-server"
+  # The Kubarr plugin signs gateway users in from a signed identity header,
+  # and native clients (TV, phone) cannot send Kubarr's cookie, so Jellyfin
+  # authenticates its own requests with Kubarr-backed accounts.
+  kubarr.io/identity-header: "true"
+  kubarr.io/gateway-auth: "app-native"
 dependencies:
   - name: kubarr-common
     version: 0.8.4

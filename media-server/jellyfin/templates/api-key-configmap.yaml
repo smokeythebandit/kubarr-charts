@@ -1,4 +1,4 @@
-{{- if (default dict .Values.jellyfinIntegration).secretName }}
+{{- if and (default dict .Values.jellyfinIntegration).secretName (not (default dict .Values.kubarrPlugin).enabled) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

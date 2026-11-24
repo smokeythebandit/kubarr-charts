@@ -19,7 +19,10 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- if (default dict .Values.jellyfinIntegration).secretName }}
+        {{- if (default dict .Values.kubarrPlugin).enabled }}
+        checksum/kubarr-bootstrap: {{ include (print $.Template.BasePath "/kubarr-bootstrap-configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if and (default dict .Values.jellyfinIntegration).secretName (not (default dict .Values.kubarrPlugin).enabled) }}
         checksum/api-key: {{ include (print $.Template.BasePath "/api-key-configmap.yaml") . | sha256sum }}
         {{- end }}
       {{- with .Values.podAnnotations }}
@@ -37,10 +40,11 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- include "kubarr-common.gpu.podSecurityContext" . | nindent 8 }}
-      {{- if or .Values.vpn.enabled $prepare }}
+      {{- if or .Values.vpn.enabled $prepare (default dict .Values.kubarrPlugin).enabled }}
       initContainers:
         {{- include "kubarr-common.gluetun.initContainer" (dict "root" .) | nindent 8 }}
         {{- with $prepare }}{{- . | nindent 8 }}{{- end }}
+        {{- include "jellyfin.kubarrPlugin.initContainer" . | nindent 8 }}
       {{- end }}
       containers:
         {{- include "kubarr-common.gluetun.container" (dict "root" . "appPort" .Values.jellyfin.service.targetPort) | nindent 8 }}
@@ -56,7 +60,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "jellyfin.fullname" . }}-config
-          {{- include "kubarr-common.gpu.env" . | nindent 10 }}
+          {{- $gpuEnv := include "kubarr-common.gpu.env" . }}
+          {{- $pluginEnv := include "jellyfin.kubarrPlugin.env" . }}
+          {{- if and $pluginEnv (not (contains "env:" $gpuEnv)) }}
+          env:
+          {{- end }}
+          {{- $gpuEnv | nindent 10 }}
+          {{- $pluginEnv | nindent 12 }}
           {{- if .Values.jellyfin.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
@@ -83,7 +93,9 @@ spec:
             {{- include "kubarr-common.storage.configMount" (dict "root" .) | nindent 12 }}
             {{- include "kubarr-common.storage.appMounts" (dict "root" . "reservedPaths" (dig "storage" "reserved" "main" (list) (default dict .Values.kubarr))) | nindent 12 }}
             {{- include "kubarr-common.storage.scratchMount" (dict "root" .) | nindent 12 }}
-        {{- if (default dict .Values.jellyfinIntegration).secretName }}
+            {{- include "jellyfin.kubarrPlugin.mounts" . | nindent 12 }}
+        {{- /* Without the plugin, a sidecar registers the library key. */}}
+        {{- if and (default dict .Values.jellyfinIntegration).secretName (not (default dict .Values.kubarrPlugin).enabled) }}
         - name: api-key
           image: python:3.14.8-alpine3.24
           imagePullPolicy: IfNotPresent
@@ -116,10 +128,13 @@ spec:
       volumes:
         {{- include "kubarr-common.gluetun.volumes" (dict "root" .) | nindent 8 }}
         {{- include "kubarr-common.storage.configOrMediaVolume" (dict "root" . "fullname" (include "jellyfin.fullname" .)) | nindent 8 }}
+        {{- include "jellyfin.kubarrPlugin.volumes" . | nindent 8 }}
         {{- if (default dict .Values.jellyfinIntegration).secretName }}
+        {{- if not (default dict .Values.kubarrPlugin).enabled }}
         - name: api-key-script
           configMap:
             name: {{ include "jellyfin.fullname" . }}-api-key
+        {{- end }}
         - name: api-key-secret
           secret:
             secretName: {{ (default dict .Values.jellyfinIntegration).secretName }}

@@ -59,19 +59,35 @@ data:
         local FIELDS = {
           "x-kubarr-app-name", "x-kubarr-upstream", "x-kubarr-target-path",
           "x-kubarr-base-path", "x-kubarr-landing-path", "x-kubarr-route-mode",
+          -- Signed identity for apps that sign Kubarr users in. It outlives the
+          -- cache entry many times over (minutes against seconds).
+          "x-kubarr-identity",
         }
         -- Only grants are cached. Denials and errors are always re-checked.
         local CACHEABLE = {[200] = true, [204] = true, [404] = true}
 
         kubarr_cache = {ttl = {{ .Values.lookupCache.seconds }}}
 
+        -- Forward the signed identity Kubarr minted for this user and app, or
+        -- nothing. The proxy always overwrites the request header, so a client
+        -- can never supply its own.
+        function kubarr_identity(reply)
+          ngx.var.kubarr_identity = (reply and reply.header["x-kubarr-identity"]) or ""
+        end
+
         -- Key on every Kubarr session cookie rather than one name: the backend
         -- chooses among indexed slots and a legacy cookie, and a key that
         -- merged two sessions would serve one user's authorization to another.
+        -- Requests without a session share one key: the only grants they can
+        -- receive are for apps that authenticate their own clients (native
+        -- Jellyfin apps stream many segments a second), and those carry no
+        -- identity.
+        local ANONYMOUS = "anonymous"
+
         function kubarr_cache.session()
           local cookie = ngx.var.http_cookie
           if not cookie or cookie == "" then
-            return nil
+            return ANONYMOUS
           end
           local parts = {}
           for entry in cookie:gmatch("[^;]+") do
@@ -81,7 +97,7 @@ data:
             end
           end
           if #parts == 0 then
-            return nil
+            return ANONYMOUS
           end
           table.sort(parts)
           local digest = require("resty.sha256"):new()
@@ -307,6 +323,8 @@ data:
           proxy_set_header X-Real-IP $remote_addr;
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
+          # Never relay a client-supplied identity to a host-routed app.
+          proxy_set_header X-Kubarr-Identity "";
           proxy_pass $auth_upstream$request_uri;
         }
 
@@ -348,6 +366,7 @@ data:
           set $app_upstream "";
           set $app_base_path "";
           set $target_path "";
+          set $kubarr_identity "";
 
           access_by_lua_block {
             -- Subdomain-routed apps (host assignments) resolve by host first;
@@ -362,6 +381,7 @@ data:
               if routed_app and routed_app ~= "" and routed_upstream and routed_upstream ~= "" then
                 ngx.var.app_name = routed_app
                 ngx.var.app_upstream = routed_upstream
+                kubarr_identity(route)
                 ngx.var.app_base_path = route.header["x-kubarr-base-path"] or ""
                 ngx.var.target_path = "/" .. ngx.var.absolute_app_path
                 return
@@ -403,6 +423,7 @@ data:
             end
 
             ngx.var.app_upstream = upstream
+            kubarr_identity(auth)
             ngx.var.app_base_path = auth.header["x-kubarr-base-path"] or ""
             ngx.var.target_path = "/" .. ngx.var.absolute_app_path
           }
@@ -415,6 +436,7 @@ data:
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Prefix /$app_name;
+          proxy_set_header X-Kubarr-Identity $kubarr_identity;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;
@@ -426,6 +448,7 @@ data:
           set $app_base_path "";
           set $app_ingress_path "";
           set $target_path "";
+          set $kubarr_identity "";
 
           access_by_lua_block {
             local route = (kubarr_cache or ngx.location).capture(
@@ -444,6 +467,7 @@ data:
 
               ngx.var.app_name = app_name
               ngx.var.app_upstream = upstream
+              kubarr_identity(route)
               ngx.var.app_base_path = route.header["x-kubarr-base-path"] or ""
               ngx.var.target_path = target_path
               return
@@ -502,6 +526,7 @@ data:
               return ngx.exit(ngx.HTTP_INTERNAL_SERVER_ERROR)
             end
             ngx.var.app_upstream = upstream
+            kubarr_identity(auth)
 
             local base_path = auth.header["x-kubarr-base-path"] or ""
             ngx.var.app_base_path = base_path
@@ -532,6 +557,7 @@ data:
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Prefix /$app_name;
+          proxy_set_header X-Kubarr-Identity $kubarr_identity;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;
@@ -616,12 +642,12 @@ data:
           set $app_upstream "http://{{ .Values.frontend.service.name }}.{{ .Values.frontend.service.namespace }}.svc.cluster.local:{{ .Values.frontend.service.port }}";
           set $app_base_path "";
           set $target_path $uri;
+          set $kubarr_identity "";
 
           access_by_lua_block {
-            if not ngx.var.http_cookie or ngx.var.http_cookie == "" then
-              return
-            end
-
+            -- Look routes up even without a session: an app-native app on its
+            -- own host (jellyfin.example.com) serves native clients that never
+            -- carry Kubarr's cookie. Anonymous lookups are cached under one key.
             local route = (kubarr_cache or ngx.location).capture(
               "/_kubarr_route_lookup",
               { args = { host = ngx.var.host, path = ngx.var.uri } },
@@ -638,6 +664,7 @@ data:
 
               ngx.var.app_name = app_name
               ngx.var.app_upstream = upstream
+              kubarr_identity(route)
               ngx.var.app_base_path = route.header["x-kubarr-base-path"] or ""
               ngx.var.target_path = target_path
               return
@@ -662,6 +689,7 @@ data:
           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Prefix /$app_name;
+          proxy_set_header X-Kubarr-Identity $kubarr_identity;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;
           proxy_redirect off;

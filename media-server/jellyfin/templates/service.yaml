@@ -1,1 +1,6 @@
-{{ include "kubarr-common.service" (dict "root" . "app" .Values.jellyfin) }}
+{{- $app := deepCopy .Values.jellyfin }}
+{{- if include "jellyfin.kubarrSso" . }}
+{{- /* Opening Jellyfin from Kubarr lands on the plugin's sign-in page. */}}
+{{- $_ := set $app.service "annotations" (merge (dict "kubarr.io/landing-path" "/Kubarr/sso") (default dict $app.service.annotations)) }}
+{{- end }}
+{{ include "kubarr-common.service" (dict "root" . "app" $app) }}
