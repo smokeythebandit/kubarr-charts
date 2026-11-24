@@ -87,6 +87,10 @@ gpu:
 podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
+  # Frigate runs as root, which a root-squashed export maps to nobody. NFS
+  # keeps supplementary groups, so the media group still reaches the
+  # group-writable recordings directory prepare-media-directories creates.
+  supplementalGroups: [1000]
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false

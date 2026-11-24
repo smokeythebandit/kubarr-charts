@@ -23,7 +23,7 @@ spec:
         fsGroup: 999
         {{- include "kubarr-common.storage.mediaGroup" . | nindent 8 }}
         seccompProfile: {type: RuntimeDefault}
-      {{- if and .Values.storage.workloads.postgres.mounts (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) .Values.storage.media.create (not .Values.storage.media.nfs.server) }}
+      {{- if and .Values.storage.workloads.postgres.mounts (not .Values.database.bundled.persistence.existingClaim) (not .Values.database.bundled.persistence.storageClassName) .Values.storage.media.create }}
       initContainers:
         {{- include "kubarr-common.storage.prepareMounts" (dict "root" . "uid" 999 "mounts" .Values.storage.workloads.postgres.mounts) | nindent 8 }}
       {{- end }}
@@ -58,12 +58,12 @@ spec:
               value: /var/lib/postgresql/data/pgdata
           startupProbe:
             exec:
-              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+              command: [sh, -c, 'pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
             periodSeconds: 10
             failureThreshold: 30
           readinessProbe:
             exec:
-              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+              command: [sh, -c, 'pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
           resources:
             {{- toYaml .Values.database.bundled.resources | nindent 12 }}
           volumeMounts:
