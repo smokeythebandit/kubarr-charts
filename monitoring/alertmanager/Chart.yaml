@@ -2,8 +2,8 @@ apiVersion: v2
 name: alertmanager
 description: Prometheus Alertmanager - routes, groups, silences and delivers alerts from vmalert
 type: application
-version: 0.34.2+4
-appVersion: "0.34.2"
+version: 0.35.0+5
+appVersion: "0.35.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar

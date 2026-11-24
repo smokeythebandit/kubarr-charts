@@ -389,6 +389,58 @@ apiServer:
 """]}]}
 
 
+def record_ok(record):
+    return record["install"] == "pass" and (
+        record["upgrade"] == "pass"
+        or record["upgrade"].startswith(("skipped", "baseline-broken:")))
+
+
+def cell(value):
+    if value == "pass":
+        return "pass"
+    if value.startswith("skipped") or value == "not run":
+        return value
+    if value.startswith("baseline-broken:"):
+        return "**WARN** " + " ".join(value.strip().splitlines())[:300].replace("|", "/")
+    # helm prints klog warnings before the error it died of; the table has
+    # room for one line, so give it the one that says what went wrong.
+    lines = [line.strip() for line in value.strip().splitlines() if line.strip()]
+    errors = [line for line in lines if line.startswith("Error:") or "failed:" in line]
+    first = " ".join(errors or lines)[:300]
+    return f"**FAIL** {first.replace('|', '/')}"
+
+
+def render_summary(results, targets, skipped, notes, total_seconds, header):
+    """Markdown for a run (or a merge of shard runs) and whether it passed."""
+    passed = [record for record in results if record_ok(record)]
+    failed = [record for record in results if not record_ok(record)]
+    reached = {record["chart"] for record in results}
+    missing = [name for name in targets if name not in reached]
+    lines = ["## Chart install gate", "", header, "",
+             "| Chart | Install | Upgrade from | Upgrade | Seconds |",
+             "| --- | --- | --- | --- | --- |"]
+    for record in sorted(results, key=lambda item: item["chart"]):
+        seconds = "+".join(str(value) for value in record["seconds"].values()) or "-"
+        lines.append(f"| `{record['chart']}` | {cell(record['install'])} | "
+                     f"`{record.get('from', '-')}` | {cell(record['upgrade'])} | "
+                     f"{seconds} |")
+    # The whole skip list is printed on every run, not only the entries
+    # this selection touched, so it cannot grow unnoticed.
+    lines += ["", f"**Charts skipped by name ({len(SKIPS)} in total, "
+                  f"{len(skipped)} in this selection):**", ""]
+    for name, reason in sorted(SKIPS.items()):
+        mark = " (selected)" if name in skipped else ""
+        lines.append(f"- `{name}`{mark} - {reason}")
+    if notes:
+        lines += ["", "**Notes:**", ""] + [f"- {note}" for note in dict.fromkeys(notes)]
+    if missing:
+        lines += ["", f"**Never reached ({len(missing)}):** "
+                      + ", ".join(f"`{name}`" for name in missing)]
+    lines += ["", f"Selected {len(targets)} chart(s); {len(passed)} passed, "
+                  f"{len(failed) + len(missing)} failed; total {total_seconds}s."]
+    return "\n".join(lines), not failed and not missing
+
+
 class Gate:
     def __init__(self, args):
         self.args = args
@@ -1191,66 +1243,23 @@ class Gate:
         print(f"===== end {name} ({phase}) =====\n", flush=True)
 
     def summary(self, targets, skipped):
-        def ok(record):
-            return record["install"] == "pass" and (
-                record["upgrade"] == "pass"
-                or record["upgrade"].startswith(("skipped", "baseline-broken:")))
-
-        passed = [record for record in self.results if ok(record)]
-        failed = [record for record in self.results if not ok(record)]
-        missing = [name for name in targets
-                   if name not in {record["chart"] for record in self.results}]
-        lines = ["## Chart install gate", "",
-                 f"Cluster `{self.name}` | kind image `{KIND_IMAGE.split('@')[0]}` | "
-                 f"shared export `{self.nfs_ip}:/`", "",
-                 "| Chart | Install | Upgrade from | Upgrade | Seconds |",
-                 "| --- | --- | --- | --- | --- |"]
-        for record in sorted(self.results, key=lambda item: item["chart"]):
-            seconds = "+".join(str(value) for value in record["seconds"].values()) or "-"
-            lines.append(f"| `{record['chart']}` | {self.cell(record['install'])} | "
-                         f"`{record.get('from', '-')}` | {self.cell(record['upgrade'])} | "
-                         f"{seconds} |")
-        # The whole skip list is printed on every run, not only the entries
-        # this selection touched, so it cannot grow unnoticed.
-        lines += ["", f"**Charts skipped by name ({len(SKIPS)} in total, "
-                      f"{len(skipped)} in this selection):**", ""]
-        for name, reason in sorted(SKIPS.items()):
-            mark = " (selected)" if name in skipped else ""
-            lines.append(f"- `{name}`{mark} - {reason}")
-        if self.notes:
-            lines += ["", "**Notes:**", ""] + [f"- {note}" for note in dict.fromkeys(self.notes)]
         total = round(sum(item["seconds"] for item in self.timings), 1)
-        if missing:
-            lines += ["", f"**Never reached ({len(missing)}):** "
-                          + ", ".join(f"`{name}`" for name in missing)]
-        lines += ["", f"Selected {len(targets)} chart(s); {len(passed)} passed, "
-                      f"{len(failed) + len(missing)} failed; total {total}s."]
-        text = "\n".join(lines)
+        header = (f"Cluster `{self.name}` | kind image `{KIND_IMAGE.split('@')[0]}` | "
+                  f"shared export `{self.nfs_ip}:/`")
+        text, ok = render_summary(self.results, targets, skipped, self.notes, total, header)
         print("\n" + text, flush=True)
         (self.artifacts / "summary.md").write_text(text)
         (self.artifacts / "results.json").write_text(json.dumps(
             {"run": self.name, "targets": targets, "skipped": skipped,
-             "results": self.results, "timings": self.timings}, indent=2))
+             "results": self.results, "timings": self.timings,
+             "notes": self.notes}, indent=2))
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if step_summary:
             with open(step_summary, "a") as handle:
                 handle.write(text + "\n")
-        return not failed and not missing
+        return ok
 
-    @staticmethod
-    def cell(value):
-        if value == "pass":
-            return "pass"
-        if value.startswith("skipped") or value == "not run":
-            return value
-        if value.startswith("baseline-broken:"):
-            return "**WARN** " + " ".join(value.strip().splitlines())[:300].replace("|", "/")
-        # helm prints klog warnings before the error it died of; the table has
-        # room for one line, so give it the one that says what went wrong.
-        lines = [line.strip() for line in value.strip().splitlines() if line.strip()]
-        errors = [line for line in lines if line.startswith("Error:") or "failed:" in line]
-        first = " ".join(errors or lines)[:300]
-        return f"**FAIL** {first.replace('|', '/')}"
+    cell = staticmethod(cell)
 
     def cleanup(self):
         if self.cluster_created and not self.args.keep:
@@ -1282,6 +1291,13 @@ def resolve_targets(args):
     return [name for name in selected if name not in skipped], skipped
 
 
+def plan_shards(targets, max_shards=10, per_shard=4):
+    """Split targets into at most max_shards sorted lists, dealt round-robin."""
+    ordered = sorted(targets)
+    count = min(max_shards, -(-len(ordered) // per_shard))
+    return [ordered[index::count] for index in range(count)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1299,7 +1315,17 @@ def main():
     parser.add_argument("--artifacts", type=Path, default=HERE / "artifacts")
     parser.add_argument("--keep", action="store_true",
                         help="Leave the cluster and the NFS fixture up for debugging")
+    parser.add_argument("--plan-shards", type=Path, metavar="OUT.json",
+                        help="Resolve the targets, write the shard plan to OUT.json and exit; "
+                             "needs no cluster tools")
     args = parser.parse_args()
+
+    if args.plan_shards:
+        targets, skipped = resolve_targets(args)
+        plan = {"targets": targets, "skipped": skipped, "shards": plan_shards(targets)}
+        args.plan_shards.write_text(json.dumps(plan, indent=2))
+        print(json.dumps(plan, indent=2), flush=True)
+        return 0
 
     for tool in ("docker", "kind", "kubectl", "helm"):
         if not shutil.which(tool):
