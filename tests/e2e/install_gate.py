@@ -69,9 +69,9 @@ REGISTRY = "oci://ghcr.io/smokeythebandit/kubarr-charts"
 # failure there are failures in the same cluster.
 KIND_IMAGE = "kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0"
 NFS_IMAGE = "itsthenetwork/nfs-server-alpine:12"
-# Upper bound on waiting for a published baseline's StatefulSets before the
+# Upper bound on waiting for a published baseline's workloads before the
 # upgrade rolls them (see settle_baseline).
-BASELINE_SETTLE_SECONDS = 180
+BASELINE_SETTLE_SECONDS = 300
 
 # Charts that cannot be installed in a bare kind cluster. Every entry is named
 # with its reason and is printed in the job summary, so the list cannot grow
@@ -901,31 +901,41 @@ class Gate:
             raise GateFailure(f"{kind}/{workload} in {namespace} has {ready}/{desired} ready")
 
     def settle_baseline(self, namespace):
-        """Give the baseline's StatefulSets a bounded chance to finish starting.
+        """Give the baseline's workloads a bounded chance to finish starting.
 
-        A database killed during its first initialization keeps a half-written
-        data directory, and its entrypoint skips init on the next start, so an
-        upgrade that rolls the StatefulSet seconds after the baseline would
-        fail for a reason no real upgrade (from a settled install) can hit.
+        A bundled database restarted during its first initialization keeps a
+        half-written data directory that its entrypoint never initializes
+        again, and readiness alone cannot rule that out (a published chart may
+        probe a server that answers mid-init). Waiting for the Deployments as
+        well means the application has connected and migrated, so the
+        database is done. No real upgrade starts from an install seconds old.
         Best effort only: a baseline that never settles is not the local
         chart's fault, and the upgrade below is still what gets asserted.
         """
-        try:
-            names = self.kube("-n", namespace, "get", "statefulsets",
-                              "-o", "jsonpath={.items[*].metadata.name}").split()
-        except RuntimeError:
+        workloads = {}
+        for kind in ("statefulset", "deployment"):
+            try:
+                workloads[kind] = self.kube("-n", namespace, "get", kind,
+                                            "-o", "jsonpath={.items[*].metadata.name}").split()
+            except RuntimeError:
+                workloads[kind] = []
+        # Stateless charts have nothing an early restart can corrupt.
+        if not workloads["statefulset"]:
             return
         deadline = time.monotonic() + BASELINE_SETTLE_SECONDS
-        for name in names:
-            remaining = int(deadline - time.monotonic())
-            if remaining <= 0:
-                break
-            try:
-                self.kube("-n", namespace, "rollout", "status", f"statefulset/{name}",
-                          f"--timeout={remaining}s", timeout=remaining + 30)
-            except (RuntimeError, subprocess.TimeoutExpired):
-                print(f"[gate] WARN baseline statefulset/{name} in {namespace} did not settle",
-                      flush=True)
+        for kind, names in workloads.items():
+            for name in names:
+                remaining = int(deadline - time.monotonic())
+                if remaining <= 0:
+                    print(f"[gate] WARN baseline in {namespace} did not settle within "
+                          f"{BASELINE_SETTLE_SECONDS}s", flush=True)
+                    return
+                try:
+                    self.kube("-n", namespace, "rollout", "status", f"{kind}/{name}",
+                              f"--timeout={remaining}s", timeout=remaining + 30)
+                except (RuntimeError, subprocess.TimeoutExpired):
+                    print(f"[gate] WARN baseline {kind}/{name} in {namespace} did not settle",
+                          flush=True)
 
     def assert_cronjob(self, workload, namespace, budget, scope=None):
         job = f"{workload}-gate"
@@ -1141,9 +1151,17 @@ class Gate:
         for pod in pods:
             unready = [condition for condition in (pod["status"].get("conditions") or [])
                        if condition["type"] == "Ready" and condition["status"] != "True"]
-            if pod["status"].get("phase") == "Running" and not unready:
-                continue
             pod_name = pod["metadata"]["name"]
+            if pod["status"].get("phase") == "Running" and not unready:
+                # A healthy dependency (a bundled database) often holds the
+                # cause of its consumer's failure, so keep a short tail.
+                for container in pod["spec"].get("containers") or []:
+                    logs = self.kube("-n", namespace, "logs", pod_name, "-c", container["name"],
+                                     "--tail=30", check=False, timeout=60)
+                    if logs.strip():
+                        print(f"--- logs {pod_name}/{container['name']} (ready) ---\n"
+                              f"{self.redact(logs)}", flush=True)
+                continue
             described = self.kube("-n", namespace, "describe", "pod", pod_name,
                                   check=False, timeout=60)
             (directory / f"describe-{pod_name}.txt").write_text(self.redact(described))
@@ -1156,6 +1174,18 @@ class Gate:
                     (directory / f"logs-{pod_name}-{container['name']}.txt").write_text(
                         self.redact(logs))
                     print(f"--- logs {pod_name}/{container['name']} ---\n"
+                          f"{self.redact(logs)}", flush=True)
+            # A crash loop's current attempt may not have failed yet; the
+            # previous one holds the error that restarted it.
+            for status in pod["status"].get("containerStatuses") or []:
+                if not status.get("restartCount"):
+                    continue
+                logs = self.kube("-n", namespace, "logs", pod_name, "-c", status["name"],
+                                 "--previous", "--tail=200", check=False, timeout=60)
+                if logs.strip():
+                    (directory / f"logs-{pod_name}-{status['name']}-previous.txt").write_text(
+                        self.redact(logs))
+                    print(f"--- logs {pod_name}/{status['name']} (previous) ---\n"
                           f"{self.redact(logs)}", flush=True)
         print(f"===== end {name} ({phase}) =====\n", flush=True)
 
