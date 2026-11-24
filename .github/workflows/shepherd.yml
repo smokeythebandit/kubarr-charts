@@ -4,6 +4,10 @@ name: Shepherd
 # repair failing CI, merges green patch/minor app bumps and holds majors and
 # platform charts for the owner. Commits go through the GitHub API so they are
 # signed (see tests/ci/api_commit.py).
+#
+# Three jobs on separate runners: Claude can run code (unittest executes the
+# tests it writes), so the job that runs it never sees the App token and only
+# hands back data. commit-fix treats that data as untrusted.
 
 on:
   schedule:
@@ -25,9 +29,13 @@ permissions:
 jobs:
   shepherd:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      HAS_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+    timeout-minutes: 30
+    outputs:
+      fix_number: ${{ steps.select.outputs.number }}
+      head_sha: ${{ steps.select.outputs.head_sha }}
+      branch: ${{ steps.select.outputs.branch }}
+      chart_dir: ${{ steps.select.outputs.chart_dir }}
+      attempts: ${{ steps.select.outputs.attempts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -50,7 +58,6 @@ jobs:
           echo "$RUNNER_TEMP/shepherd-venv/bin" >> "$GITHUB_PATH"
 
       - name: Walk the Dependabot PRs
-        id: walk
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
@@ -59,52 +66,161 @@ jobs:
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
           python3 tests/ci/shepherd.py run --repo "$GITHUB_REPOSITORY" \
             --fix-out "$RUNNER_TEMP/fix.json" "${args[@]}"
-          if [ -f "$RUNNER_TEMP/fix.json" ]; then echo "fix=true" >> "$GITHUB_OUTPUT"; fi
 
-      # Everything Claude can touch is the PR head in the workspace. The
-      # trusted tooling is copied out first and the prompt is read from main
-      # before the PR head replaces the workspace content.
-      - name: Check out the failing PR for Claude
-        id: fix
-        if: env.HAS_CLAUDE_TOKEN == 'true' && steps.walk.outputs.fix == 'true'
+      # No Claude token means no fix job: leave the outputs empty so the PR is
+      # not counted as attempted.
+      - name: Select the PR to fix
+        id: select
+        env:
+          HAS_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
         run: |
-          mkdir -p "$RUNNER_TEMP/tooling"
-          cp tests/ci/*.py "$RUNNER_TEMP/tooling/"
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os, pathlib
+          [ "$HAS_CLAUDE_TOKEN" = "true" ] && [ -f "$RUNNER_TEMP/fix.json" ] || exit 0
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json, os, pathlib, shutil
           fix = json.loads(pathlib.Path(os.environ["RUNNER_TEMP"], "fix.json").read_text())
-          text = pathlib.Path(".github/shepherd/fix-prompt.md").read_text()
-          for key, value in (("{{CHART_DIR}}", fix["chart_dir"]), ("{{LOGS}}", fix["logs"])):
-              text = text.replace(key, value)
-          print("logs_dir=" + str(pathlib.Path(fix["logs"]).parent))
-          print("head_sha=" + fix["head_sha"])
+          shutil.copy(".github/shepherd/fix-prompt.md", pathlib.Path(fix["logs"]).parent / "prompt-template.md")
+          for key in ("number", "head_sha", "branch", "chart_dir", "attempts"):
+              print(f"{key}={fix[key]}")
+          PY
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: steps.select.outputs.number != ''
+        with:
+          name: shepherd-logs
+          path: ${{ runner.temp }}/fix-logs
+
+  fix:
+    needs: shepherd
+    if: needs.shepherd.outputs.fix_number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # No App token here: Claude can execute code on this runner.
+    permissions:
+      contents: read
+    env:
+      FIX_NUMBER: ${{ needs.shepherd.outputs.fix_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.shepherd.outputs.head_sha }}
+
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e
+        with:
+          version: v4.3.0
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: shepherd-logs
+          path: ${{ runner.temp }}/shepherd-logs
+
+      - name: Render the prompt
+        id: prompt
+        env:
+          CHART_DIR: ${{ needs.shepherd.outputs.chart_dir }}
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import os, pathlib
+          logs = pathlib.Path(os.environ["RUNNER_TEMP"], "shepherd-logs")
+          text = (logs / "prompt-template.md").read_text()
+          text = text.replace("{{CHART_DIR}}", os.environ["CHART_DIR"])
+          text = text.replace("{{LOGS}}", str(logs / f"logs-{os.environ['FIX_NUMBER']}.txt"))
           print("prompt<<SHEPHERD_PROMPT_EOF\n" + text + "\nSHEPHERD_PROMPT_EOF")
           PY
-          head_sha=$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/fix.json"))["head_sha"])')
-          git fetch --no-tags origin "$head_sha"
-          git checkout --detach --force "$head_sha"
-          git clean -fdx
 
       - name: Claude repairs the failing PR
         id: claude
-        if: steps.fix.outcome == 'success'
         continue-on-error: true
         uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Read-only job token; the App token never reaches Claude.
           github_token: ${{ github.token }}
-          prompt: ${{ steps.fix.outputs.prompt }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
           claude_args: >-
-            --add-dir ${{ steps.fix.outputs.logs_dir }}
+            --add-dir ${{ runner.temp }}/shepherd-logs
             --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python3 -m unittest:*),Bash(helm template:*),Bash(helm dependency build:*)"
 
-      # A Claude step that ran but failed, or changed nothing, counts as an
-      # attempt; only a skipped step (no token) does not.
+      # Data only: the change set is written out, never read back as code.
+      # Symlinks are recorded as symlinks and their target is never read.
+      - name: Serialize the change set
+        if: always()
+        env:
+          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, pathlib, subprocess
+          out = subprocess.run(["git", "status", "--porcelain", "-z", "--untracked-files=all"],
+                               check=True, capture_output=True).stdout.split(b"\0")
+          entries, i = [], 0
+          while i < len(out):
+              entry, i = out[i], i + 1
+              if len(entry) < 4:
+                  continue
+              status, path = entry[:2].decode(), entry[3:].decode()
+              if "R" in status or "C" in status:
+                  old, i = out[i].decode(), i + 1
+                  if "R" in status:
+                      entries.append({"path": old, "deleted": True, "symlink": False, "content": None})
+              p = pathlib.Path(path)
+              if "D" in status and "R" not in status:
+                  entries.append({"path": path, "deleted": True, "symlink": False, "content": None})
+              elif p.is_symlink():
+                  entries.append({"path": path, "deleted": False, "symlink": True, "content": None})
+              else:
+                  entries.append({"path": path, "deleted": False, "symlink": False,
+                                  "content": base64.b64encode(p.read_bytes()).decode()})
+          outdir = pathlib.Path(os.environ["RUNNER_TEMP"], "shepherd-fix")
+          outdir.mkdir()
+          (outdir / "changes.json").write_text(json.dumps(
+              {"claude_outcome": os.environ["CLAUDE_OUTCOME"], "changes": entries}))
+          PY
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: shepherd-fix
+          path: ${{ runner.temp }}/shepherd-fix
+
+  commit-fix:
+    needs: [shepherd, fix]
+    # A fix job that failed outright still counts as an attempt; a skipped one
+    # (no Claude token, no PR to fix) does not.
+    if: always() && needs.shepherd.outputs.fix_number != '' && needs.fix.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ secrets.SHEPHERD_APP_ID }}
+          private-key: ${{ secrets.SHEPHERD_APP_PRIVATE_KEY }}
+
+      - name: Python environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/shepherd-venv"
+          "$RUNNER_TEMP/shepherd-venv/bin/python" -m pip install PyYAML==6.0.3
+          echo "$RUNNER_TEMP/shepherd-venv/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true
+        with:
+          name: shepherd-fix
+          path: ${{ runner.temp }}/shepherd-fix
+
       - name: Commit the fix
-        if: always() && steps.fix.outcome == 'success' && steps.claude.outcome != 'skipped'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          FIX_NUMBER: ${{ needs.shepherd.outputs.fix_number }}
+          HEAD_SHA: ${{ needs.shepherd.outputs.head_sha }}
+          BRANCH: ${{ needs.shepherd.outputs.branch }}
+          CHART_DIR: ${{ needs.shepherd.outputs.chart_dir }}
+          ATTEMPTS: ${{ needs.shepherd.outputs.attempts }}
         run: |
-          python3 "$RUNNER_TEMP/tooling/shepherd.py" commit-fix --fix-in "$RUNNER_TEMP/fix.json" \
-            --worktree "$GITHUB_WORKSPACE" --claude-outcome "${{ steps.claude.outcome }}"
+          python3 tests/ci/shepherd.py commit-fix --repo "$GITHUB_REPOSITORY" \
+            --changes "$RUNNER_TEMP/shepherd-fix/changes.json" --pr "$FIX_NUMBER" \
+            --head-sha "$HEAD_SHA" --branch "$BRANCH" --chart-dir "$CHART_DIR" --attempts "$ATTEMPTS"

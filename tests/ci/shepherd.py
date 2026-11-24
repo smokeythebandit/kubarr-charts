@@ -6,6 +6,8 @@
 """
 
 import argparse
+import base64
+import binascii
 import json
 import os
 import re
@@ -249,34 +251,63 @@ def count_attempt(run, repo, number, attempts, out):
     print(f"#{number} attempt {attempts + 1} counted", file=out)
 
 
-def commit_fix(fix_in, worktree, claude_outcome="success", run=gh, commit=api_commit.commit_files, out=None):
-    """Commit the AI fix found in `worktree` (the PR head, checked out by the workflow)."""
+def parse_changes(path):
+    """Read the untrusted change set written by the fix job.
+
+    Returns (claude_outcome, changes, problems). Anything malformed is a problem,
+    never an exception; symlink entries become SymlinkChange so the guard rejects them.
+    """
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return "failure", {}, []  # no usable result: the fix job did not finish
+    if not isinstance(data, dict) or not isinstance(data.get("changes"), list):
+        return "failure", {}, ["changes.json is malformed"]
+    outcome = data.get("claude_outcome")
+    outcome = outcome if isinstance(outcome, str) else "failure"
+    changes, problems = {}, []
+    for entry in data["changes"]:
+        try:
+            path_ = entry["path"]
+            if not isinstance(path_, str) or not path_ or "\0" in path_:
+                raise ValueError("bad path")
+            if entry.get("symlink") is True:
+                changes[path_] = api_commit.SymlinkChange()
+            elif entry.get("deleted") is True:
+                changes[path_] = None
+            else:
+                changes[path_] = base64.b64decode(entry["content"], validate=True)
+        except (KeyError, TypeError, ValueError, AttributeError, binascii.Error):
+            problems.append(f"malformed change entry: {str(entry)[:80]}")
+    return outcome, changes, problems
+
+
+def commit_fix(changes_path, repo, number, head_sha, branch, chart_dir, attempts, run=gh,
+               commit=api_commit.commit_files, repo_dir=".", fetch=True, out=None):
+    """Commit the AI fix described by the (untrusted) `changes_path` onto the PR branch."""
     out = out or sys.stdout
-    fix = json.loads(Path(fix_in).read_text())
-    worktree, repo, number, attempts = Path(worktree), fix["repo"], fix["number"], fix["attempts"]
-    head = subprocess.run(["git", "-C", str(worktree), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    if head != fix["head_sha"]:
-        print(f"#{number} worktree is not at the PR head; nothing done", file=out)
-        return 1
-    if claude_outcome != "success":
+    claude_outcome, changes, problems = parse_changes(changes_path)
+    if problems:
+        flag_human(run, repo, number, "The AI fix was rejected, nothing was committed:\n- " + "\n- ".join(problems))
+        print(f"#{number} fix rejected: {problems}", file=out)
+        return 0
+    if claude_outcome != "success" or not changes:
         count_attempt(run, repo, number, attempts, out)
         return 0
-    changes = api_commit.changed_files(worktree)
-    if not changes:
-        count_attempt(run, repo, number, attempts, out)
-        return 0
+    if fetch:
+        git("fetch", "--no-tags", "origin", head_sha, cwd=repo_dir)
 
     def original(path):
-        proc = subprocess.run(["git", "-C", str(worktree), "show", f"HEAD:{path}"], capture_output=True)
+        proc = subprocess.run(["git", "-C", str(repo_dir), "show", f"{head_sha}:{path}"], capture_output=True)
         return proc.stdout.decode("utf-8", "replace") if proc.returncode == 0 else None
 
-    violations = fix_guard.check(fix["chart_dir"], changes, original)
+    violations = fix_guard.check(chart_dir, changes, original)
     if violations:
         flag_human(run, repo, number, "The AI fix was rejected, nothing was committed:\n- " + "\n- ".join(violations))
         print(f"#{number} fix rejected: {violations}", file=out)
         return 0
-    chart = Path(fix["chart_dir"]).name
-    oid = commit(repo, fix["branch"], fix["head_sha"], f"fix({chart}): repair CI after image bump (AI)", changes)
+    chart = Path(chart_dir).name
+    oid = commit(repo, branch, head_sha, f"fix({chart}): repair CI after image bump (AI)", changes)
     if oid is None:
         print(f"#{number} head moved, fix skipped", file=out)
         return 0
@@ -293,13 +324,17 @@ def main(argv=None) -> int:
     p_run.add_argument("--fix-out", required=True)
     p_run.add_argument("--dry-run", action="store_true")
     p_fix = sub.add_parser("commit-fix")
-    p_fix.add_argument("--fix-in", required=True)
-    p_fix.add_argument("--worktree", required=True)
-    p_fix.add_argument("--claude-outcome", default="success")
+    p_fix.add_argument("--repo", required=True)
+    p_fix.add_argument("--changes", required=True)
+    p_fix.add_argument("--pr", type=int, required=True)
+    p_fix.add_argument("--head-sha", required=True)
+    p_fix.add_argument("--branch", required=True)
+    p_fix.add_argument("--chart-dir", required=True)
+    p_fix.add_argument("--attempts", type=int, required=True)
     args = parser.parse_args(argv)
     if args.cmd == "run":
         return run_shepherd(args.repo, args.fix_out, args.dry_run)
-    return commit_fix(args.fix_in, args.worktree, args.claude_outcome)
+    return commit_fix(args.changes, args.repo, args.pr, args.head_sha, args.branch, args.chart_dir, args.attempts)
 
 
 if __name__ == "__main__":

@@ -249,28 +249,37 @@ class MutatingRunnerTests(unittest.TestCase):
 
 class CommitFixTests(unittest.TestCase):
     def setUp(self):
+        import base64
         import io
         import json
         import subprocess
-        self.io, self.json = io, json
+        self.b64, self.io, self.json = base64, io, json
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        self.wt = self.root / "wt"
-        (self.wt / "media-server/radarr").mkdir(parents=True)
-        (self.wt / "tests").mkdir()
-        (self.wt / "media-server/radarr/values.yaml").write_text("a: 1\n")
-        (self.wt / "tests/test_x.py").write_text("def test_a():\n    pass\n")
-        git = ["git", "-C", str(self.wt), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        self.repo = self.root / "repo"
+        (self.repo / "media-server/radarr").mkdir(parents=True)
+        (self.repo / "tests").mkdir()
+        (self.repo / "media-server/radarr/values.yaml").write_text("a: 1\n")
+        (self.repo / "tests/test_x.py").write_text("def test_a():\n    pass\n")
+        git = ["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
         subprocess.run(git[:3] + ["init", "-q"], check=True)
         subprocess.run(git + ["add", "-A"], check=True)
         subprocess.run(git + ["commit", "-qm", "x"], check=True)
-        sha = subprocess.run(["git", "-C", str(self.wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-        self.sha = sha
-        self.fix = self.root / "fix.json"
-        self.fix.write_text(json.dumps(dict(number=7, head_sha=sha, chart_dir="media-server/radarr", repo="o/r",
-                                            branch="dependabot/helm/x", attempts=1, logs="l")))
+        self.sha = subprocess.run(["git", "-C", str(self.repo), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True).stdout.strip()
+        self.changes = self.root / "changes.json"
         self.gh_calls, self.commits = [], []
+
+    def entry(self, path, content=None, **kw):
+        base = dict(path=path, deleted=content is None, symlink=False,
+                    content=None if content is None else self.b64.b64encode(content.encode()).decode())
+        base.update(kw)
+        return base
+
+    def write(self, entries, outcome="success", raw=None):
+        self.changes.write_text(raw if raw is not None else self.json.dumps(
+            {"claude_outcome": outcome, "changes": entries}))
 
     def gh(self, *args):
         self.gh_calls.append(args)
@@ -280,42 +289,66 @@ class CommitFixTests(unittest.TestCase):
         self.commits.append(args)
         return "newoid"
 
-    def go(self, outcome="success"):
-        return S.commit_fix(self.fix, self.wt, outcome, run=self.gh, commit=self.commit, out=self.io.StringIO())
+    def go(self, attempts=1):
+        return S.commit_fix(self.changes, "o/r", 7, self.sha, "dependabot/helm/x", "media-server/radarr", attempts,
+                            run=self.gh, commit=self.commit, repo_dir=self.repo, fetch=False, out=self.io.StringIO())
+
+    def label(self, name):
+        return ("pr", "edit", "7", "-R", "o/r", "--add-label", name)
 
     def test_clean_change_commits_at_expected_head_and_labels(self):
-        (self.wt / "media-server/radarr/values.yaml").write_text("a: 2\n")
+        self.write([self.entry("media-server/radarr/values.yaml", "a: 2\n")])
         self.go()
         self.assertEqual(len(self.commits), 1)
         repo, branch, expected_head, message, changes = self.commits[0]
         self.assertEqual((repo, branch, expected_head), ("o/r", "dependabot/helm/x", self.sha))
-        self.assertIn("media-server/radarr/values.yaml", changes)
-        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "ai-fix-attempt-2"), self.gh_calls)
+        self.assertEqual(changes, {"media-server/radarr/values.yaml": b"a: 2\n"})
+        self.assertIn(self.label("ai-fix-attempt-2"), self.gh_calls)
 
     def test_guard_violation_flags_human_without_commit(self):
-        (self.wt / "tests/test_x.py").write_text("")
-        (self.wt / "evil.txt").write_text("x")
+        self.write([self.entry("tests/test_x.py", ""), self.entry("evil.txt", "x")])
         self.go()
         self.assertEqual(self.commits, [])
         self.assertTrue(any(c[:2] == ("pr", "comment") for c in self.gh_calls))
-        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "needs-human"), self.gh_calls)
+        self.assertIn(self.label("needs-human"), self.gh_calls)
+
+    def test_symlink_or_malformed_entry_is_needs_human(self):
+        cases = [
+            [self.entry("media-server/radarr/link", symlink=True, deleted=False)],
+            [{"path": 5}],
+            [{"path": "media-server/radarr/a", "deleted": False, "symlink": False, "content": "!!notbase64"}],
+            ["not a dict"],
+        ]
+        for entries in cases:
+            self.gh_calls.clear()
+            self.write(entries)
+            self.go()
+            self.assertEqual(self.commits, [], entries)
+            self.assertIn(self.label("needs-human"), self.gh_calls, entries)
+
+    def test_malformed_file_is_needs_human_and_missing_file_counts_attempt(self):
+        self.write(None, raw='{"changes": "x"}')
+        self.go()
+        self.assertIn(self.label("needs-human"), self.gh_calls)
+        self.gh_calls.clear()
+        self.changes.unlink()
+        self.go()
+        self.assertIn(self.label("ai-fix-attempt-2"), self.gh_calls)
+        self.assertEqual(self.commits, [])
 
     def test_no_change_counts_an_attempt(self):
+        self.write([])
         self.go()
         self.assertEqual(self.commits, [])
-        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "ai-fix-attempt-2"), self.gh_calls)
+        self.assertIn(self.label("ai-fix-attempt-2"), self.gh_calls)
 
     def test_failed_claude_step_counts_and_third_attempt_flags_human(self):
-        self.fix.write_text(self.fix.read_text().replace('"attempts": 1', '"attempts": 2'))
-        self.go(outcome="failure")
-        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "ai-fix-attempt-3"), self.gh_calls)
-        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "needs-human"), self.gh_calls)
+        self.write([self.entry("media-server/radarr/values.yaml", "a: 2\n")], outcome="failure")
+        self.go(attempts=2)
+        self.assertEqual(self.commits, [])
+        self.assertIn(self.label("ai-fix-attempt-3"), self.gh_calls)
+        self.assertIn(self.label("needs-human"), self.gh_calls)
         self.assertEqual(sum(1 for c in self.gh_calls if c[:2] == ("pr", "comment")), 1)
-
-    def test_worktree_not_at_pr_head_does_nothing(self):
-        self.fix.write_text(self.fix.read_text().replace(self.sha, "0" * 40))
-        self.assertEqual(self.go(), 1)
-        self.assertEqual(self.gh_calls, [])
 
 
 if __name__ == "__main__":
