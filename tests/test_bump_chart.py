@@ -93,6 +93,22 @@ class BumpChart(unittest.TestCase):
         self.assertFalse(self.mod.bump(chart))
         self.assertEqual((chart / "Chart.yaml").read_text(), before)
 
+    def test_revision_only_bump_when_app_version_current(self):
+        chart = self.make_chart()
+        self.mod.bump(chart)  # appVersion now current; a sidecar-only change leaves it there
+        current = (chart / "Chart.yaml").read_text()
+        self.assertTrue(self.mod.bump(chart, revision_only_if_current=True))
+        after = (chart / "Chart.yaml").read_text()
+        self.assertEqual(after, current.replace(self.version_line(current), self.next_revision(self.version_line(current))))
+        self.assertFalse(self.mod.bump(chart))
+
+    def version_line(self, text):
+        return next(line for line in text.splitlines() if line.startswith("version:"))
+
+    def next_revision(self, line):
+        core, _, n = line.partition("+")
+        return f"{core}+{int(n) + 1}"
+
     def test_v_prefixed_app_version_is_current(self):
         chart = self.make_chart(chart=CHART.replace('appVersion: "6.4.4"', 'appVersion: "v7.0.3"'))
         before = (chart / "Chart.yaml").read_text()

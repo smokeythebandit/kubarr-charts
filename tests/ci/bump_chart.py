@@ -74,7 +74,13 @@ def primary_tag(chart_dir: Path) -> str:
     return str(_dig(values, primary_image_path(chart_dir))["tag"])
 
 
-def bump(chart_dir: Path) -> bool:
+def bump(chart_dir: Path, revision_only_if_current: bool = False) -> bool:
+    """Bump the chart to the primary image's version.
+
+    When appVersion is already current this is a no-op, unless
+    `revision_only_if_current` asks for just the build number to move
+    (`1.2.3+4` -> `1.2.3+5`), which is what a sidecar-only change needs.
+    """
     chart_dir = Path(chart_dir)
     chart_file = chart_dir / "Chart.yaml"
     text = chart_file.read_text()
@@ -84,9 +90,17 @@ def bump(chart_dir: Path) -> bool:
         current = normalize_tag(str(chart.get("appVersion")))
     except ValueError:
         current = None
-    if current == app_version:
-        return False
     build = re.search(r"\+(\d+)\s*$", str(chart.get("version", "")))
+    if current == app_version:
+        if not revision_only_if_current:
+            return False
+        core = str(chart.get("version", "")).split("+")[0]
+        new_version = f"{core}+{(int(build.group(1)) if build else 0) + 1}"
+        text, n_version = re.subn(r"^version:.*$", f"version: {new_version}", text, count=1, flags=re.M)
+        if n_version != 1:
+            raise ValueError(f"{chart_file}: missing top-level version line")
+        chart_file.write_text(text)
+        return True
     new_version = f"{version_core(app_version)}+{(int(build.group(1)) if build else 0) + 1}"
     text, n_version = re.subn(r"^version:.*$", f"version: {new_version}", text, count=1, flags=re.M)
     text, n_app = re.subn(r"^appVersion:.*$", f'appVersion: "{app_version}"', text, count=1, flags=re.M)
