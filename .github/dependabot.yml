@@ -1,4 +1,14 @@
 version: 2
+# Docker Hub refuses many anonymous tag lookups ("authentication required"),
+# and Dependabot reads a refused lookup as "no newer version". The token is a
+# read-only Docker Hub PAT stored as a Dependabot secret.
+registries:
+  dockerhub:
+    type: docker-registry
+    url: https://registry-1.docker.io
+    username: ${{secrets.DOCKERHUB_USERNAME}}
+    password: ${{secrets.DOCKERHUB_TOKEN}}
+
 updates:
   # Chart.yaml and values.yaml in each application chart (not rendered templates).
   - package-ecosystem: helm
@@ -10,6 +20,8 @@ updates:
       - /media-server/*
       - /monitoring/*
       - /system/*
+    registries:
+      - dockerhub
     schedule:
       interval: daily
       time: "09:00"

@@ -66,6 +66,16 @@ class DependabotConfigTests(unittest.TestCase):
             "immich": {"patterns": ["ghcr.io/immich-app/immich-server",
                                     "ghcr.io/immich-app/immich-machine-learning"]},
         })
+        # Docker Hub refuses many anonymous tag lookups, which Dependabot reads
+        # as "no newer version"; the helm updater logs in with a read-only token.
+        config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+        self.assertEqual(config["registries"]["dockerhub"], {
+            "type": "docker-registry",
+            "url": "https://registry-1.docker.io",
+            "username": "${{secrets.DOCKERHUB_USERNAME}}",
+            "password": "${{secrets.DOCKERHUB_TOKEN}}",
+        })
+        self.assertEqual(helm["registries"], ["dockerhub"])
         self.assertEqual(actions["directory"], "/")
         self.assertEqual(actions["groups"]["actions"]["patterns"], ["*"])
 
