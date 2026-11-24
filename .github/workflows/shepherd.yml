@@ -12,6 +12,13 @@ name: Shepherd
 on:
   schedule:
     - cron: "*/20 * * * *"
+  # GitHub runs schedules late (hours, at busy times), so also run as soon as a
+  # gate finishes on a bump commit the shepherd pushed itself. Runs started by
+  # Dependabot's own pushes are skipped below: they carry Dependabot's
+  # read-only token and no repo secrets.
+  workflow_run:
+    workflows: ["Install gate"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -28,6 +35,7 @@ permissions:
 
 jobs:
   shepherd:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.actor.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
