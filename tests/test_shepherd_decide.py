@@ -114,6 +114,13 @@ class ChartFactsTests(unittest.TestCase):
             self.assertFalse(got.major)
             self.assertFalse(got.stale)
 
+    def test_chart_facts_v_prefixed_app_version_is_not_stale(self):
+        with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
+            write_chart(base, "v0.0.36", "v0.0.36")
+            write_chart(head, "v0.0.37", "v0.0.37")
+            got = S.chart_facts(Path(head), Path(base), ["media-server/radarr/values.yaml"])
+            self.assertFalse(got.stale)
+
     def test_chart_facts_missing_base_is_none(self):
         with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
             write_chart(head, "7.0.3", "7.0.3")
@@ -207,18 +214,23 @@ class MutatingRunnerTests(unittest.TestCase):
             return self.json.dumps(self.prs)
         if args[0] == "api":
             return "".join(
-                self.json.dumps(dict(name=n, status="completed", conclusion=self.check_state, url=None)) + "\n"
+                self.json.dumps(dict(name=n, status="completed", conclusion=self.check_state,
+                                     url="https://x/actions/runs/99/job/1")) + "\n"
                 for n in ("helm", "install"))
+        if args[:2] == ("run", "view"):
+            return "LOGTEXT"
         return ""
 
     def checkout(self, sha, parent, name):
         root = Path(self.tmp.name) / sha
         if not root.exists():
-            chart = {"34": "komga", "32": "frigate"}[sha[1:]]
+            chart = {"34": "komga", "32": "frigate", "30": "sonarr"}[sha[1:]]
             d = root / "media-server" / chart
             d.mkdir(parents=True)
-            tag = "2.0.0" if sha.startswith("b") else "2.1.0"
-            (d / "Chart.yaml").write_text(f'apiVersion: v2\nname: {chart}\nversion: 1.0.0+1\nappVersion: "{tag}"\n')
+            base_tag, head_tag = ("1.0.0", "2.0.0") if sha[1:] == "30" else ("2.0.0", "2.1.0")
+            tag = base_tag if sha.startswith("b") else head_tag
+            app = base_tag if sha == "h34" else tag  # #34 is stale: the tag moved, appVersion did not
+            (d / "Chart.yaml").write_text(f'apiVersion: v2\nname: {chart}\nversion: 1.0.0+1\nappVersion: "{app}"\n')
             (d / "values.yaml").write_text(f"{chart}:\n  image:\n    repository: x/y\n    tag: {tag}\n")
         return root
 
@@ -230,6 +242,35 @@ class MutatingRunnerTests(unittest.TestCase):
         self.prs = [listed(32, "frigate")]
         self.run_it()
         self.assertIn(("pr", "merge", "32", "-R", "o/r", "--merge", "--match-head-commit", "h32"), self.calls)
+
+    def test_bump_commits_with_chart_message(self):
+        import api_commit
+        self.prs = [listed(34, "komga")]
+        commits = []
+        real = api_commit.changed_files
+        api_commit.changed_files = lambda wt: {"media-server/komga/Chart.yaml": b"x"}
+        self.addCleanup(setattr, api_commit, "changed_files", real)
+        self.run_it(commit=lambda *a: commits.append(a) or "oid")
+        repo, branch, head, message, changes = commits[0]
+        self.assertEqual((repo, head, message), ("o/r", "h34", "chore(komga): bump chart to 2.1.0+2"))
+        self.assertEqual(branch, "dependabot/helm/media-server/komga/x")
+
+    def test_major_hold_labels_and_requests_owner_review(self):
+        self.prs = [listed(30, "sonarr")]
+        self.run_it()
+        self.assertIn(("pr", "edit", "30", "-R", "o/r", "--add-label", "major-update"), self.calls)
+        self.assertIn(("pr", "edit", "30", "-R", "o/r", "--add-reviewer", "o"), self.calls)
+
+    def test_fix_out_has_what_the_workflow_reads(self):
+        self.prs = [listed(32, "frigate", labels=["ai-fix-attempt-1"]), listed(30, "sonarr")]
+        self.check_state = "failure"
+        self.run_it()
+        fix = self.json.loads((Path(self.tmp.name) / "fix.json").read_text())
+        self.assertEqual({k: fix[k] for k in ("number", "head_sha", "branch", "chart_dir", "attempts")},
+                         dict(number=32, head_sha="h32", branch="dependabot/helm/media-server/frigate/x",
+                              chart_dir="media-server/frigate", attempts=1))
+        self.assertEqual(Path(fix["logs"]).read_text().count("LOGTEXT"), 2)
+        self.assertEqual(Path(fix["logs"]).parent.name, "fix-logs")
 
     def test_one_broken_pr_does_not_stop_the_next(self):
         self.prs = [listed(34, "komga"), listed(32, "frigate")]
@@ -335,6 +376,28 @@ class CommitFixTests(unittest.TestCase):
         self.go()
         self.assertIn(self.label("ai-fix-attempt-2"), self.gh_calls)
         self.assertEqual(self.commits, [])
+
+    def test_oversized_change_is_needs_human(self):
+        self.write([self.entry("media-server/radarr/big.txt", "x" * (S.MAX_FILE_BYTES + 1))])
+        self.go()
+        self.assertEqual(self.commits, [])
+        self.assertIn(self.label("needs-human"), self.gh_calls)
+        self.gh_calls.clear()
+        n = S.MAX_TOTAL_BYTES // S.MAX_FILE_BYTES + 1
+        self.write([self.entry(f"media-server/radarr/f{i}.txt", "x" * S.MAX_FILE_BYTES) for i in range(n)])
+        self.go()
+        self.assertEqual(self.commits, [])
+        self.assertIn(self.label("needs-human"), self.gh_calls)
+
+    def test_commit_error_counts_an_attempt(self):
+        self.write([self.entry("media-server/radarr/values.yaml", "a: 2\n")])
+
+        def boom(*a):
+            raise RuntimeError("graphql down")
+
+        self.commit = boom
+        self.go()
+        self.assertIn(self.label("ai-fix-attempt-2"), self.gh_calls)
 
     def test_no_change_counts_an_attempt(self):
         self.write([])

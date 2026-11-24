@@ -93,7 +93,7 @@ def chart_facts(repo_root: Path, base_root: Path, files: list[str]) -> ChartFact
         return None
     chart = yaml.safe_load((head / "Chart.yaml").read_text()) or {}
     head_tag = bump_chart.normalize_tag(bump_chart.primary_tag(head))
-    stale = str(chart.get("appVersion")) != head_tag
+    stale = bump_chart.normalize_tag(str(chart.get("appVersion"))) != head_tag
     calver = (chart.get("annotations") or {}).get(bump_chart.ANNOTATION_VERSIONING) == "calver"
     if not (base / "Chart.yaml").exists():
         return None  # fail closed: cannot tell whether this is a major bump
@@ -106,6 +106,8 @@ def chart_facts(repo_root: Path, base_root: Path, files: list[str]) -> ChartFact
 
 
 LOG_LIMIT = 60 * 1024
+MAX_FILE_BYTES = 256 * 1024
+MAX_TOTAL_BYTES = 1024 * 1024
 BOT_LOGINS = {"dependabot", "app/dependabot", DEPENDABOT}
 
 
@@ -276,9 +278,16 @@ def parse_changes(path):
             elif entry.get("deleted") is True:
                 changes[path_] = None
             else:
-                changes[path_] = base64.b64decode(entry["content"], validate=True)
+                content = entry["content"]
+                if len(content) > MAX_FILE_BYTES * 4 // 3 + 4:
+                    raise ValueError("too large")
+                changes[path_] = base64.b64decode(content, validate=True)
+                if len(changes[path_]) > MAX_FILE_BYTES:
+                    raise ValueError("too large")
         except (KeyError, TypeError, ValueError, AttributeError, binascii.Error):
             problems.append(f"malformed change entry: {str(entry)[:80]}")
+    if sum(len(c) for c in changes.values() if c) > MAX_TOTAL_BYTES:
+        problems.append("the change set is larger than the allowed total size")
     return outcome, changes, problems
 
 
@@ -307,7 +316,12 @@ def commit_fix(changes_path, repo, number, head_sha, branch, chart_dir, attempts
         print(f"#{number} fix rejected: {violations}", file=out)
         return 0
     chart = Path(chart_dir).name
-    oid = commit(repo, branch, head_sha, f"fix({chart}): repair CI after image bump (AI)", changes)
+    try:
+        oid = commit(repo, branch, head_sha, f"fix({chart}): repair CI after image bump (AI)", changes)
+    except Exception as exc:  # a commit that keeps failing must not be retried forever
+        print(f"#{number} commit failed: {type(exc).__name__}: {str(exc)[:200]}", file=out)
+        count_attempt(run, repo, number, attempts, out)
+        return 0
     if oid is None:
         print(f"#{number} head moved, fix skipped", file=out)
         return 0

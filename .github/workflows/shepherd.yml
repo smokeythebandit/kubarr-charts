@@ -184,7 +184,7 @@ jobs:
     needs: [shepherd, fix]
     # A fix job that failed outright still counts as an attempt; a skipped one
     # (no Claude token, no PR to fix) does not.
-    if: always() && needs.shepherd.outputs.fix_number != '' && needs.fix.result != 'skipped'
+    if: ${{ !cancelled() && needs.shepherd.outputs.fix_number != '' && needs.fix.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
