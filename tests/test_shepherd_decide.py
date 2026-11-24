@@ -135,5 +135,56 @@ class ChartFactsTests(unittest.TestCase):
                 self.assertIsNone(S.chart_facts(Path(head), Path(base), files))
 
 
+class RunnerTests(unittest.TestCase):
+    def test_runner_dry_run_prints_actions(self):
+        import io
+        import json
+
+        prs = [
+            dict(number=34, headRefName="dependabot/helm/media-server/komga/x", headRefOid="h34", baseRefOid="b34",
+                 labels=[], files=[{"path": "media-server/komga/values.yaml"}], author={"login": "dependabot"}),
+            dict(number=32, headRefName="dependabot/helm/media-server/frigate/x", headRefOid="h32", baseRefOid="b32",
+                 labels=[], files=[{"path": "media-server/frigate/values.yaml"}], author={"login": "dependabot"}),
+        ]
+        calls = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            if args[0] == "pr" and args[1] == "list":
+                return json.dumps(prs)
+            if args[0] == "api":
+                return "".join(
+                    json.dumps(dict(name=n, status="completed", conclusion="success", url=None)) + "\n"
+                    for n in ("helm", "install"))
+            raise AssertionError(f"unexpected gh call {args}")
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+
+        def fake_checkout(sha, parent, name):
+            root = Path(tmp.name) / sha
+            chart = "komga" if sha.endswith("34") else "frigate"
+            if not root.exists():
+                tag = "2.0.0" if sha.startswith("b") else "2.1.0"
+                d = root / "media-server" / chart
+                d.mkdir(parents=True)
+                stale_version = "2.0.0" if sha == "h34" else tag
+                (d / "Chart.yaml").write_text(
+                    f'apiVersion: v2\nname: {chart}\nversion: 1.0.0+1\nappVersion: "{stale_version}"\n')
+                (d / "values.yaml").write_text(f"{chart}:\n  image:\n    repository: x/y\n    tag: {tag}\n")
+            return root
+
+        def no_commit(*a, **k):
+            raise AssertionError("dry run must not commit")
+
+        out = io.StringIO()
+        S.run_shepherd("o/r", Path(tmp.name) / "fix.json", dry_run=True, run=fake_gh,
+                       checkout=fake_checkout, commit=no_commit, out=out)
+        self.assertIn("#34 bump", out.getvalue())
+        self.assertIn("#32 merge", out.getvalue())
+        self.assertFalse([c for c in calls if c[0] == "pr" and c[1] != "list"])
+        self.assertFalse((Path(tmp.name) / "fix.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

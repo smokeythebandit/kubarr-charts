@@ -1,0 +1,95 @@
+name: Shepherd
+
+# Walks the open Dependabot chart PRs: bumps the chart version, lets Claude
+# repair failing CI, merges green patch/minor app bumps and holds majors and
+# platform charts for the owner. Commits go through the GitHub API so they are
+# signed (see tests/ci/api_commit.py).
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only print what would happen
+        type: boolean
+        default: true
+
+concurrency:
+  group: shepherd
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  shepherd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HAS_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ secrets.SHEPHERD_APP_ID }}
+          private-key: ${{ secrets.SHEPHERD_APP_PRIVATE_KEY }}
+
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e
+        with:
+          version: v4.3.0
+
+      - name: Python environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/shepherd-venv"
+          "$RUNNER_TEMP/shepherd-venv/bin/python" -m pip install PyYAML==6.0.3
+          echo "$RUNNER_TEMP/shepherd-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Walk the Dependabot PRs
+        id: walk
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          python3 tests/ci/shepherd.py run --repo "$GITHUB_REPOSITORY" \
+            --fix-out "$RUNNER_TEMP/fix.json" "${args[@]}"
+          if [ -f "$RUNNER_TEMP/fix.json" ]; then echo "fix=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Prepare the fix prompt
+        id: fix
+        if: env.HAS_CLAUDE_TOKEN == 'true' && steps.walk.outputs.fix == 'true'
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, pathlib
+          fix = json.loads(pathlib.Path(os.environ["RUNNER_TEMP"], "fix.json").read_text())
+          text = pathlib.Path(".github/shepherd/fix-prompt.md").read_text()
+          for key, value in (("{{CHART_DIR}}", fix["chart_dir"]), ("{{WORKTREE}}", fix["worktree"]), ("{{LOGS}}", fix["logs"])):
+              text = text.replace(key, value)
+          print("worktree=" + fix["worktree"])
+          print("prompt<<SHEPHERD_PROMPT_EOF\n" + text + "\nSHEPHERD_PROMPT_EOF")
+          PY
+
+      - name: Claude repairs the failing PR
+        id: claude
+        if: steps.fix.outcome == 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app.outputs.token }}
+          prompt: ${{ steps.fix.outputs.prompt }}
+          claude_args: >-
+            --add-dir ${{ steps.fix.outputs.worktree }}
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python3 -m unittest:*),Bash(helm template:*),Bash(helm dependency build:*)"
+
+      - name: Commit the fix
+        if: steps.claude.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python3 tests/ci/shepherd.py commit-fix --fix-in "$RUNNER_TEMP/fix.json"
