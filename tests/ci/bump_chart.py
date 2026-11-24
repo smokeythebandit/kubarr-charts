@@ -80,7 +80,11 @@ def bump(chart_dir: Path) -> bool:
     text = chart_file.read_text()
     chart = yaml.safe_load(text)
     app_version = normalize_tag(primary_tag(chart_dir))
-    if str(chart.get("appVersion")) == app_version:
+    try:
+        current = normalize_tag(str(chart.get("appVersion")))
+    except ValueError:
+        current = None
+    if current == app_version:
         return False
     build = re.search(r"\+(\d+)\s*$", str(chart.get("version", "")))
     new_version = f"{version_core(app_version)}+{(int(build.group(1)) if build else 0) + 1}"
