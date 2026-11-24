@@ -14,7 +14,7 @@ jackett:
   image:
     repository: linuxserver/jackett
     pullPolicy: IfNotPresent
-    tag: "0.25.8"
+    tag: "0.25.20"
 
   # Service configuration
   service:
