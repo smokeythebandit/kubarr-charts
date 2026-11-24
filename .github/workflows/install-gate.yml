@@ -107,11 +107,14 @@ jobs:
 
       - name: Plan the shards
         id: plan
+        env:
+          TARGET_CHARTS: ${{ steps.targets.outputs.charts }}
+          TARGET_BASE: ${{ steps.targets.outputs.base }}
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/gate/bin/python" -u tests/e2e/install_gate.py \
-            --charts "${{ steps.targets.outputs.charts }}" \
-            --base "${{ steps.targets.outputs.base }}" \
+            --charts "$TARGET_CHARTS" \
+            --base "$TARGET_BASE" \
             --plan-shards "$RUNNER_TEMP/plan.json"
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
@@ -134,7 +137,7 @@ jobs:
     runs-on: ubuntu-latest
     # A chart gets a 10 minute budget each for install and upgrade; a shard
     # holds a handful of them.
-    timeout-minutes: 90
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -220,10 +223,18 @@ jobs:
   install:
     # The one status the gate reports: branch protection and publish.yml read it.
     needs: [plan, shard]
-    if: always() && needs.plan.result == 'success'
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Fail when planning did not succeed
+        # A skipped job counts as passing, so a failed or cancelled plan must
+        # fail here rather than let the gate go green with nothing run.
+        if: needs.plan.result != 'success'
+        run: |
+          echo "::error::plan job ${{ needs.plan.result }}; the gate did not run"
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -232,11 +243,21 @@ jobs:
           pattern: install-gate-*
           merge-multiple: false
 
+      - name: Install merge dependencies
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/gate"
+          "$RUNNER_TEMP/gate/bin/python" -m pip install --quiet PyYAML==6.0.3
+
       - name: Merge the shard results
         run: |
           set -euo pipefail
           find "$RUNNER_TEMP/in" -type f | sort
           plan="$(find "$RUNNER_TEMP/in" -name plan.json | head -n1)"
+          if [ -z "$plan" ]; then
+            echo "::error::plan.json missing from artifact install-gate-plan"
+            exit 1
+          fi
           mapfile -t results < <(find "$RUNNER_TEMP/in" -path '*install-gate-shard-*' -name results.json | sort)
-          python3 tests/e2e/merge_gate_results.py \
+          "$RUNNER_TEMP/gate/bin/python" tests/e2e/merge_gate_results.py \
             --planned "$plan" "${results[@]}"
