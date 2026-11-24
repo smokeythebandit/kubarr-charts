@@ -10,7 +10,7 @@ radarr:
   replicaCount: 1
 
   image:
-    repository: linuxserver/radarr
+    repository: ghcr.io/linuxserver/radarr
     pullPolicy: IfNotPresent
     tag: "7.0.3"
 
