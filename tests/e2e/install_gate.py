@@ -69,9 +69,6 @@ REGISTRY = "oci://ghcr.io/smokeythebandit/kubarr-charts"
 # failure there are failures in the same cluster.
 KIND_IMAGE = "kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0"
 NFS_IMAGE = "itsthenetwork/nfs-server-alpine:12"
-# Upper bound on waiting for a published baseline's workloads before the
-# upgrade rolls them (see settle_baseline).
-BASELINE_SETTLE_SECONDS = 300
 
 # Charts that cannot be installed in a bare kind cluster. Every entry is named
 # with its reason and is printed in the job summary, so the list cannot grow
@@ -900,43 +897,6 @@ class Gate:
         if desired < 1 or ready < desired:
             raise GateFailure(f"{kind}/{workload} in {namespace} has {ready}/{desired} ready")
 
-    def settle_baseline(self, namespace):
-        """Give the baseline's workloads a bounded chance to finish starting.
-
-        A bundled database restarted during its first initialization keeps a
-        half-written data directory that its entrypoint never initializes
-        again, and readiness alone cannot rule that out (a published chart may
-        probe a server that answers mid-init). Waiting for the Deployments as
-        well means the application has connected and migrated, so the
-        database is done. No real upgrade starts from an install seconds old.
-        Best effort only: a baseline that never settles is not the local
-        chart's fault, and the upgrade below is still what gets asserted.
-        """
-        workloads = {}
-        for kind in ("statefulset", "deployment"):
-            try:
-                workloads[kind] = self.kube("-n", namespace, "get", kind,
-                                            "-o", "jsonpath={.items[*].metadata.name}").split()
-            except RuntimeError:
-                workloads[kind] = []
-        # Stateless charts have nothing an early restart can corrupt.
-        if not workloads["statefulset"]:
-            return
-        deadline = time.monotonic() + BASELINE_SETTLE_SECONDS
-        for kind, names in workloads.items():
-            for name in names:
-                remaining = int(deadline - time.monotonic())
-                if remaining <= 0:
-                    print(f"[gate] WARN baseline in {namespace} did not settle within "
-                          f"{BASELINE_SETTLE_SECONDS}s", flush=True)
-                    return
-                try:
-                    self.kube("-n", namespace, "rollout", "status", f"{kind}/{name}",
-                              f"--timeout={remaining}s", timeout=remaining + 30)
-                except (RuntimeError, subprocess.TimeoutExpired):
-                    print(f"[gate] WARN baseline {kind}/{name} in {namespace} did not settle",
-                          flush=True)
-
     def assert_cronjob(self, workload, namespace, budget, scope=None):
         job = f"{workload}-gate"
         self.kube("-n", namespace, "create", "job", job, f"--from=cronjob/{workload}")
@@ -1016,8 +976,30 @@ class Gate:
         if volumes:
             self.kube("delete", "persistentvolume", *volumes, "--wait=false",
                       check=False, timeout=120)
+        self.wipe_chart_data(name)
         if name in self.installed:
             self.installed.remove(name)
+
+    def wipe_chart_data(self, name):
+        """Remove the chart's own directory from the shared export.
+
+        Deleting the PersistentVolume leaves the files behind, so the next
+        phase would start on the previous phase's data: a bundled database
+        initialized with that phase's generated password, which the new
+        release's freshly generated secret cannot log in to. Each phase must
+        start as a first install does. Only `<category>/<chart>` goes; shared
+        library paths outside it are left alone.
+        """
+        if not self.nfs_created:
+            return
+        chart = self.tree_charts.get(name)
+        if chart is None:
+            return
+        category, chart_name = chart.parent.name, chart.name
+        if not category or not chart_name or "/" in category + chart_name:
+            return
+        self.run("docker", "exec", self.name + "-nfs", "rm", "-rf", "--",
+                 f"/nfsshare/{category}/{chart_name}", check=False, timeout=120)
 
     def prerequisites(self, name):
         for prerequisite in PREREQUISITES.get(name, []):
@@ -1106,7 +1088,6 @@ class Gate:
                         f"upgrade path to exercise: {error}")
                     print(f"[gate] WARN {name}: {record['upgrade']}", flush=True)
                     raise GateFailure("baseline") from None
-                self.settle_baseline(namespace)
                 local = self.rendered(name, upgrade=True)
                 scope = {"claims": self.claim_names(local),
                          "ignore_pods": self.pod_uids(namespace)}
