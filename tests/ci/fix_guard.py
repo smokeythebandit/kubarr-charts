@@ -6,10 +6,12 @@ ALWAYS_ALLOWED = ("tests/chart_artifacts.py",)
 TEST_FILE = re.compile(r"^tests/test_[^/]*\.py$")
 FORBIDDEN_PREFIXES = (".github/", "tests/e2e/")
 TEST_DEF = re.compile(r"\bdef test_")
-SKIP = re.compile(r"\bskip\b|\bskipIf\b|\bexpectedFailure\b")
+SKIP = re.compile(r"\b(?:skip\w*|SkipTest|xfail|expectedFailure)\b")
 
 
 def _allowed_path(chart_dir, path):
+    if path.startswith("/") or ".." in path.split("/"):
+        return False
     if path.startswith(FORBIDDEN_PREFIXES):
         return False
     return (path.startswith(chart_dir.rstrip("/") + "/")
@@ -22,6 +24,9 @@ def check(chart_dir, changes, original):
     for path, content in sorted(changes.items()):
         if not _allowed_path(chart_dir, path):
             violations.append(f"{path}: outside the paths an AI fix may change")
+            continue
+        if getattr(content, "is_symlink", False):
+            violations.append(f"{path}: is a symlink")
             continue
         before = original(path) or ""
         after = "" if content is None else content.decode("utf-8", "replace")

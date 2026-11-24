@@ -79,6 +79,22 @@ class ApiCommit(unittest.TestCase):
                 "keep.txt": b"2", "gone.txt": None, "mv.txt": None,
                 "moved.txt": b"1", "sub/new file.txt": b"n"})
 
+    def test_changed_files_marks_symlink_without_reading_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = Path(tmp) / "wt"
+            wt.mkdir()
+            secret = Path(tmp) / "secret"
+            secret.write_text("token")
+            subprocess.run(["git", "-C", str(wt), "init", "-q"], check=True)
+            (wt / "chart").mkdir()
+            (wt / "chart" / "link").symlink_to(secret)
+            changes = api_commit.changed_files(wt)
+            self.assertTrue(changes["chart/link"].is_symlink)
+            self.assertNotIn(b"token", changes["chart/link"])
+            self.assertTrue(fix_guard.check("chart", changes, original=lambda p: ""))
+            with self.assertRaises(ValueError):
+                api_commit.commit_files("o/r", "b", "abc", "m", changes, runner=lambda q, v: {})
+
 
 class FixGuard(unittest.TestCase):
     def test_guard_allows_chart_and_tests(self):
@@ -116,6 +132,17 @@ class FixGuard(unittest.TestCase):
             self.assertTrue(fix_guard.check("media-server/komga",
                                             {"tests/test_komga.py": (marker + "\ndef test_a(): pass\n").encode()},
                                             original=lambda p: "def test_a(): pass\n"))
+
+    def test_guard_rejects_absolute_and_traversal_paths(self):
+        for path in ("/etc/passwd", "media-server/komga/../plex/values.yaml", "../x"):
+            self.assertTrue(fix_guard.check("media-server/komga", {path: b""}, original=lambda p: ""), path)
+
+    def test_guard_rejects_more_skip_forms(self):
+        for marker in ("@unittest.skipUnless(False, 'x')", "    self.skipTest('x')",
+                       "raise unittest.SkipTest('x')", "@pytest.mark.xfail", "@pytest.mark.skip"):
+            src = marker + "\ndef test_a(): pass\n"
+            self.assertTrue(fix_guard.check("media-server/komga", {"tests/test_komga.py": src.encode()},
+                                            original=lambda p: "def test_a(): pass\n"), marker)
 
     def test_guard_allows_preexisting_skip(self):
         src = "@unittest.skip('x')\ndef test_a(): pass\n"

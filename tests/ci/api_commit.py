@@ -19,6 +19,12 @@ mutation($input: CreateCommitOnBranchInput!) {
 HEAD_MOVED = "Expected branch to point to"
 
 
+class SymlinkChange(bytes):
+    """Marks a changed path that is a symlink; its target is never read."""
+
+    is_symlink = True
+
+
 class GraphQLError(RuntimeError):
     """GraphQL returned `errors` (or gh failed)."""
 
@@ -47,6 +53,8 @@ def commit_files(repo, branch, expected_head, message, changes, runner=gh_graphq
     Returns the new commit oid, or None when the branch head is no longer
     `expected_head` (someone pushed meanwhile: the caller skips this PR).
     """
+    if any(getattr(c, "is_symlink", False) for c in changes.values()):
+        raise ValueError("refusing to commit a symlink")
     headline, _, body = message.partition("\n")
     msg = {"headline": headline}
     if body.strip():
@@ -92,6 +100,8 @@ def changed_files(worktree: Path) -> dict:
                 changes[old] = None
         if "D" in status and "R" not in status:
             changes[path] = None
+        elif (Path(worktree) / path).is_symlink():
+            changes[path] = SymlinkChange()
         else:
             changes[path] = (Path(worktree) / path).read_bytes()
     return changes
