@@ -75,7 +75,13 @@ class DependabotConfigTests(unittest.TestCase):
             "username": "${{secrets.DOCKERHUB_USERNAME}}",
             "password": "${{secrets.DOCKERHUB_TOKEN}}",
         })
-        self.assertEqual(helm["registries"], ["dockerhub"])
+        self.assertEqual(config["registries"]["ghcr"], {
+            "type": "docker-registry",
+            "url": "https://ghcr.io",
+            "username": "smokeythebandit",
+            "password": "${{secrets.GHCR_TOKEN}}",
+        })
+        self.assertEqual(helm["registries"], ["dockerhub", "ghcr"])
         self.assertEqual(actions["directory"], "/")
         self.assertEqual(actions["groups"]["actions"]["patterns"], ["*"])
 

@@ -8,6 +8,14 @@ registries:
     url: https://registry-1.docker.io
     username: ${{secrets.DOCKERHUB_USERNAME}}
     password: ${{secrets.DOCKERHUB_TOKEN}}
+  # ghcr.io hands anonymous clients a token that fails on the second page of a
+  # tag listing, so images with many tags (immich, linuxserver) were cut short.
+  # The token is a classic PAT with only read:packages.
+  ghcr:
+    type: docker-registry
+    url: https://ghcr.io
+    username: smokeythebandit
+    password: ${{secrets.GHCR_TOKEN}}
 
 updates:
   # Chart.yaml and values.yaml in each application chart (not rendered templates).
@@ -22,6 +30,7 @@ updates:
       - /system/*
     registries:
       - dockerhub
+      - ghcr
     schedule:
       interval: daily
       time: "09:00"
