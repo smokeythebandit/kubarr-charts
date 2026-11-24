@@ -11,8 +11,7 @@ updates:
       - /monitoring/*
       - /system/*
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
       time: "09:00"
       timezone: Etc/UTC
     # Each chart bump is its own PR; a low limit stalls every other chart
@@ -37,8 +36,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
       time: "09:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 2
