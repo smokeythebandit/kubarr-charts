@@ -36,7 +36,8 @@ class FrigateTests(unittest.TestCase):
         result, resources = render()
         self.assertEqual(result.returncode, 0, result.stderr)
         chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
-        self.assertEqual(chart["appVersion"], "0.18.2")
+        self.assertEqual(chart["appVersion"],
+                         default_image("media-server/frigate", "frigate", "image").rsplit(":", 1)[1])
         self.assertEqual(chart["annotations"]["kubarr.io/category"], "media-server")
         deployment = objects(resources, "Deployment")["frigate"]
         pod = deployment["spec"]["template"]["spec"]

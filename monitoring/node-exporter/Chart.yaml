@@ -2,8 +2,8 @@ apiVersion: v2
 name: node-exporter
 description: Prometheus node exporter - host metrics, including NFS client byte counters
 type: application
-version: 1.10.2+3
-appVersion: "1.10.2"
+version: 1.13.1+4
+appVersion: "1.13.1"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar

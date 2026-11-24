@@ -2,8 +2,8 @@ apiVersion: v2
 name: transmission
 description: Fast, easy, and free BitTorrent client with web interface
 type: application
-version: 4.1.3+16
-appVersion: "4.1.3"
+version: 4.1.4+17
+appVersion: "4.1.4"
 keywords:
   - transmission
   - bittorrent

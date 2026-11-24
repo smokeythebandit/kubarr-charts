@@ -56,8 +56,7 @@ class DependabotConfigTests(unittest.TestCase):
         helm, actions = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())["updates"]
         for update in (helm, actions):
             self.assertEqual(update["schedule"], {
-                "interval": "weekly", "day": "monday", "time": "09:00",
-                "timezone": "Etc/UTC",
+                "interval": "daily", "time": "09:00", "timezone": "Etc/UTC",
             })
             self.assertGreater(update["open-pull-requests-limit"], 0)
         self.assertEqual(helm["open-pull-requests-limit"], 15)
