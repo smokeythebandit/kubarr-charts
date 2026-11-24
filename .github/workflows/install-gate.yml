@@ -43,11 +43,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  install:
+  plan:
     runs-on: ubuntu-latest
-    # A chart gets a 10 minute budget each for install and upgrade; a forced
-    # full run is 40-odd charts of that, so the ceiling is generous on purpose.
-    timeout-minutes: 350
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      charts_by_shard: ${{ steps.plan.outputs.charts_by_shard }}
+      count: ${{ steps.plan.outputs.count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -97,6 +99,66 @@ jobs:
           helm repo add jetstack https://charts.jetstack.io
           helm repo add cnpg https://cloudnative-pg.github.io/charts
 
+      - name: Install harness dependencies
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/gate"
+          "$RUNNER_TEMP/gate/bin/python" -m pip install --quiet PyYAML==6.0.3
+
+      - name: Plan the shards
+        id: plan
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/gate/bin/python" -u tests/e2e/install_gate.py \
+            --charts "${{ steps.targets.outputs.charts }}" \
+            --base "${{ steps.targets.outputs.base }}" \
+            --plan-shards "$RUNNER_TEMP/plan.json"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          shards = json.load(open(os.environ["RUNNER_TEMP"] + "/plan.json"))["shards"]
+          print("matrix=" + json.dumps(list(range(len(shards)))))
+          print("charts_by_shard=" + json.dumps(shards))
+          print("count=" + str(len(shards)))
+          PY
+
+      - name: Upload the plan
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: install-gate-plan
+          path: ${{ runner.temp }}/plan.json
+          retention-days: 7
+
+  shard:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    # A chart gets a 10 minute budget each for install and upgrade; a shard
+    # holds a handful of them.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e
+        with:
+          version: v4.3.0
+
+      - name: Add upstream chart repositories
+        # Wrapper charts depend on upstream charts by repository URL, and
+        # `helm dependency build` refuses a URL it has no repository entry for.
+        run: |
+          set -euo pipefail
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add cnpg https://cloudnative-pg.github.io/charts
+
       - name: Install kind and kubectl
         env:
           KIND_VERSION: v0.33.0
@@ -126,24 +188,53 @@ jobs:
           sudo modprobe nfsd
           grep -E '^nodev[[:space:]]+(nfs|nfsd)$' /proc/filesystems
 
+      - name: Log in to Docker Hub
+        # Parallel shards share one runner IP range; an authenticated pull
+        # avoids the anonymous rate limit. Skipped when no secret is provided.
+        if: env.DOCKERHUB_TOKEN != ''
+        run: echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+
       - name: Install harness dependencies
         run: |
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/gate"
           "$RUNNER_TEMP/gate/bin/python" -m pip install --quiet PyYAML==6.0.3
 
-      - name: Install, assert ready and upgrade every selected chart
+      - name: Install, assert ready and upgrade this shard's charts
+        env:
+          SHARD_CHARTS: ${{ join(fromJSON(needs.plan.outputs.charts_by_shard)[matrix.shard], ',') }}
         run: |
           "$RUNNER_TEMP/gate/bin/python" -u tests/e2e/install_gate.py \
-            --charts "${{ steps.targets.outputs.charts }}" \
-            --base "${{ steps.targets.outputs.base }}" \
+            --charts "$SHARD_CHARTS" \
             --artifacts "$RUNNER_TEMP/gate-artifacts"
 
-      - name: Upload diagnostics
+      - name: Upload shard results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: install-gate-diagnostics
+          name: install-gate-shard-${{ matrix.shard }}
           path: ${{ runner.temp }}/gate-artifacts
           if-no-files-found: ignore
           retention-days: 7
+
+  install:
+    # The one status the gate reports: branch protection and publish.yml read it.
+    needs: [plan, shard]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          path: ${{ runner.temp }}/in
+          pattern: install-gate-*
+          merge-multiple: false
+
+      - name: Merge the shard results
+        run: |
+          set -euo pipefail
+          mapfile -t results < <(find "$RUNNER_TEMP/in" -path '*install-gate-shard-*' -name results.json | sort)
+          python3 tests/e2e/merge_gate_results.py \
+            --planned "$RUNNER_TEMP/in/install-gate-plan/plan.json" "${results[@]}"

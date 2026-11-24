@@ -30,6 +30,7 @@ jobs:
   install-gate:
     needs: validate
     uses: ./.github/workflows/install-gate.yml
+    secrets: inherit
     permissions:
       contents: read
     with:
