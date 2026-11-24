@@ -340,6 +340,18 @@ def container_images(value):
     return images
 
 
+def mount_subpaths(value):
+    """Every volumeMount subPath anywhere in the rendered documents."""
+    if isinstance(value, dict):
+        if "mountPath" in value and isinstance(value.get("subPath"), str):
+            yield value["subPath"].strip("/")
+        for item in value.values():
+            yield from mount_subpaths(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from mount_subpaths(item)
+
+
 def admission_config():
     """kind's own namespaces stay exempt; everything else is at least baseline.
 
@@ -976,30 +988,38 @@ class Gate:
         if volumes:
             self.kube("delete", "persistentvolume", *volumes, "--wait=false",
                       check=False, timeout=120)
-        self.wipe_chart_data(name)
+        self.wipe_chart_data(name, docs)
         if name in self.installed:
             self.installed.remove(name)
 
-    def wipe_chart_data(self, name):
-        """Remove the chart's own directory from the shared export.
+    def wipe_chart_data(self, name, docs):
+        """Empty the chart's mount directories on the shared export.
 
         Deleting the PersistentVolume leaves the files behind, so the next
         phase would start on the previous phase's data: a bundled database
         initialized with that phase's generated password, which the new
         release's freshly generated secret cannot log in to. Each phase must
-        start as a first install does. Only `<category>/<chart>` goes; shared
-        library paths outside it are left alone.
+        start with empty data, as a first install does.
+
+        The directories themselves stay, with the owner the chart gave them: a
+        published baseline that predates the mount-preparing init container
+        cannot create its subPath on a root-squashed export, and a real
+        upgrade always finds it already there. Only subPaths under
+        `<category>/<chart>` are touched; shared library paths are left alone.
         """
         if not self.nfs_created:
             return
         chart = self.tree_charts.get(name)
         if chart is None:
             return
-        category, chart_name = chart.parent.name, chart.name
-        if not category or not chart_name or "/" in category + chart_name:
+        prefix = f"{chart.parent.name}/{chart.name}/"
+        directories = sorted({path for path in mount_subpaths(docs)
+                              if path.startswith(prefix) and ".." not in path.split("/")})
+        if not directories:
             return
-        self.run("docker", "exec", self.name + "-nfs", "rm", "-rf", "--",
-                 f"/nfsshare/{category}/{chart_name}", check=False, timeout=120)
+        script = 'for d in "$@"; do [ -d "$d" ] && find "$d" -mindepth 1 -delete; done; true'
+        self.run("docker", "exec", self.name + "-nfs", "sh", "-c", script, "wipe",
+                 *[f"/nfsshare/{path}" for path in directories], check=False, timeout=120)
 
     def prerequisites(self, name):
         for prerequisite in PREREQUISITES.get(name, []):
