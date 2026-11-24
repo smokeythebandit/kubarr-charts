@@ -93,6 +93,12 @@ class BumpChart(unittest.TestCase):
         self.assertFalse(self.mod.bump(chart))
         self.assertEqual((chart / "Chart.yaml").read_text(), before)
 
+    def test_v_prefixed_app_version_is_current(self):
+        chart = self.make_chart(chart=CHART.replace('appVersion: "6.4.4"', 'appVersion: "v7.0.3"'))
+        before = (chart / "Chart.yaml").read_text()
+        self.assertFalse(self.mod.bump(chart))
+        self.assertEqual((chart / "Chart.yaml").read_text(), before)
+
     def test_sidecar_tag_ignored(self):
         chart = self.make_chart(tag="6.4.4", exporter="9.9.9")
         self.assertFalse(self.mod.bump(chart))
