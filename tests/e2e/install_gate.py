@@ -1251,7 +1251,8 @@ class Gate:
         (self.artifacts / "summary.md").write_text(text)
         (self.artifacts / "results.json").write_text(json.dumps(
             {"run": self.name, "targets": targets, "skipped": skipped,
-             "results": self.results, "timings": self.timings}, indent=2))
+             "results": self.results, "timings": self.timings,
+             "notes": self.notes}, indent=2))
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if step_summary:
             with open(step_summary, "a") as handle:
@@ -1290,6 +1291,13 @@ def resolve_targets(args):
     return [name for name in selected if name not in skipped], skipped
 
 
+def plan_shards(targets, max_shards=10, per_shard=4):
+    """Split targets into at most max_shards sorted lists, dealt round-robin."""
+    ordered = sorted(targets)
+    count = min(max_shards, -(-len(ordered) // per_shard))
+    return [ordered[index::count] for index in range(count)]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1307,7 +1315,17 @@ def main():
     parser.add_argument("--artifacts", type=Path, default=HERE / "artifacts")
     parser.add_argument("--keep", action="store_true",
                         help="Leave the cluster and the NFS fixture up for debugging")
+    parser.add_argument("--plan-shards", type=Path, metavar="OUT.json",
+                        help="Resolve the targets, write the shard plan to OUT.json and exit; "
+                             "needs no cluster tools")
     args = parser.parse_args()
+
+    if args.plan_shards:
+        targets, skipped = resolve_targets(args)
+        plan = {"targets": targets, "skipped": skipped, "shards": plan_shards(targets)}
+        args.plan_shards.write_text(json.dumps(plan, indent=2))
+        print(json.dumps(plan, indent=2), flush=True)
+        return 0
 
     for tool in ("docker", "kind", "kubectl", "helm"):
         if not shutil.which(tool):

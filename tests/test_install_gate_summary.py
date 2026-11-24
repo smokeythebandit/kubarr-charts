@@ -1,9 +1,14 @@
 """The install gate's summary is rendered from results, so shards can be merged."""
 
+import contextlib
 import importlib.util
+import io
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 
@@ -76,6 +81,44 @@ class Merge(unittest.TestCase):
         self.assertIn("## Chart install gate\n\nNo chart selected; nothing installed.",
                       merged["text"])
         self.assertIn(f"- skipped by name: `{SKIPPED_CHART}` - why", merged["text"])
+
+
+class PlanShards(unittest.TestCase):
+    def run_main(self, argv):
+        with mock.patch.object(sys, "argv", ["install_gate.py", *argv]), \
+                mock.patch.object(gate.shutil, "which", return_value=None), \
+                contextlib.redirect_stdout(io.StringIO()):
+            return gate.main()
+
+    def test_plan_shards_sizes(self):
+        names = [f"c{i:02d}" for i in range(43)]
+        shards = gate.plan_shards(names)
+        self.assertEqual(len(shards), 10)
+        self.assertEqual(sorted(sum(shards, [])), names)
+        self.assertEqual(shards[0][:2], ["c00", "c10"])
+
+    def test_plan_shards_small(self):
+        self.assertEqual(gate.plan_shards(["b", "a", "c"]), [["a", "b", "c"]])
+        self.assertEqual(len(gate.plan_shards([f"c{i}" for i in range(5)])), 2)
+
+    def test_plan_shards_empty(self):
+        self.assertEqual(gate.plan_shards([]), [])
+
+    def test_plan_shards_cli_writes_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "plan.json"
+            self.assertEqual(self.run_main(["--charts", "komga,frigate",
+                                            "--plan-shards", str(out)]), 0)
+            plan = json.loads(out.read_text())
+        self.assertEqual(plan["shards"], [["frigate", "komga"]])
+        self.assertEqual(plan["targets"], ["komga", "frigate"])
+        self.assertEqual(plan["skipped"], {})
+
+    def test_plan_shards_unknown_chart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit) as raised:
+                self.run_main(["--charts", "nope", "--plan-shards", str(Path(tmp) / "p.json")])
+        self.assertIn("no such chart: nope", str(raised.exception))
 
 
 if __name__ == "__main__":
