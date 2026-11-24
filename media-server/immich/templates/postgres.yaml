@@ -49,12 +49,12 @@ spec:
               value: {{ .Values.database.bundled.storageType | quote }}
           startupProbe:
             exec:
-              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+              command: [sh, -c, 'pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
             periodSeconds: 10
             failureThreshold: 30
           readinessProbe:
             exec:
-              command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+              command: [sh, -c, 'pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
           resources:
             {{- toYaml .Values.database.bundled.resources | nindent 12 }}
           volumeMounts:

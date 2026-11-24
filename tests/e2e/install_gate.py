@@ -340,6 +340,18 @@ def container_images(value):
     return images
 
 
+def mount_subpaths(value):
+    """Every volumeMount subPath anywhere in the rendered documents."""
+    if isinstance(value, dict):
+        if "mountPath" in value and isinstance(value.get("subPath"), str):
+            yield value["subPath"].strip("/")
+        for item in value.values():
+            yield from mount_subpaths(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from mount_subpaths(item)
+
+
 def admission_config():
     """kind's own namespaces stay exempt; everything else is at least baseline.
 
@@ -976,8 +988,38 @@ class Gate:
         if volumes:
             self.kube("delete", "persistentvolume", *volumes, "--wait=false",
                       check=False, timeout=120)
+        self.wipe_chart_data(name, docs)
         if name in self.installed:
             self.installed.remove(name)
+
+    def wipe_chart_data(self, name, docs):
+        """Empty the chart's mount directories on the shared export.
+
+        Deleting the PersistentVolume leaves the files behind, so the next
+        phase would start on the previous phase's data: a bundled database
+        initialized with that phase's generated password, which the new
+        release's freshly generated secret cannot log in to. Each phase must
+        start with empty data, as a first install does.
+
+        The directories themselves stay, with the owner the chart gave them: a
+        published baseline that predates the mount-preparing init container
+        cannot create its subPath on a root-squashed export, and a real
+        upgrade always finds it already there. Only subPaths under
+        `<category>/<chart>` are touched; shared library paths are left alone.
+        """
+        if not self.nfs_created:
+            return
+        chart = self.tree_charts.get(name)
+        if chart is None:
+            return
+        prefix = f"{chart.parent.name}/{chart.name}/"
+        directories = sorted({path for path in mount_subpaths(docs)
+                              if path.startswith(prefix) and ".." not in path.split("/")})
+        if not directories:
+            return
+        script = 'for d in "$@"; do [ -d "$d" ] && find "$d" -mindepth 1 -delete; done; true'
+        self.run("docker", "exec", self.name + "-nfs", "sh", "-c", script, "wipe",
+                 *[f"/nfsshare/{path}" for path in directories], check=False, timeout=120)
 
     def prerequisites(self, name):
         for prerequisite in PREREQUISITES.get(name, []):
@@ -1110,9 +1152,17 @@ class Gate:
         for pod in pods:
             unready = [condition for condition in (pod["status"].get("conditions") or [])
                        if condition["type"] == "Ready" and condition["status"] != "True"]
-            if pod["status"].get("phase") == "Running" and not unready:
-                continue
             pod_name = pod["metadata"]["name"]
+            if pod["status"].get("phase") == "Running" and not unready:
+                # A healthy dependency (a bundled database) often holds the
+                # cause of its consumer's failure, so keep a short tail.
+                for container in pod["spec"].get("containers") or []:
+                    logs = self.kube("-n", namespace, "logs", pod_name, "-c", container["name"],
+                                     "--tail=30", check=False, timeout=60)
+                    if logs.strip():
+                        print(f"--- logs {pod_name}/{container['name']} (ready) ---\n"
+                              f"{self.redact(logs)}", flush=True)
+                continue
             described = self.kube("-n", namespace, "describe", "pod", pod_name,
                                   check=False, timeout=60)
             (directory / f"describe-{pod_name}.txt").write_text(self.redact(described))
@@ -1125,6 +1175,18 @@ class Gate:
                     (directory / f"logs-{pod_name}-{container['name']}.txt").write_text(
                         self.redact(logs))
                     print(f"--- logs {pod_name}/{container['name']} ---\n"
+                          f"{self.redact(logs)}", flush=True)
+            # A crash loop's current attempt may not have failed yet; the
+            # previous one holds the error that restarted it.
+            for status in pod["status"].get("containerStatuses") or []:
+                if not status.get("restartCount"):
+                    continue
+                logs = self.kube("-n", namespace, "logs", pod_name, "-c", status["name"],
+                                 "--previous", "--tail=200", check=False, timeout=60)
+                if logs.strip():
+                    (directory / f"logs-{pod_name}-{status['name']}-previous.txt").write_text(
+                        self.redact(logs))
+                    print(f"--- logs {pod_name}/{status['name']} (previous) ---\n"
                           f"{self.redact(logs)}", flush=True)
         print(f"===== end {name} ({phase}) =====\n", flush=True)
 
