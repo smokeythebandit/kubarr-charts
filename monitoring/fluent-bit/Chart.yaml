@@ -16,6 +16,7 @@ annotations:
   kubarr.io/category: "monitoring"
   kubarr.io/system: "true"
   kubarr.io/browseable: "false"
+  kubarr.io/primary-image: "fluentbit.image"
 dependencies:
   - name: kubarr-common
     version: 0.8.4
