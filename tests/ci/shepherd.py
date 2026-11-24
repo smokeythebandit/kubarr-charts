@@ -84,8 +84,11 @@ def chart_facts(repo_root: Path, base_root: Path, files: list[str]) -> ChartFact
     head_tag = bump_chart.normalize_tag(bump_chart.primary_tag(head))
     stale = str(chart.get("appVersion")) != head_tag
     calver = (chart.get("annotations") or {}).get(bump_chart.ANNOTATION_VERSIONING) == "calver"
-    major = False
-    if (base / "Chart.yaml").exists():
+    if not (base / "Chart.yaml").exists():
+        return None  # fail closed: cannot tell whether this is a major bump
+    try:
         base_tag = bump_chart.normalize_tag(bump_chart.primary_tag(base))
-        major = bump_chart.is_major(base_tag, head_tag, calver)
+    except (ValueError, KeyError, TypeError):
+        return None
+    major = bump_chart.is_major(base_tag, head_tag, calver)
     return ChartFacts(chart_dir=chart_dir, category=category, stale=stale, major=major)

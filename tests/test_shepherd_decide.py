@@ -114,6 +114,20 @@ class ChartFactsTests(unittest.TestCase):
             self.assertFalse(got.major)
             self.assertFalse(got.stale)
 
+    def test_chart_facts_missing_base_is_none(self):
+        with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
+            write_chart(head, "7.0.3", "7.0.3")
+            got = S.chart_facts(Path(head), Path(base), ["media-server/radarr/values.yaml"])
+            self.assertIsNone(got)
+            self.assertEqual(S.decide(pr(), got), "needs-human")
+
+    def test_chart_facts_unreadable_base_tag_is_none(self):
+        with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
+            write_chart(head, "7.0.3", "7.0.3")
+            write_chart(base, "6.4.4", "6.4.4")
+            (Path(base) / "media-server/radarr/values.yaml").write_text("radarr: {}\n")
+            self.assertIsNone(S.chart_facts(Path(head), Path(base), ["media-server/radarr/values.yaml"]))
+
     def test_chart_facts_none_for_multi_or_outside(self):
         with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
             write_chart(head, "1.0", "1.0")
