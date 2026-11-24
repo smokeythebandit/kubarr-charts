@@ -104,29 +104,44 @@
 {{/* Kubelet creates subPath directories as root, which a normal export
      squashes. Create them first as the application's own uid in the media
      group, so neither a chown nor a privileged step is involved. A "." source
-     mounts the export root, which already exists. */}}
+     mounts the export root, which already exists. Read-only sources are
+     created too (kubelet cannot create them either) but, listed after
+     --read-only, need not be writable: a library may belong to another user. */}}
 {{- define "kubarr-common.storage.prepareMounts" -}}
 {{- $mounts := .root.Values.storage.mounts -}}
 {{- if hasKey . "mounts" -}}{{- $mounts = .mounts -}}{{- end -}}
 {{- $uid := int (default 1000 .uid) -}}
 {{- $gid := int (default 1000 .gid) -}}
-{{- $selected := list -}}
+{{- $writable := list -}}
+{{- $readOnly := list -}}
 {{- range $mount := $mounts -}}
-{{- if and (eq $mount.mode "read-write") (ne $mount.source ".") -}}
-{{- $selected = append $selected $mount -}}
+{{- if ne $mount.source "." -}}
+{{- if eq $mount.mode "read-write" -}}
+{{- $writable = append $writable $mount.source -}}
+{{- else -}}
+{{- $readOnly = append $readOnly $mount.source -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{/* A shared-export scratch directory needs the same preparation. */}}
 {{- if eq (include "kubarr-common.storage.scratchBackend" (dict "root" .root)) "nfs" -}}
-{{- $selected = append $selected .root.Values.storage.scratch -}}
+{{- $writable = append $writable .root.Values.storage.scratch.source -}}
 {{- end -}}
-{{- if $selected -}}
+{{- $writable = uniq $writable -}}
+{{- $readOnly = without (uniq $readOnly) $writable -}}
+{{- if or $writable $readOnly -}}
 - name: prepare-media-directories
   image: {{ default "busybox:1.37.0" .root.Values.storage.prepareImage }}
-  command: [sh, -ec, 'umask 0002; for directory do mkdir -p -- "$directory"; test -w "$directory"; done', --]
+  command: [sh, -ec, 'umask 0002; writable=1; for directory do if [ "$directory" = --read-only ]; then writable=; continue; fi; mkdir -p -- "$directory"; if [ -n "$writable" ]; then test -w "$directory"; fi; done', --]
   args:
-    {{- range $mount := $selected }}
-    - {{ printf "/nfs/%s" $mount.source | quote }}
+    {{- range $source := $writable }}
+    - {{ printf "/nfs/%s" $source | quote }}
+    {{- end }}
+    {{- if $readOnly }}
+    - "--read-only"
+    {{- range $source := $readOnly }}
+    - {{ printf "/nfs/%s" $source | quote }}
+    {{- end }}
     {{- end }}
   securityContext:
     runAsUser: {{ $uid }}
