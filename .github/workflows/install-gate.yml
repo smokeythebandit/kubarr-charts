@@ -235,6 +235,8 @@ jobs:
       - name: Merge the shard results
         run: |
           set -euo pipefail
+          find "$RUNNER_TEMP/in" -type f | sort
+          plan="$(find "$RUNNER_TEMP/in" -name plan.json | head -n1)"
           mapfile -t results < <(find "$RUNNER_TEMP/in" -path '*install-gate-shard-*' -name results.json | sort)
           python3 tests/e2e/merge_gate_results.py \
-            --planned "$RUNNER_TEMP/in/install-gate-plan/plan.json" "${results[@]}"
+            --planned "$plan" "${results[@]}"
