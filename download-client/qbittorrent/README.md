@@ -58,7 +58,7 @@ VPN is down, and a future up callback replaces the stale port.
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `qbittorrent.replicaCount` | Number of replicas | `1` |
-| `qbittorrent.image.repository` | Image repository | `linuxserver/qbittorrent` |
+| `qbittorrent.image.repository` | Image repository | `ghcr.io/linuxserver/qbittorrent` |
 | `qbittorrent.image.tag` | Image tag | `5.2.3` |
 | `qbittorrent.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `qbittorrent.service.type` | Service type | `ClusterIP` |

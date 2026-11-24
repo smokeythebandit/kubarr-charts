@@ -12,7 +12,7 @@ sabnzbd:
   replicaCount: 1
 
   image:
-    repository: linuxserver/sabnzbd
+    repository: ghcr.io/linuxserver/sabnzbd
     pullPolicy: IfNotPresent
     tag: "5.1.3"
 

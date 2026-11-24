@@ -10,7 +10,7 @@ jellyfin:
   replicaCount: 1
 
   image:
-    repository: linuxserver/jellyfin
+    repository: ghcr.io/linuxserver/jellyfin
     pullPolicy: IfNotPresent
     tag: "12.3ubu2604-ls56"
 

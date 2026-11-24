@@ -11,7 +11,7 @@ deluge:
   replicaCount: 1
 
   image:
-    repository: linuxserver/deluge
+    repository: ghcr.io/linuxserver/deluge
     pullPolicy: IfNotPresent
     tag: "2.2.0"
 
