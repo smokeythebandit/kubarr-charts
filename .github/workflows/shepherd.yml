@@ -103,10 +103,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.shepherd.outputs.head_sha }}
+          persist-credentials: false
 
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e
         with:
           version: v4.3.0
+
+      # The same environment ci.yml tests in, so Claude's own test run is
+      # meaningful: built chart dependencies, luajit, PyYAML first on PATH.
+      - name: Prepare the test environment
+        run: |
+          set -euo pipefail
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add cnpg https://cloudnative-pg.github.io/charts
+          while IFS= read -r chart_yaml; do
+            if grep -q '^dependencies:' "$chart_yaml"; then
+              helm dependency build "$(dirname "$chart_yaml")"
+            fi
+          done < <(find . -mindepth 3 -maxdepth 3 -name Chart.yaml | sort)
+          sudo apt-get update
+          sudo apt-get install -y luajit python3-venv
+          python3 -m venv "$RUNNER_TEMP/chart-tests"
+          "$RUNNER_TEMP/chart-tests/bin/python" -m pip install PyYAML==6.0.3
+          echo "$RUNNER_TEMP/chart-tests/bin" >> "$GITHUB_PATH"
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -130,6 +149,8 @@ jobs:
       - name: Claude repairs the failing PR
         id: claude
         continue-on-error: true
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
         uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

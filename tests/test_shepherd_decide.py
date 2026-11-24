@@ -64,6 +64,10 @@ class DecideTests(unittest.TestCase):
         labels = {f"ai-fix-attempt-{i}" for i in (1, 2, 3)}
         self.assertEqual(S.decide(pr(labels=labels, checks={"helm": "failure", "install": "success"}), facts()), "needs-human")
 
+    def test_decide_conflicting_needs_human(self):
+        self.assertEqual(S.decide(pr(conflicting=True, checks={}), facts()), "needs-human")
+        self.assertEqual(S.decide(pr(conflicting=True, labels={"needs-human"}), facts()), "ignore")
+
     def test_decide_waits_while_running(self):
         self.assertEqual(S.decide(pr(checks={"helm": "success", "install": "in_progress"}), facts()), "wait")
         self.assertEqual(S.decide(pr(checks={"helm": "success"}), facts()), "wait")
@@ -121,6 +125,36 @@ class ChartFactsTests(unittest.TestCase):
             got = S.chart_facts(Path(head), Path(base), ["media-server/radarr/values.yaml"])
             self.assertFalse(got.stale)
 
+    def test_chart_facts_sidecar_only_pr_is_stale_until_version_moves(self):
+        with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
+            write_chart(base, "6.4.4", "6.4.4")
+            write_chart(head, "6.4.4", "6.4.4")
+            files = ["media-server/radarr/values.yaml"]
+            self.assertTrue(S.chart_facts(Path(head), Path(base), files).stale)
+            chart = Path(head) / "media-server/radarr/Chart.yaml"
+            chart.write_text(chart.read_text().replace("6.4.4+3", "6.4.4+4"))
+            self.assertFalse(S.chart_facts(Path(head), Path(base), files).stale)
+
+    def test_chart_facts_head_cannot_switch_off_the_major_hold(self):
+        files = ["media-server/radarr/values.yaml"]
+        with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
+            write_chart(base, "6.4.4", "6.4.4")
+            write_chart(head, "7.0.3", "7.0.3", calver=True)  # the PR adds the calver annotation
+            self.assertIsNone(S.chart_facts(Path(head), Path(base), files))
+            self.assertEqual(S.decide(pr(), None), "needs-human")
+        with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
+            write_chart(base, "6.4.4", "6.4.4")
+            write_chart(head, "7.0.3", "7.0.3")
+            chart = Path(head) / "media-server/radarr/Chart.yaml"
+            chart.write_text(chart.read_text() + "annotations:\n  kubarr.io/primary-image: radarr.sidecar\n")
+            self.assertIsNone(S.chart_facts(Path(head), Path(base), files))
+
+    def test_chart_facts_unparseable_head_tag_is_none(self):
+        with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
+            write_chart(base, "6.4.4", "6.4.4")
+            write_chart(head, "latest", "6.4.4")
+            self.assertIsNone(S.chart_facts(Path(head), Path(base), ["media-server/radarr/values.yaml"]))
+
     def test_chart_facts_missing_base_is_none(self):
         with tempfile.TemporaryDirectory() as head, tempfile.TemporaryDirectory() as base:
             write_chart(head, "7.0.3", "7.0.3")
@@ -161,7 +195,7 @@ class RunnerTests(unittest.TestCase):
                 return json.dumps(prs)
             if args[0] == "api":
                 return "".join(
-                    json.dumps(dict(name=n, status="completed", conclusion="success", url=None)) + "\n"
+                    json.dumps(dict(id=1, app="github-actions", name=n, status="completed", conclusion="success", url=None)) + "\n"
                     for n in ("helm", "install"))
             raise AssertionError(f"unexpected gh call {args}")
 
@@ -176,8 +210,9 @@ class RunnerTests(unittest.TestCase):
                 d = root / "media-server" / chart
                 d.mkdir(parents=True)
                 stale_version = "2.0.0" if sha == "h34" else tag
+                version = "1.0.0+2" if sha.startswith("h") and sha != "h34" else "1.0.0+1"
                 (d / "Chart.yaml").write_text(
-                    f'apiVersion: v2\nname: {chart}\nversion: 1.0.0+1\nappVersion: "{stale_version}"\n')
+                    f'apiVersion: v2\nname: {chart}\nversion: {version}\nappVersion: "{stale_version}"\n')
                 (d / "values.yaml").write_text(f"{chart}:\n  image:\n    repository: x/y\n    tag: {tag}\n")
             return root
 
@@ -214,7 +249,7 @@ class MutatingRunnerTests(unittest.TestCase):
             return self.json.dumps(self.prs)
         if args[0] == "api":
             return "".join(
-                self.json.dumps(dict(name=n, status="completed", conclusion=self.check_state,
+                self.json.dumps(dict(id=1, app="github-actions", name=n, status="completed", conclusion=self.check_state,
                                      url="https://x/actions/runs/99/job/1")) + "\n"
                 for n in ("helm", "install"))
         if args[:2] == ("run", "view"):
@@ -230,7 +265,8 @@ class MutatingRunnerTests(unittest.TestCase):
             base_tag, head_tag = ("1.0.0", "2.0.0") if sha[1:] == "30" else ("2.0.0", "2.1.0")
             tag = base_tag if sha.startswith("b") else head_tag
             app = base_tag if sha == "h34" else tag  # #34 is stale: the tag moved, appVersion did not
-            (d / "Chart.yaml").write_text(f'apiVersion: v2\nname: {chart}\nversion: 1.0.0+1\nappVersion: "{app}"\n')
+            version = "1.0.0+2" if sha.startswith("h") and sha != "h34" else "1.0.0+1"
+            (d / "Chart.yaml").write_text(f'apiVersion: v2\nname: {chart}\nversion: {version}\nappVersion: "{app}"\n')
             (d / "values.yaml").write_text(f"{chart}:\n  image:\n    repository: x/y\n    tag: {tag}\n")
         return root
 
@@ -255,11 +291,64 @@ class MutatingRunnerTests(unittest.TestCase):
         self.assertEqual((repo, head, message), ("o/r", "h34", "chore(komga): bump chart to 2.1.0+2"))
         self.assertEqual(branch, "dependabot/helm/media-server/komga/x")
 
+    def test_conflicting_pr_gets_recreate_comment_and_no_checkout(self):
+        item = listed(34, "komga")
+        item["mergeable"] = "CONFLICTING"
+        self.prs = [item]
+
+        def no_checkout(*a):
+            raise AssertionError("conflicting PRs are not checked out")
+
+        self.checkout = no_checkout
+        self.run_it()
+        self.assertIn(("pr", "edit", "34", "-R", "o/r", "--add-label", "needs-human"), self.calls)
+        comments = [c for c in self.calls if c[:2] == ("pr", "comment")]
+        self.assertEqual(len(comments), 1)
+        self.assertIn("@dependabot recreate", comments[0][-1])
+
+    def test_latest_check_run_per_name_wins(self):
+        def runs(*items):
+            return "".join(self.json.dumps(dict(app="github-actions", status="completed", url=None, **i)) + "\n"
+                           for i in items)
+
+        helm = dict(id=5, name="helm", conclusion="success")
+        out = runs(helm, dict(id=1, name="install", conclusion="failure"), dict(id=9, name="install", conclusion="success"))
+        self.assertEqual(S.check_states(lambda *a: out, "o/r", "s")[0], {"helm": "success", "install": "success"})
+        out = runs(helm, dict(id=1, name="install", conclusion="success"), dict(id=9, name="install", conclusion="failure"))
+        self.assertEqual(S.check_states(lambda *a: out, "o/r", "s")[0], {"helm": "success", "install": "failure"})
+        other = self.json.dumps(dict(id=99, app="some-other-app", name="install", status="completed",
+                                     conclusion="failure", url=None)) + "\n"
+        self.assertEqual(S.check_states(lambda *a: out + other, "o/r", "s")[0]["install"], "failure")
+        self.assertNotIn("install", S.check_states(lambda *a: other, "o/r", "s")[0])
+
+    def test_sidecar_only_pr_bumps_only_the_build_number(self):
+        import api_commit
+        self.prs = [listed(34, "komga")]
+        self.checkout = self.sidecar_checkout
+        commits = []
+        real = api_commit.changed_files
+        api_commit.changed_files = lambda wt: {"media-server/komga/Chart.yaml": b"x"}
+        self.addCleanup(setattr, api_commit, "changed_files", real)
+        self.run_it(commit=lambda *a: commits.append(a) or "oid")
+        self.assertEqual(commits[0][3], "chore(komga): bump chart to 2.1.0+2")
+
+    def sidecar_checkout(self, sha, parent, name):
+        root = Path(self.tmp.name) / ("side-" + sha)
+        if not root.exists():
+            d = root / "media-server" / "komga"
+            d.mkdir(parents=True)
+            (d / "Chart.yaml").write_text('apiVersion: v2\nname: komga\nversion: 2.1.0+1\nappVersion: "2.1.0"\n')
+            (d / "values.yaml").write_text("komga:\n  image:\n    repository: x/y\n    tag: 2.1.0\n")
+        return root
+
     def test_major_hold_labels_and_requests_owner_review(self):
         self.prs = [listed(30, "sonarr")]
         self.run_it()
         self.assertIn(("pr", "edit", "30", "-R", "o/r", "--add-label", "major-update"), self.calls)
-        self.assertIn(("pr", "edit", "30", "-R", "o/r", "--add-reviewer", "o"), self.calls)
+        review = ("pr", "edit", "30", "-R", "o/r", "--add-reviewer", "o")
+        self.assertIn(review, self.calls)
+        self.assertLess(self.calls.index(review),
+                        self.calls.index(("pr", "edit", "30", "-R", "o/r", "--add-label", "major-update")))
 
     def test_fix_out_has_what_the_workflow_reads(self):
         self.prs = [listed(32, "frigate", labels=["ai-fix-attempt-1"]), listed(30, "sonarr")]
