@@ -2,8 +2,8 @@ apiVersion: v2
 name: cloudflared
 description: Cloudflare Tunnel (cloudflared) deployment managed by Kubarr
 type: application
-version: 2026.10.3+5
-appVersion: "2026.10.3"
+version: 2026.11.1+6
+appVersion: "2026.11.1"
 dependencies:
   - name: kubarr-common
     version: 0.8.4
