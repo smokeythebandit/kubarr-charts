@@ -186,5 +186,137 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse((Path(tmp.name) / "fix.json").exists())
 
 
+def listed(number, chart, labels=()):
+    return dict(number=number, headRefName=f"dependabot/helm/media-server/{chart}/x", headRefOid=f"h{number}",
+                baseRefOid=f"b{number}", labels=[{"name": n} for n in labels],
+                files=[{"path": f"media-server/{chart}/values.yaml"}], author={"login": "dependabot"})
+
+
+class MutatingRunnerTests(unittest.TestCase):
+    def setUp(self):
+        import io
+        import json
+        self.json, self.out = json, io.StringIO()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.calls, self.prs, self.check_state = [], [], "success"
+
+    def fake_gh(self, *args):
+        self.calls.append(args)
+        if args[:2] == ("pr", "list"):
+            return self.json.dumps(self.prs)
+        if args[0] == "api":
+            return "".join(
+                self.json.dumps(dict(name=n, status="completed", conclusion=self.check_state, url=None)) + "\n"
+                for n in ("helm", "install"))
+        return ""
+
+    def checkout(self, sha, parent, name):
+        root = Path(self.tmp.name) / sha
+        if not root.exists():
+            chart = {"34": "komga", "32": "frigate"}[sha[1:]]
+            d = root / "media-server" / chart
+            d.mkdir(parents=True)
+            tag = "2.0.0" if sha.startswith("b") else "2.1.0"
+            (d / "Chart.yaml").write_text(f'apiVersion: v2\nname: {chart}\nversion: 1.0.0+1\nappVersion: "{tag}"\n')
+            (d / "values.yaml").write_text(f"{chart}:\n  image:\n    repository: x/y\n    tag: {tag}\n")
+        return root
+
+    def run_it(self, **kw):
+        return S.run_shepherd("o/r", Path(self.tmp.name) / "fix.json", run=self.fake_gh,
+                              checkout=self.checkout, out=self.out, **kw)
+
+    def test_merge_invokes_gh_merge_with_head_guard(self):
+        self.prs = [listed(32, "frigate")]
+        self.run_it()
+        self.assertIn(("pr", "merge", "32", "-R", "o/r", "--merge", "--match-head-commit", "h32"), self.calls)
+
+    def test_one_broken_pr_does_not_stop_the_next(self):
+        self.prs = [listed(34, "komga"), listed(32, "frigate")]
+        real = S.chart_facts
+
+        def flaky(head, base, files):
+            if files[0].startswith("media-server/komga"):
+                raise KeyError("boom")
+            return real(head, base, files)
+
+        S.chart_facts = flaky
+        self.addCleanup(setattr, S, "chart_facts", real)
+        self.run_it()
+        self.assertIn("#34 error: KeyError", self.out.getvalue())
+        self.assertIn("#32 merge", self.out.getvalue())
+
+
+class CommitFixTests(unittest.TestCase):
+    def setUp(self):
+        import io
+        import json
+        import subprocess
+        self.io, self.json = io, json
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.wt = self.root / "wt"
+        (self.wt / "media-server/radarr").mkdir(parents=True)
+        (self.wt / "tests").mkdir()
+        (self.wt / "media-server/radarr/values.yaml").write_text("a: 1\n")
+        (self.wt / "tests/test_x.py").write_text("def test_a():\n    pass\n")
+        git = ["git", "-C", str(self.wt), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        subprocess.run(git[:3] + ["init", "-q"], check=True)
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-qm", "x"], check=True)
+        sha = subprocess.run(["git", "-C", str(self.wt), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        self.sha = sha
+        self.fix = self.root / "fix.json"
+        self.fix.write_text(json.dumps(dict(number=7, head_sha=sha, chart_dir="media-server/radarr", repo="o/r",
+                                            branch="dependabot/helm/x", attempts=1, logs="l")))
+        self.gh_calls, self.commits = [], []
+
+    def gh(self, *args):
+        self.gh_calls.append(args)
+        return ""
+
+    def commit(self, *args):
+        self.commits.append(args)
+        return "newoid"
+
+    def go(self, outcome="success"):
+        return S.commit_fix(self.fix, self.wt, outcome, run=self.gh, commit=self.commit, out=self.io.StringIO())
+
+    def test_clean_change_commits_at_expected_head_and_labels(self):
+        (self.wt / "media-server/radarr/values.yaml").write_text("a: 2\n")
+        self.go()
+        self.assertEqual(len(self.commits), 1)
+        repo, branch, expected_head, message, changes = self.commits[0]
+        self.assertEqual((repo, branch, expected_head), ("o/r", "dependabot/helm/x", self.sha))
+        self.assertIn("media-server/radarr/values.yaml", changes)
+        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "ai-fix-attempt-2"), self.gh_calls)
+
+    def test_guard_violation_flags_human_without_commit(self):
+        (self.wt / "tests/test_x.py").write_text("")
+        (self.wt / "evil.txt").write_text("x")
+        self.go()
+        self.assertEqual(self.commits, [])
+        self.assertTrue(any(c[:2] == ("pr", "comment") for c in self.gh_calls))
+        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "needs-human"), self.gh_calls)
+
+    def test_no_change_counts_an_attempt(self):
+        self.go()
+        self.assertEqual(self.commits, [])
+        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "ai-fix-attempt-2"), self.gh_calls)
+
+    def test_failed_claude_step_counts_and_third_attempt_flags_human(self):
+        self.fix.write_text(self.fix.read_text().replace('"attempts": 1', '"attempts": 2'))
+        self.go(outcome="failure")
+        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "ai-fix-attempt-3"), self.gh_calls)
+        self.assertIn(("pr", "edit", "7", "-R", "o/r", "--add-label", "needs-human"), self.gh_calls)
+        self.assertEqual(sum(1 for c in self.gh_calls if c[:2] == ("pr", "comment")), 1)
+
+    def test_worktree_not_at_pr_head_does_nothing(self):
+        self.fix.write_text(self.fix.read_text().replace(self.sha, "0" * 40))
+        self.assertEqual(self.go(), 1)
+        self.assertEqual(self.gh_calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

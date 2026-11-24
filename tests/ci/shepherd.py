@@ -225,27 +225,45 @@ def run_shepherd(repo, fix_out, dry_run=False, run=gh, checkout=materialize, com
                           if facts is None else f"{MAX_FIX_ATTEMPTS} automatic fix attempts did not make CI green")
                 flag_human(run, repo, number, f"Shepherd needs a human here: {reason}.")
             elif action == "fix" and not fix_written:
-                logs = work / f"logs-{number}.txt"
+                logs_dir = Path(fix_out).parent / "fix-logs"
+                logs_dir.mkdir(exist_ok=True)
+                logs = logs_dir / f"logs-{number}.txt"
                 logs.write_text(failed_logs(run, repo, pr.checks, runs))
                 attempts = sum(1 for label in pr.labels if label.startswith("ai-fix-attempt-"))
                 Path(fix_out).write_text(json.dumps({
                     "number": number, "head_sha": pr.head_sha, "chart_dir": facts.chart_dir,
-                    "worktree": str(head), "logs": str(logs), "repo": repo,
+                    "logs": str(logs), "repo": repo,
                     "branch": pr.head_ref, "attempts": attempts,
                 }))
                 fix_written = True
-        except (RuntimeError, subprocess.CalledProcessError, api_commit.GraphQLError, OSError, ValueError) as exc:
-            print(f"#{number} error: {exc}", file=out)
+        except Exception as exc:  # one broken PR must not stop the others
+            print(f"#{number} error: {type(exc).__name__}: {exc}", file=out)
     return 0
 
 
-def commit_fix(fix_in, run=gh, commit=api_commit.commit_files, out=None):
+def count_attempt(run, repo, number, attempts, out):
+    """Record a fix attempt that produced no commit; the third one hands the PR to a human."""
+    add_label(run, repo, number, f"ai-fix-attempt-{attempts + 1}")
+    if attempts + 1 >= MAX_FIX_ATTEMPTS:
+        flag_human(run, repo, number, f"Shepherd gave up after {MAX_FIX_ATTEMPTS} automatic fix attempts.")
+    print(f"#{number} attempt {attempts + 1} counted", file=out)
+
+
+def commit_fix(fix_in, worktree, claude_outcome="success", run=gh, commit=api_commit.commit_files, out=None):
+    """Commit the AI fix found in `worktree` (the PR head, checked out by the workflow)."""
     out = out or sys.stdout
     fix = json.loads(Path(fix_in).read_text())
-    worktree, repo, number = Path(fix["worktree"]), fix["repo"], fix["number"]
+    worktree, repo, number, attempts = Path(worktree), fix["repo"], fix["number"], fix["attempts"]
+    head = subprocess.run(["git", "-C", str(worktree), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if head != fix["head_sha"]:
+        print(f"#{number} worktree is not at the PR head; nothing done", file=out)
+        return 1
+    if claude_outcome != "success":
+        count_attempt(run, repo, number, attempts, out)
+        return 0
     changes = api_commit.changed_files(worktree)
     if not changes:
-        print(f"#{number} the fix changed nothing; attempt not counted", file=out)
+        count_attempt(run, repo, number, attempts, out)
         return 0
 
     def original(path):
@@ -262,7 +280,7 @@ def commit_fix(fix_in, run=gh, commit=api_commit.commit_files, out=None):
     if oid is None:
         print(f"#{number} head moved, fix skipped", file=out)
         return 0
-    add_label(run, repo, number, f"ai-fix-attempt-{fix['attempts'] + 1}")
+    add_label(run, repo, number, f"ai-fix-attempt-{attempts + 1}")
     print(f"#{number} committed {oid}", file=out)
     return 0
 
@@ -276,10 +294,12 @@ def main(argv=None) -> int:
     p_run.add_argument("--dry-run", action="store_true")
     p_fix = sub.add_parser("commit-fix")
     p_fix.add_argument("--fix-in", required=True)
+    p_fix.add_argument("--worktree", required=True)
+    p_fix.add_argument("--claude-outcome", default="success")
     args = parser.parse_args(argv)
     if args.cmd == "run":
         return run_shepherd(args.repo, args.fix_out, args.dry_run)
-    return commit_fix(args.fix_in)
+    return commit_fix(args.fix_in, args.worktree, args.claude_outcome)
 
 
 if __name__ == "__main__":

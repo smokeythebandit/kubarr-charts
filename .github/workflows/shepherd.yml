@@ -61,19 +61,29 @@ jobs:
             --fix-out "$RUNNER_TEMP/fix.json" "${args[@]}"
           if [ -f "$RUNNER_TEMP/fix.json" ]; then echo "fix=true" >> "$GITHUB_OUTPUT"; fi
 
-      - name: Prepare the fix prompt
+      # Everything Claude can touch is the PR head in the workspace. The
+      # trusted tooling is copied out first and the prompt is read from main
+      # before the PR head replaces the workspace content.
+      - name: Check out the failing PR for Claude
         id: fix
         if: env.HAS_CLAUDE_TOKEN == 'true' && steps.walk.outputs.fix == 'true'
         run: |
+          mkdir -p "$RUNNER_TEMP/tooling"
+          cp tests/ci/*.py "$RUNNER_TEMP/tooling/"
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os, pathlib
           fix = json.loads(pathlib.Path(os.environ["RUNNER_TEMP"], "fix.json").read_text())
           text = pathlib.Path(".github/shepherd/fix-prompt.md").read_text()
-          for key, value in (("{{CHART_DIR}}", fix["chart_dir"]), ("{{WORKTREE}}", fix["worktree"]), ("{{LOGS}}", fix["logs"])):
+          for key, value in (("{{CHART_DIR}}", fix["chart_dir"]), ("{{LOGS}}", fix["logs"])):
               text = text.replace(key, value)
-          print("worktree=" + fix["worktree"])
+          print("logs_dir=" + str(pathlib.Path(fix["logs"]).parent))
+          print("head_sha=" + fix["head_sha"])
           print("prompt<<SHEPHERD_PROMPT_EOF\n" + text + "\nSHEPHERD_PROMPT_EOF")
           PY
+          head_sha=$(python3 -c 'import json,os;print(json.load(open(os.environ["RUNNER_TEMP"]+"/fix.json"))["head_sha"])')
+          git fetch --no-tags origin "$head_sha"
+          git checkout --detach --force "$head_sha"
+          git clean -fdx
 
       - name: Claude repairs the failing PR
         id: claude
@@ -82,14 +92,19 @@ jobs:
         uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ steps.app.outputs.token }}
+          # Read-only job token; the App token never reaches Claude.
+          github_token: ${{ github.token }}
           prompt: ${{ steps.fix.outputs.prompt }}
           claude_args: >-
-            --add-dir ${{ steps.fix.outputs.worktree }}
+            --add-dir ${{ steps.fix.outputs.logs_dir }}
             --allowedTools "Read,Edit,Write,Glob,Grep,Bash(python3 -m unittest:*),Bash(helm template:*),Bash(helm dependency build:*)"
 
+      # A Claude step that ran but failed, or changed nothing, counts as an
+      # attempt; only a skipped step (no token) does not.
       - name: Commit the fix
-        if: steps.claude.outcome == 'success'
+        if: always() && steps.fix.outcome == 'success' && steps.claude.outcome != 'skipped'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: python3 tests/ci/shepherd.py commit-fix --fix-in "$RUNNER_TEMP/fix.json"
+        run: |
+          python3 "$RUNNER_TEMP/tooling/shepherd.py" commit-fix --fix-in "$RUNNER_TEMP/fix.json" \
+            --worktree "$GITHUB_WORKSPACE" --claude-outcome "${{ steps.claude.outcome }}"
