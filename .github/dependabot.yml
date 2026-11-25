@@ -1,4 +1,22 @@
 version: 2
+# Docker Hub refuses many anonymous tag lookups ("authentication required"),
+# and Dependabot reads a refused lookup as "no newer version". The token is a
+# read-only Docker Hub PAT stored as a Dependabot secret.
+registries:
+  dockerhub:
+    type: docker-registry
+    url: https://registry-1.docker.io
+    username: ${{secrets.DOCKERHUB_USERNAME}}
+    password: ${{secrets.DOCKERHUB_TOKEN}}
+  # ghcr.io hands anonymous clients a token that fails on the second page of a
+  # tag listing, so images with many tags (immich, linuxserver) were cut short.
+  # The token is a classic PAT with only read:packages.
+  ghcr:
+    type: docker-registry
+    url: https://ghcr.io
+    username: smokeythebandit
+    password: ${{secrets.GHCR_TOKEN}}
+
 updates:
   # Chart.yaml and values.yaml in each application chart (not rendered templates).
   - package-ecosystem: helm
@@ -10,21 +28,36 @@ updates:
       - /media-server/*
       - /monitoring/*
       - /system/*
+    registries:
+      - dockerhub
+      - ghcr
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
       time: "09:00"
       timezone: Etc/UTC
-    open-pull-requests-limit: 5
+    # Each chart bump is its own PR; a low limit stalls every other chart
+    # (Dependabot skips the scheduled run entirely once the limit is full).
+    open-pull-requests-limit: 15
     ignore:
       # The file:// dependency is released together with its consumers.
       - dependency-name: kubarr-common
+      # Major Postgres upgrades need a data migration, not a tag bump.
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+      - dependency-name: ghcr.io/immich-app/postgres
+        update-types: ["version-update:semver-major"]
+    # Images the charts require to share one release; the templates refuse
+    # to render if their tags differ.
+    groups:
+      tdarr:
+        patterns: ["ghcr.io/haveagitgat/tdarr", "ghcr.io/haveagitgat/tdarr_node"]
+      immich:
+        patterns: ["ghcr.io/immich-app/immich-server", "ghcr.io/immich-app/immich-machine-learning"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
       time: "09:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 2

@@ -14,7 +14,7 @@ vmalert:
     # (monitoring/victoriametrics appVersion 1.154.1): vmalert and vmselect
     # share the MetricsQL implementation, so a matching pair is the only
     # combination upstream tests.
-    tag: "v1.154.1"
+    tag: "v1.156.0"
     pullPolicy: IfNotPresent
 
   service:

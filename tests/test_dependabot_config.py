@@ -29,7 +29,10 @@ class DependabotConfigTests(unittest.TestCase):
         self.assertEqual({pattern.removesuffix("/*") for pattern in patterns},
                          {"/" + path.parent.parent.name for path in charts})
 
-        ignored = {rule["dependency-name"] for rule in helm["ignore"]}
+        # Rules without update-types skip a dependency entirely; only in-repo
+        # dependencies and images may be skipped that way.
+        ignored = {rule["dependency-name"] for rule in helm["ignore"]
+                   if "update-types" not in rule and "versions" not in rule}
         local_dependencies = {
             dep["name"] for path in charts
             for dep in yaml.safe_load(path.read_text()).get("dependencies", [])
@@ -41,17 +44,44 @@ class DependabotConfigTests(unittest.TestCase):
             if (values := yaml.safe_load(path.read_text())).get("image", {}).get("pullPolicy") == "Never"
         }
         self.assertEqual(ignored, local_dependencies | local_images)
+        partial = {rule["dependency-name"]: rule["update-types"] for rule in helm["ignore"]
+                   if "update-types" in rule}
+        self.assertEqual(partial, {
+            "postgres": ["version-update:semver-major"],
+            "ghcr.io/immich-app/postgres": ["version-update:semver-major"],
+        })
         self.assertFalse(json.loads((ROOT / "renovate.json").read_text())["enabled"])
 
     def test_schedule_and_actions(self):
         helm, actions = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())["updates"]
         for update in (helm, actions):
             self.assertEqual(update["schedule"], {
-                "interval": "weekly", "day": "monday", "time": "09:00",
-                "timezone": "Etc/UTC",
+                "interval": "daily", "time": "09:00", "timezone": "Etc/UTC",
             })
             self.assertGreater(update["open-pull-requests-limit"], 0)
-        self.assertEqual(helm["open-pull-requests-limit"], 5)
+        self.assertEqual(helm["open-pull-requests-limit"], 15)
+        # Server/worker pairs that must move together get one PR.
+        self.assertEqual(helm["groups"], {
+            "tdarr": {"patterns": ["ghcr.io/haveagitgat/tdarr", "ghcr.io/haveagitgat/tdarr_node"]},
+            "immich": {"patterns": ["ghcr.io/immich-app/immich-server",
+                                    "ghcr.io/immich-app/immich-machine-learning"]},
+        })
+        # Docker Hub refuses many anonymous tag lookups, which Dependabot reads
+        # as "no newer version"; the helm updater logs in with a read-only token.
+        config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+        self.assertEqual(config["registries"]["dockerhub"], {
+            "type": "docker-registry",
+            "url": "https://registry-1.docker.io",
+            "username": "${{secrets.DOCKERHUB_USERNAME}}",
+            "password": "${{secrets.DOCKERHUB_TOKEN}}",
+        })
+        self.assertEqual(config["registries"]["ghcr"], {
+            "type": "docker-registry",
+            "url": "https://ghcr.io",
+            "username": "smokeythebandit",
+            "password": "${{secrets.GHCR_TOKEN}}",
+        })
+        self.assertEqual(helm["registries"], ["dockerhub", "ghcr"])
         self.assertEqual(actions["directory"], "/")
         self.assertEqual(actions["groups"]["actions"]["patterns"], ["*"])
 

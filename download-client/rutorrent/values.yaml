@@ -11,7 +11,7 @@ rutorrent:
   replicaCount: 1
 
   image:
-    repository: linuxserver/rutorrent
+    repository: ghcr.io/linuxserver/rutorrent
     pullPolicy: IfNotPresent
     tag: "v3.10-ls122"
 

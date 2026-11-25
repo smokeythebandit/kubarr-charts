@@ -10,7 +10,7 @@ plex:
   replicaCount: 1
 
   image:
-    repository: linuxserver/plex
+    repository: ghcr.io/linuxserver/plex
     pullPolicy: IfNotPresent
     tag: "1.43.5"
 

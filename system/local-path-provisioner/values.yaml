@@ -13,13 +13,13 @@ namespace:
   name: local-path-storage
 
 image:
-  repository: docker.io/rancher/local-path-provisioner
+  repository: rancher/local-path-provisioner
   tag: v0.0.37
   pullPolicy: IfNotPresent
 
 # Image of the short-lived pods that create and remove volume directories.
 helperImage:
-  repository: docker.io/library/busybox
+  repository: library/busybox
   tag: "1.37.0"
 
 # The provisioner name the StorageClass hands claims to. Upstream's default, so

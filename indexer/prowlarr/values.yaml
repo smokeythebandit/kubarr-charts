@@ -11,9 +11,9 @@ prowlarr:
   replicaCount: 1
 
   image:
-    repository: linuxserver/prowlarr
+    repository: ghcr.io/linuxserver/prowlarr
     pullPolicy: IfNotPresent
-    tag: "2.7.0"
+    tag: "3.1.0"
 
   # Service configuration
   service:

@@ -33,3 +33,15 @@ def credential_args(chart):
     if name in DATABASE_CHARTS:
         return ["--set", "database.existingSecret=kubarr-db-app"]
     return []
+
+
+def default_image(chart, *keys):
+    """The repository:tag a chart ships by default, read from its values.yaml.
+
+    Dependabot bumps image tags in values.yaml; tests compare rendered images
+    against this instead of a pinned literal so a bump does not break them.
+    """
+    image = yaml.safe_load((ROOT / chart / "values.yaml").read_text())
+    for key in keys:
+        image = image[key]
+    return f"{image['repository']}:{image['tag']}"

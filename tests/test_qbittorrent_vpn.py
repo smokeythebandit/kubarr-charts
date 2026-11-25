@@ -11,7 +11,7 @@ import unittest
 
 import yaml
 
-from chart_artifacts import ROOT, chart_input
+from chart_artifacts import ROOT, chart_input, default_image
 
 
 CHART = ROOT / "download-client/qbittorrent"
@@ -162,7 +162,7 @@ class QBittorrentVpnTests(unittest.TestCase):
         volumes = by_name(pod["volumes"])
         init = by_name(pod["initContainers"])["gluetun-tmp-permissions"]
 
-        self.assertEqual(gluetun["image"], "qmcgaw/gluetun:v3.41.3")
+        self.assertEqual(gluetun["image"], default_image("download-client/qbittorrent", "vpn", "image"))
         self.assertEqual(gluetun["envFrom"], [{"secretRef": {"name": "vpn-credentials"}}])
         self.assertEqual(gluetun["securityContext"], {
             "allowPrivilegeEscalation": False,

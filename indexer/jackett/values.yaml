@@ -12,9 +12,9 @@ jackett:
   replicaCount: 1
 
   image:
-    repository: linuxserver/jackett
+    repository: ghcr.io/linuxserver/jackett
     pullPolicy: IfNotPresent
-    tag: "0.24.2903"
+    tag: "0.25.34"
 
   # Service configuration
   service:

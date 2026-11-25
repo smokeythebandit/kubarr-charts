@@ -11,9 +11,9 @@ transmission:
   replicaCount: 1
 
   image:
-    repository: linuxserver/transmission
+    repository: ghcr.io/linuxserver/transmission
     pullPolicy: IfNotPresent
-    tag: "4.1.3"
+    tag: "4.1.4"
 
   # Base path for URL routing (leave empty for root)
   basePath: "/transmission"

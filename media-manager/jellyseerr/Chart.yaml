@@ -2,8 +2,8 @@ apiVersion: v2
 name: jellyseerr
 description: Seerr media request manager, compatible with existing Jellyseerr releases
 type: application
-version: 3.5.1+19
-appVersion: "3.5.1"
+version: 3.5.2+20
+appVersion: "3.5.2"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar

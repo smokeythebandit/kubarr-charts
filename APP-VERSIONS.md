@@ -248,10 +248,10 @@ nightly, develop and beta channels were excluded, as everywhere else here.
 
 | Chart | Category | Image | Application version |
 | --- | --- | --- | --- |
-| Prowlarr | indexer | `linuxserver/prowlarr` | 2.7.0 |
+| Prowlarr | indexer | `ghcr.io/linuxserver/prowlarr` | 2.7.0 |
 | FlareSolverr | indexer | `ghcr.io/flaresolverr/flaresolverr` | 3.5.2 |
-| Lidarr | media-manager | `linuxserver/lidarr` | 3.1.6 |
-| Bazarr | media-manager | `linuxserver/bazarr` | 1.6.2 |
+| Lidarr | media-manager | `ghcr.io/linuxserver/lidarr` | 3.1.6 |
+| Bazarr | media-manager | `ghcr.io/linuxserver/bazarr` | 1.6.2 |
 | Recyclarr | media-manager | `ghcr.io/recyclarr/recyclarr` | 8.8.1 |
 | Navidrome | media-server | `deluan/navidrome` | 0.64.2 |
 | LMS | media-server | `epoupon/lms` | 3.82.0 |

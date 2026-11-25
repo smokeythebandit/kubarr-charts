@@ -10,7 +10,7 @@ sonarr:
   replicaCount: 1
 
   image:
-    repository: linuxserver/sonarr
+    repository: ghcr.io/linuxserver/sonarr
     pullPolicy: IfNotPresent
     tag: "4.0.20"
 
