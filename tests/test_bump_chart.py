@@ -81,8 +81,8 @@ class BumpChart(unittest.TestCase):
         chart = self.make_chart()
         self.assertTrue(self.mod.bump(chart))
         text = (chart / "Chart.yaml").read_text()
-        # A new app version starts its build number again at 1.
-        self.assertIn("version: 7.0.3+1\n", text)
+        # A new app version is published without a build number.
+        self.assertIn("version: 7.0.3\n", text)
         self.assertIn('appVersion: "7.0.3"\n', text)
         self.assertIn("# keep me", text)
         self.assertEqual(text.splitlines()[:4], CHART.splitlines()[:4])
@@ -97,6 +97,20 @@ class BumpChart(unittest.TestCase):
     def test_new_app_version_resets_when_never_published(self):
         chart = self.make_chart()
         self.assertTrue(self.mod.bump(chart, published=lambda name, core: set()))
+        self.assertIn("version: 7.0.3\n", (chart / "Chart.yaml").read_text())
+
+    def test_republished_plain_version_continues_at_one(self):
+        # Only the plain 7.0.3 (build 0) was published before: next is +1.
+        chart = self.make_chart()
+        self.assertTrue(self.mod.bump(chart, published=lambda name, core: {0}))
+        self.assertIn("version: 7.0.3+1\n", (chart / "Chart.yaml").read_text())
+
+    def test_first_chart_only_change_adds_plus_one(self):
+        chart = self.make_chart()
+        self.mod.bump(chart)  # -> 7.0.3
+        exporter_bump = (chart / "values.yaml").read_text().replace('"1.0.0"', '"1.1.0"')
+        (chart / "values.yaml").write_text(exporter_bump)
+        self.assertTrue(self.mod.bump(chart, revision_only_if_current=True))
         self.assertIn("version: 7.0.3+1\n", (chart / "Chart.yaml").read_text())
 
     def test_registry_failure_keeps_counting_up(self):
@@ -133,7 +147,7 @@ class BumpChart(unittest.TestCase):
 
     def next_revision(self, line):
         core, _, n = line.partition("+")
-        return f"{core}+{int(n) + 1}"
+        return f"{core}+{int(n or 0) + 1}"
 
     def test_v_prefixed_app_version_is_current(self):
         chart = self.make_chart(chart=CHART.replace('appVersion: "6.4.4"', 'appVersion: "v7.0.3"'))

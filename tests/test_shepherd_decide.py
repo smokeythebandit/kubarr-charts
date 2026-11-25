@@ -292,7 +292,7 @@ class MutatingRunnerTests(unittest.TestCase):
         self.addCleanup(setattr, api_commit, "changed_files", real)
         self.run_it(commit=lambda *a: commits.append(a) or "oid")
         repo, branch, head, message, changes = commits[0]
-        self.assertEqual((repo, head, message), ("o/r", "h34", "chore(komga): bump chart to 2.1.0+1"))
+        self.assertEqual((repo, head, message), ("o/r", "h34", "chore(komga): bump chart to 2.1.0"))
         self.assertEqual(branch, "dependabot/helm/media-server/komga/x")
 
     def test_conflicting_pr_gets_recreate_comment_and_no_checkout(self):
