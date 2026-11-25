@@ -81,10 +81,36 @@ class BumpChart(unittest.TestCase):
         chart = self.make_chart()
         self.assertTrue(self.mod.bump(chart))
         text = (chart / "Chart.yaml").read_text()
-        self.assertIn("version: 7.0.3+26\n", text)
+        # A new app version starts its build number again at 1.
+        self.assertIn("version: 7.0.3+1\n", text)
         self.assertIn('appVersion: "7.0.3"\n', text)
         self.assertIn("# keep me", text)
         self.assertEqual(text.splitlines()[:4], CHART.splitlines()[:4])
+
+    def test_new_app_version_continues_after_published_builds(self):
+        # Going back to an app version that was published before (a revert)
+        # must not reuse one of its build numbers.
+        chart = self.make_chart()
+        self.assertTrue(self.mod.bump(chart, published=lambda name, core: {1, 2, 5}))
+        self.assertIn("version: 7.0.3+6\n", (chart / "Chart.yaml").read_text())
+
+    def test_new_app_version_resets_when_never_published(self):
+        chart = self.make_chart()
+        self.assertTrue(self.mod.bump(chart, published=lambda name, core: set()))
+        self.assertIn("version: 7.0.3+1\n", (chart / "Chart.yaml").read_text())
+
+    def test_registry_failure_keeps_counting_up(self):
+        def unreachable(name, core):
+            raise OSError("registry down")
+        chart = self.make_chart()
+        self.assertTrue(self.mod.bump(chart, published=unreachable))
+        self.assertIn("version: 7.0.3+26\n", (chart / "Chart.yaml").read_text())
+
+    def test_published_lookup_gets_chart_name_and_core(self):
+        calls = []
+        chart = self.make_chart()
+        self.mod.bump(chart, published=lambda name, core: calls.append((name, core)) or set())
+        self.assertEqual(calls, [("radarr", "7.0.3")])
 
     def test_bump_noop_when_already_current(self):
         chart = self.make_chart()

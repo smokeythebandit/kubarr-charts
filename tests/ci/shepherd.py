@@ -251,7 +251,7 @@ def run_shepherd(repo, fix_out, dry_run=False, run=gh, checkout=materialize, com
                 continue
             if action == "bump":
                 chart = head / facts.chart_dir
-                if not bump_chart.bump(chart, revision_only_if_current=True):
+                if not bump_chart.bump(chart, revision_only_if_current=True, published=bump_chart.published_builds):
                     print(f"#{number} nothing to bump", file=out)
                     continue
                 version = yaml.safe_load((chart / "Chart.yaml").read_text())["version"]
