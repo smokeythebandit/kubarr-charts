@@ -29,8 +29,10 @@ qbittorrent:
       cpu: 250m
       memory: 512Mi
     limits:
-      # No CPU limit - allow unlimited cores for fast transfers
-      memory: 2Gi
+      # No CPU limit - allow unlimited cores for fast transfers.
+      # Hundreds of seeding torrents plus NFS write-back page cache pushed a
+      # real library past 2Gi every hour (OOMKilled in a loop).
+      memory: 4Gi
 
   # Environment variables
   env:
@@ -58,9 +60,11 @@ qbittorrent:
       Session\DiskCacheSize: "256"
       # Disk cache expiry (seconds)
       Session\DiskCacheTTL: "60"
-      # Connection limits (high for max performance)
-      Session\MaxConnections: "5000"
-      Session\MaxConnectionsPerTorrent: "500"
+      # Connection limits. Every peer connection costs libtorrent memory; with
+      # hundreds of torrents seeding at once, 5000 connections ran the pod out
+      # of memory. 500 keeps transfers fast without the crash loop.
+      Session\MaxConnections: "500"
+      Session\MaxConnectionsPerTorrent: "100"
       Session\MaxUploads: "200"
       Session\MaxUploadsPerTorrent: "20"
       # Uncapped speeds (0 = unlimited)
