@@ -3,7 +3,7 @@ namespace:
 
 redmine:
   image:
-    repository: docker.io/library/redmine
+    repository: library/redmine
     tag: 7.0.2-bookworm
     pullPolicy: IfNotPresent
   service:
@@ -32,7 +32,7 @@ database:
   bundled:
     enabled: true
     image:
-      repository: docker.io/library/postgres
+      repository: library/postgres
       tag: 16.15-bookworm
       pullPolicy: IfNotPresent
     resources:
