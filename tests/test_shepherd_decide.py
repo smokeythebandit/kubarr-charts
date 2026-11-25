@@ -282,13 +282,17 @@ class MutatingRunnerTests(unittest.TestCase):
     def test_bump_commits_with_chart_message(self):
         import api_commit
         self.prs = [listed(34, "komga")]
+        # No network in unit tests: the registry has never seen komga 2.1.0.
+        real_lookup = S.bump_chart.published_builds
+        S.bump_chart.published_builds = lambda name, core: set()
+        self.addCleanup(setattr, S.bump_chart, "published_builds", real_lookup)
         commits = []
         real = api_commit.changed_files
         api_commit.changed_files = lambda wt: {"media-server/komga/Chart.yaml": b"x"}
         self.addCleanup(setattr, api_commit, "changed_files", real)
         self.run_it(commit=lambda *a: commits.append(a) or "oid")
         repo, branch, head, message, changes = commits[0]
-        self.assertEqual((repo, head, message), ("o/r", "h34", "chore(komga): bump chart to 2.1.0+2"))
+        self.assertEqual((repo, head, message), ("o/r", "h34", "chore(komga): bump chart to 2.1.0"))
         self.assertEqual(branch, "dependabot/helm/media-server/komga/x")
 
     def test_conflicting_pr_gets_recreate_comment_and_no_checkout(self):
