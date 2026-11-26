@@ -65,7 +65,7 @@ cache:
     enabled: true
     image:
       repository: valkey/valkey
-      tag: "9.1.2"
+      tag: "9.2.0"
       digest: sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
       pullPolicy: IfNotPresent
     resources:
