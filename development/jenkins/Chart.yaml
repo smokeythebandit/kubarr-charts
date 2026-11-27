@@ -2,8 +2,8 @@ apiVersion: v2
 name: jenkins
 description: Jenkins LTS continuous integration controller
 type: application
-version: 2.591.0+17
-appVersion: "2.591"
+version: 2.592.0
+appVersion: "2.592"
 annotations:
   kubarr.io/display-name: "Jenkins"
   kubarr.io/icon: "🔧"
