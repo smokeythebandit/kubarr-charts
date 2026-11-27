@@ -2,8 +2,8 @@ apiVersion: v2
 name: vmalert
 description: vmalert - evaluates alerting rules against VictoriaMetrics and sends alerts to Alertmanager
 type: application
-version: 1.156.0+2
-appVersion: "1.156.0"
+version: 1.157.0
+appVersion: "1.157.0"
 # Kubarr annotations - used by the catalog service (services/catalog.rs) for app discovery.
 # display-name: human-readable name for the dashboard UI
 # icon: emoji or identifier for the app catalog and sidebar
