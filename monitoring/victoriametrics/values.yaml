@@ -7,7 +7,7 @@ victoriametrics:
 
   image:
     repository: victoriametrics/victoria-metrics
-    tag: "v1.156.0"
+    tag: "v1.157.0"
     pullPolicy: IfNotPresent
 
   service:
